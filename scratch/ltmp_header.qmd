@@ -1,0 +1,133 @@
+## LTMP Benthic Photo-Transect (N=107, Offshore)
+
+This section presents results for the LTMP Benthic photo-transect dataset — offshore reefs surveyed at 5 m depth with higher spatial precision. The dataset includes proportion Acropora as a community vulnerability metric.
+
+```{r qbin-ltmp-model}
+#| label: qbin-ltmp-model
+#| code-fold: true
+#| code-summary: "Data Preparation & Quasibinomial GLM Summary"
+
+acrop_comp <- df.AIMS.full %>%
+  filter(data_type == "photo-transect", domain_category == "reef",
+         purpose == "COMPOSITION", variable == "HARD CORAL") %>%
+  mutate(Reef_Name_Clean = gsub(" REEF(S)?| ISLAND| IS", "", toupper(domain_name))) %>%
+  left_join(dat.Ref.Clean %>% select(AIMS_REEF_NAME_Clean, ReefName),
+            by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")) %>%
+  filter(!is.na(ReefName)) %>%
+  group_by(ReefName, report_year, depth) %>%
+  summarise(total_hc = sum(mean, na.rm = TRUE),
+    acrop_cover = sum(mean[grepl("Acropora", reefpage_category, ignore.case = TRUE)], na.rm = TRUE),
+    .groups = "drop") %>%
+  mutate(prop_acropora = ifelse(total_hc > 0, acrop_cover / total_hc, 0))
+
+dat.ml.ltmp.clean <- dat.ml.ltmp %>%
+  filter(!is.na(mcur_90), !is.na(Rel.Change)) %>%
+  left_join(acrop_comp %>% select(ReefName, report_year, depth, prop_acropora),
+            by = c("ReefName", "report_year", "depth")) %>%
+  mutate(prop_acropora = replace_na(prop_acropora, median(prop_acropora, na.rm = TRUE)))
+N_ltmp <- nrow(dat.ml.ltmp.clean)
+dat.ml.ltmp.clean <- dat.ml.ltmp.clean %>%
+  mutate(Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
+         Mort.prop.nudge = (Mort.prop * (N_ltmp - 1) + 0.5) / N_ltmp)
+cat("LTMP Benthic model dataset:", N_ltmp, "observations\n")
+
+fit_qbin_ltmp <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
+                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 +
+                    MaxDHW.mean * prop_acropora + winyear_sd,
+  data = dat.ml.ltmp.clean, family = quasibinomial(link = "logit"))
+print(summary(fit_qbin_ltmp))
+```
+
+### Effect Size Comparison
+
+::: {.panel-tabset}
+#### Bayesian Beta
+
+```{r brms-halfeye-ltmp}
+#| label: brms-halfeye-ltmp
+#| fig-cap: "LTMP Benthic — Posterior distributions (Beta)."
+#| fig-width: 10
+#| fig-height: 6
+
+library(brms); library(dplyr); library(tidybayes)
+draws_ltmp <- as_draws_df(fit_brms_ltmp) %>%
+  select(starts_with("b_")) %>%
+  pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+  filter(term != "b_Intercept") %>%
+  mutate(term = gsub("b_", "", term), term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("histmDHW6_s", "Prior Exposure", term), term = gsub("secc3m_s", "Secchi Depth", term),
+         term = gsub("cloudp_90_s", "Cloud Cover", term), term = gsub("winyear_sd_s", "Winter SST SD", term),
+         term = gsub("mcur_90_s", "Current Speed", term), term = gsub("prop_acropora_s", "Prop. Acropora", term),
+         term = gsub(":", " x ", term))
+ggplot(draws_ltmp, aes(x = estimate, y = reorder(term, estimate))) +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi, fill = "darkorange", alpha = 0.7, normalize = "xy") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL, title = "LTMP Benthic — Posterior Effect Distributions (Beta)") +
+  theme_bw(base_size = 12)
+```
+
+#### Bayesian Binomial-OLRE
+
+```{r brms-halfeye-ltmp-olre}
+#| label: brms-halfeye-ltmp-olre
+#| fig-cap: "LTMP Benthic — Posterior distributions (Binomial-OLRE)."
+#| fig-width: 10
+#| fig-height: 6
+
+library(brms); library(dplyr); library(tidybayes)
+draws_ltmp_olre <- as_draws_df(fit_brmsb_ltmp) %>%
+  select(starts_with("b_")) %>%
+  pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+  filter(term != "b_Intercept") %>%
+  mutate(term = gsub("b_", "", term), term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("histmDHW6_s", "Prior Exposure", term), term = gsub("secc3m_s", "Secchi Depth", term),
+         term = gsub("cloudp_90_s", "Cloud Cover", term), term = gsub("winyear_sd_s", "Winter SST SD", term),
+         term = gsub("mcur_90_s", "Current Speed", term), term = gsub("prop_acropora_s", "Prop. Acropora", term),
+         term = gsub(":", " x ", term))
+ggplot(draws_ltmp_olre, aes(x = estimate, y = reorder(term, estimate))) +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi, fill = "coral", alpha = 0.7, normalize = "xy") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL, title = "LTMP Benthic — Posterior Effect Distributions (Binomial-OLRE)") +
+  theme_bw(base_size = 12)
+```
+
+#### Quasibinomial GLM
+
+```{r qbin-ltmp-effects}
+#| label: qbin-ltmp-effects
+#| fig-cap: "LTMP Benthic — Coefficient estimates (logit scale) with 90% CI."
+#| fig-width: 8
+#| fig-height: 5
+
+coef_ltmp <- as.data.frame(coef(summary(fit_qbin_ltmp)))
+names(coef_ltmp) <- c("Estimate", "SE", "t", "p")
+coef_ltmp$Term <- rownames(coef_ltmp)
+coef_ltmp <- coef_ltmp[coef_ltmp$Term != "(Intercept)", ]
+z90 <- qnorm(0.95)
+coef_ltmp$lo <- coef_ltmp$Estimate - z90 * coef_ltmp$SE
+coef_ltmp$hi <- coef_ltmp$Estimate + z90 * coef_ltmp$SE
+coef_ltmp$Term <- gsub("MaxDHW.mean", "DHW", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("secc3m", "Secchi Depth", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("cloudp_90", "Cloud Cover", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("winyear_sd", "Winter SST SD", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("mcur_90", "Current Speed", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("prop_acropora", "Prop. Acropora", coef_ltmp$Term)
+coef_ltmp$Term <- gsub(":", " x ", coef_ltmp$Term)
+coef_ltmp$sig <- ifelse(coef_ltmp$lo > 0 | coef_ltmp$hi < 0, "Significant", "Not significant")
+coef_ltmp$Term <- reorder(coef_ltmp$Term, coef_ltmp$Estimate)
+ggplot(coef_ltmp, aes(x = Estimate, y = Term, colour = sig)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
+  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
+  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
+       title = "LTMP Benthic — Effect Sizes (90% CI)") +
+  theme_bw(base_size = 12) + theme(legend.position = "bottom")
+```
+:::
+
+### Dose-Response Curves
+
+::: {.panel-tabset}
+#### Bayesian Beta

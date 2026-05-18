@@ -1,0 +1,397 @@
+---
+title: "Bleachign Mortality"
+author: "Sam Matthews"
+date: "2026-01-19"
+output: html_document
+---
+
+
+## Recreating the Hughes et al. (2018) DHW–cover-change plot, then testing extrapolation to 15 DHW
+
+This workflow mirrors the relationship shown in *Hughes et al.* (2018) “Global warming transforms coral reef assemblages” (Nature). ([Nature][1]) The paper links accumulated heat stress (Degree Heating Weeks; DHW) to changes in coral assemblages and cover following the 2016 heatwave on the Great Barrier Reef. ([Nature][1])
+
+### 1) Get the variables needed for the plot
+
+Your spreadsheet includes `ChangeInCover = log10(final cover) − log10(initial cover)`. That’s a log10 ratio, so:
+
+* `final/initial = 10^(ChangeInCover)`
+* `% change = (final/initial − 1) × 100`
+
+This produces a response on the same “negative percent change” scale as the figure (declines approaching −100%).
+
+### 2) Recreate the paper-style figure
+
+To visually match the published panel, we:
+
+* plot reef points as triangles against DHW,
+* overlay a nonparametric smooth (LOESS) with a confidence ribbon (descriptive fit over the observed DHW range),
+* optionally annotate an *r²* from a simple linear regression as a compact summary (the LOESS itself doesn’t have a single r²).
+
+### 3) Compare extrapolation behaviour out to 15 DHW
+
+Because LOESS is not designed for principled extrapolation, we fit two bounded models to the **proportion remaining** `final/initial` (i.e., `ratio` in [0,1]) and then convert predictions back to percent change:
+
+* **Fractional logistic regression** (`glm(..., quasibinomial("logit"))`): treats `ratio` as a proportion with a logit mean structure; gives standard errors via `predict(..., se.fit=TRUE)`.
+* **Beta regression** (`betareg(..., link="logit")`): often better for continuous proportions with non-constant variance, but requires values strictly in (0,1), so we apply a small standard “shrink” transform before fitting.
+
+For beta regression uncertainty, `betareg::predict()` doesn’t provide `se.fit`, so we generate **bootstrap-style prediction intervals** by simulating coefficients from the fitted covariance matrix and propagating them through the inverse-logit. This gives a fair, model-based uncertainty band when projecting to 15 DHW.
+
+### 4) Data provenance
+
+The Excel file you’re using (`InWaterSurveyData.xlsx`) appears to come from the companion public dataset deposited at JCU (“Global warming transforms coral reef assemblages”), which provides the underlying survey and bleaching data supporting the Nature paper. ([researchdata.jcu.edu.au][2])
+
+[1]: https://www.nature.com/articles/s41586-018-0041-2?utm_source=chatgpt.com "Global warming transforms coral reef assemblages"
+[2]: https://researchdata.jcu.edu.au/published/16b8774ca262131b430148506083d3ef/?utm_source=chatgpt.com "Global warming transforms coral reef assemblages"
+
+
+
+```{r Load Data}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(janitor)
+
+# Load
+df_raw <- read_excel("data/hughesetal2018/InWaterSurveyData.xlsx") %>%
+  clean_names()
+
+# Expect names like: reefid, k_dhw_degree_centigrade_weeks, changeincover_log10final_cover_log10initial_cover
+# Adjust these two if your cleaned names differ:
+df <- df_raw %>%
+  transmute(
+    Reef_ID = reef_id,
+    dhw     = x5k_dhw_degree_centigrade_weeks,
+    dlog10  = change_in_cover_log10_final_cover_log10_initial_cover
+  ) %>%
+  filter(is.finite(dhw), is.finite(dlog10)) %>%
+  mutate(
+    ratio = 10^dlog10,                 # final / initial
+    pct_change = (ratio - 1) * 100     # percent change in cover
+  ) %>%
+  mutate(Mort.bin = ifelse(pct_change>=0, 0.001, -pct_change/100))
+
+```
+
+
+```{r Plot Figure}
+r2 <- summary(lm(dlog10 ~ dhw, data = df))$r.squared
+
+p_hughes <- ggplot(df, aes(dhw, dlog10)) +
+  geom_point(shape = 17, colour = "red", size = 2, alpha = 0.85) +
+  geom_smooth(method = "gam", se = TRUE, colour = "red", fill = "red") +
+  annotate("text", x = Inf, y = Inf,
+           label = paste0("r\u00B2 = ", sprintf("%.2f", r2)),
+           hjust = 1.1, vjust = 1.5) +
+  theme_classic() +
+  labs(x = "DHW (\u00B0C-weeks)", y = "Change in coral cover (%)")
+
+p_hughes
+
+```
+
+```{r Other models}
+library(betareg)
+
+# Keep ratio in [0,1], then nudge into (0,1) for beta regression
+n <- nrow(df)
+
+df2 <- df %>%
+  mutate(
+    ratio01 = pmin(pmax(ratio, 0), 1),
+    ratio_beta = (ratio01 * (n - 1) + 0.5) / n   # Smithson–Verkuilen transform into (0,1)
+  )
+
+# Use a simple quadratic in DHW to allow curvature (you can change this)
+m_logit <- glm(ratio01 ~ poly(dhw, 2, raw = TRUE),
+               family = quasibinomial(link = "logit"),
+               data = df2)
+
+m_beta  <- betareg(ratio_beta ~ poly(dhw, 2, raw = TRUE),
+                   link = "logit",
+                   data = df2)
+
+```
+
+```{r Predict and Plot}
+library(MASS)     # mvrnorm
+inv_logit <- function(x) 1 / (1 + exp(-x))
+
+grid <- data.frame(dhw = seq(0, 15, by = 0.05))
+dhw_max_obs <- max(df2$dhw, na.rm = TRUE)
+
+# Fractional logistic predictions (on link scale for SEs)
+prL <- predict(m_logit, newdata = grid, type = "link", se.fit = TRUE)
+grid$logit_fit <- inv_logit(prL$fit)
+grid$logit_lwr <- inv_logit(prL$fit - 1.96 * prL$se.fit)
+grid$logit_upr <- inv_logit(prL$fit + 1.96 * prL$se.fit)
+
+# Beta regression predictions (also on link scale for SEs)
+
+
+grid$beta_fit <- predict(m_beta, newdata = grid, type = "response")
+# then convert to percent change
+grid$beta_pct <- (grid$beta_fit - 1) * 100
+# Convert back to percent change for plotting (matches Hughes-style y-axis)
+pred_long <- bind_rows(
+  grid %>% transmute(dhw, model = "Fractional logistic",
+                     pct = (logit_fit - 1) * 100,
+                     lwr = (logit_lwr - 1) * 100,
+                     upr = (logit_upr - 1) * 100),
+  grid %>% transmute(dhw, model = "Beta regression",
+                     pct = (beta_fit - 1) * 100)
+)
+
+ggplot(df2, aes(dhw, pct_change)) +
+  geom_smooth(method = "gam",  se = TRUE, colour = "red", fill = "red") +
+  geom_point(shape = 17, colour = "red", size = 2, alpha = 0.6) +
+  geom_ribbon(data = pred_long, aes(x=dhw,y = pct, ymin = lwr, ymax = upr, fill = model),
+              alpha = 0.20, inherit.aes = FALSE) +
+  geom_line(data = pred_long, aes(x=dhw,y = pct, colour = model),
+            linewidth = 1, inherit.aes = FALSE) +
+  geom_vline(xintercept = dhw_max_obs, linetype = 2) +
+  theme_bw() +
+  # coord_cartesian(ylim = c(-100, 50)) +
+  labs(x = "DHW (\u00B0C-weeks)",
+       y = "Change in coral cover (%)",
+       colour = NULL, fill = NULL)
+
+ggplot(df, aes(x = dhw, y = 1 - Mort.bin)) +
+  geom_point(shape = 17, colour = "red", size = 2, alpha = 0.6) +
+  geom_smooth(
+    method = "glm",
+    colour = "red",
+    method.args = list(family = binomial()),
+    formula = y ~ x,
+    se = TRUE
+  ) +
+  theme_bw() 
+```
+## Second attempt
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(mgcv)
+library(betareg)
+library(MASS)
+
+inv_logit <- function(x) 1 / (1 + exp(-x))
+
+dat.bleach <- df %>%
+  mutate(
+    DHW = as.numeric(dhw),
+    Mort.bin = as.numeric(Mort.bin)
+  ) %>%
+  filter(is.finite(DHW), is.finite(Mort.bin)) %>%
+  filter(Mort.bin >= 0, Mort.bin <= 1)
+
+# ---- 1) "Binomial" GLM for proportions ----
+# Use quasibinomial if you don't have a denominator n
+mod.qbin <- glm(Mort.bin ~ DHW,
+                data = dat.bleach,
+                family = quasibinomial(link = "logit"))
+
+# ---- 2) Beta regression ----
+# Requires Mort.bin strictly in (0,1); nudge if needed
+n <- nrow(dat.bleach)
+dat_beta <- dat.bleach %>%
+  mutate(
+    Mort.beta = pmin(pmax(Mort.bin, 0), 1),
+    Mort.beta = (Mort.beta * (n - 1) + 0.5) / n
+  )
+
+mod.beta <- betareg(Mort.beta ~ DHW, data = dat_beta, link = "logit")
+
+# ---- 3) GAM comparator (Hughes-style smooth) ----
+mod.gam <- gam(Mort.bin ~ s(DHW, k = 3, bs = "cs"),
+               data = dat.bleach,
+               family = quasibinomial(link = "logit"),
+               method = "REML")
+
+```
+
+## Predict and Plot
+
+```{r}
+grid <- data.frame(DHW = seq(0, 16, by = 0.05))
+
+# Quasi-binomial GLM CIs
+pr_q <- predict(mod.qbin, newdata = grid, type = "link", se.fit = TRUE)
+grid$q_fit <- inv_logit(pr_q$fit)
+grid$q_lwr <- inv_logit(pr_q$fit - 1.96 * pr_q$se.fit)
+grid$q_upr <- inv_logit(pr_q$fit + 1.96 * pr_q$se.fit)
+
+# GAM CIs
+pr_g <- predict(mod.gam, newdata = grid, type = "link", se.fit = TRUE)
+grid$gam_fit <- inv_logit(pr_g$fit)
+grid$gam_lwr <- inv_logit(pr_g$fit - 1.96 * pr_g$se.fit)
+grid$gam_upr <- inv_logit(pr_g$fit + 1.96 * pr_g$se.fit)
+
+# Beta regression mean prediction
+grid$beta_fit <- predict(mod.beta, newdata = grid, type = "response")
+
+# Beta regression CIs via coefficient simulation (since se.fit isn't supported)
+# design matrix for mean model
+Xg <- model.matrix(~ DHW, data = grid)     # ngrid x 2
+
+# keep only mean coefficients (drop phi)
+b_mean <- coef(mod.beta)[c("(Intercept)", "DHW")]
+V_mean <- vcov(mod.beta)[c("(Intercept)", "DHW"),
+                         c("(Intercept)", "DHW")]
+
+set.seed(1)
+B <- 2000
+b_sim <- MASS::mvrnorm(B, mu = b_mean, Sigma = V_mean)   # B x 2
+
+eta_sim <- b_sim %*% t(Xg)      # (B x 2) %*% (2 x ngrid) => B x ngrid
+mu_sim  <- inv_logit(eta_sim)
+
+grid$beta_fit <- predict(mod.beta, newdata = grid, type = "response")
+grid$beta_lwr <- apply(mu_sim, 2, quantile, 0.025)
+grid$beta_upr <- apply(mu_sim, 2, quantile, 0.975)
+
+```
+## Final plot
+
+```{r}
+pred_long <- bind_rows(
+  grid %>% transmute(DHW, model = "GLM (quasi-binomial)", fit = q_fit,   lwr = q_lwr,   upr = q_upr),
+  grid %>% transmute(DHW, model = "Beta regression",      fit = beta_fit, lwr = beta_lwr, upr = beta_upr),
+  grid %>% transmute(DHW, model = "GAM (quasi-binomial)", fit = gam_fit, lwr = gam_lwr, upr = gam_upr)
+)
+
+x_max <- max(dat.bleach$DHW, na.rm = TRUE)
+
+ggplot(dat.bleach, aes(DHW, Mort.bin)) +
+
+  # grey region = extrapolation
+  annotate("rect",
+           xmin = x_max, xmax = Inf,
+           ymin = -Inf, ymax = Inf,
+           fill = "grey80", alpha = 0.5) +
+
+  # dotted vertical line at end of observed data
+  geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+
+  # label
+  annotate("text",
+           x = x_max + (15 - x_max) * 0.5,
+           y = 0.05,
+           label = "Extrapolation",
+           colour = "grey20",
+           size = 4) +
+
+  # your data points
+  geom_point(shape = 17, colour = "red", size = 2, alpha = 0.5) +
+
+  # model ribbons + lines
+  geom_ribbon(data = pred_long,
+              aes(x = DHW, ymin = lwr, ymax = upr, fill = model),
+              alpha = 0.15, inherit.aes = FALSE) +
+  geom_line(data = pred_long,
+            aes(x = DHW, y = fit, colour = model),
+            linewidth = 1, inherit.aes = FALSE) +
+
+  coord_cartesian(xlim = c(0, 15), ylim = c(0, 1)) +
+  theme_classic() +
+  labs(x = "DHW (\u00B0C-weeks)", y = "Mortality proportion", colour = NULL, fill = NULL)
+
+```
+
+# Recreate ReefMod curve
+
+
+```{r}
+reefmod_M <- function(DHW, d = 7, s = 1, threshold = 3) {
+  # Eq (2)
+  w <- 1 / (0.420 + 0.272 * d)
+
+  # Eq (1)
+  m <- w * s * (exp(0.168 + 0.347 * DHW) - 1) / 100
+  m <- pmin(1, pmax(0, m))
+  m[DHW < threshold] <- 0  # bleaching only when DHW >= 3
+
+  # Eq (3)
+  M <- 1 - (1 - m)^6
+  pmin(1, pmax(0, M))
+}
+
+sens_s <- c(1.4, 1.5, 1.6, 1.7)  # heat-sensitive (Supp Fig 2c)
+tol_s  <- 0.25                  # heat-tolerant
+
+reefmod_df <- tibble(
+  DHW = seq(0, 16, by = 0.05),
+  M_sens     = reefmod_M(DHW, d = 7, s = mean(sens_s)),
+  M_sens_lwr = reefmod_M(DHW, d = 7, s = min(sens_s)),
+  M_sens_upr = reefmod_M(DHW, d = 7, s = max(sens_s)),
+  M_tol      = reefmod_M(DHW, d = 7, s = tol_s)
+)
+```
+
+
+
+## Update PLot
+
+```{r}
+Fig2 <- ggplot(dat.bleach, aes(DHW, Mort.bin)) +
+
+  annotate("rect",
+           xmin = x_max, xmax = Inf,
+           ymin = -Inf, ymax = Inf,
+           fill = "grey80", alpha = 0.5) +
+
+  geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+
+  annotate("text",
+           x = x_max + (15 - x_max) * 0.5,
+           y = 0.05,
+           label = "Extrapolation",
+           colour = "grey20",
+           size = 4) +
+
+  geom_point(shape = 17, colour = "grey20", size = 2, alpha = 0.5) +
+
+  geom_ribbon(data = pred_long,
+              aes(x = DHW, ymin = lwr, ymax = upr, fill = model),
+              alpha = 0.15, inherit.aes = FALSE) +
+  geom_line(data = pred_long,
+            aes(x = DHW, y = fit, colour = model),
+            linewidth = 1, inherit.aes = FALSE) +
+
+  # ---- ReefMod assumed bleaching mortality @ ~7 m ----
+  geom_ribbon(
+    data = reefmod_df,
+    aes(x = DHW, ymin = M_sens_lwr, ymax = M_sens_upr),
+    inherit.aes = FALSE,
+    fill = "grey20", alpha = 0.06
+  ) +
+  geom_line(
+    data = reefmod_df,
+    aes(x = DHW, y = M_sens),
+    inherit.aes = FALSE,
+    colour = "grey20", linewidth = 1.1
+  ) +
+  geom_line(
+    data = reefmod_df,
+    aes(x = DHW, y = M_tol),
+    inherit.aes = FALSE,
+    colour = "grey20", linewidth = 1.1, linetype = "dashed"
+  ) +
+  annotate(
+    "text",
+    x = x_max + (15 - x_max) * 0.15,
+    y = 0.18,
+    label = "ReefMod assumed @7 m\nsolid: heat-sensitive (s≈1.4–1.7)\ndashed: heat-tolerant (s=0.25)",
+    hjust = 0, size = 3
+  ) +
+  scale_color_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  scale_fill_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  coord_cartesian(xlim = c(0, 16), ylim = c(0, 1)) +
+  theme_classic() +
+  labs(x = "DHW (\u00B0C-weeks)", y = "Mortality proportion", colour = NULL, fill = NULL)
+Fig2
+ggsave("output/plots/AltmernateModels.png", Fig2, width = 6, height = 4, dpi = 300)
+```
+
+
+

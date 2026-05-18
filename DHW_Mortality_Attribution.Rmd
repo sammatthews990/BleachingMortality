@@ -1,0 +1,2652 @@
+---
+title: "DHWMortality_Attribution"
+author: "Samuel Matthews"
+date: "2024-05-29"
+bibliography: references.bib
+link-citations: true
+output: 
+  rmdformats::downcute:
+    # downcute_theme: "chaos"
+    code_folding: hide
+    self_contained: true
+    lightbox: true
+    gallery: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(arrow)
+library(stringr)
+library(janitor)
+library(lubridate)
+```
+
+# Import and Plot Growth Curves
+
+## Asumptions to be fixed
+
+-   Gompertz Growth parameters are supplied at 1km grid cell size. THey have just been averaged for the prototype version.
+-   Future version needs to use the SD and total variation for a reef to estimate. COuld retain the grid cells and then combine the reef level estimate
+-   Need to simulate the posterior distribution of the gorwth parameters and the starting coral value to propagate uncertainty (HELP! Murray)
+
+```{r Model Time to Recovery, cache=TRUE}
+# 1. Get Growth Rates and Cmax from Aaron's paper
+# 2. Calculate years to full recovery (undisturbed) from full range of 
+dat.grid = read.csv("Data/COTSModParams.csv") 
+dat.gridSum = dat.grid %>% 
+  mutate(REEF_ID = ifelse(grepl("14-116",REEF_ID, fixed = T),"14-116", REEF_ID),
+         REEF_NAME = ifelse(grepl("14-116",REEF_NAME, fixed = T),
+                            "Lizard Island Reef (14-116)", REEF_NAME)) %>%
+  group_by(REEF_NAME, REEF_ID,SECTOR,
+           # CROSS_SHELF
+           ) %>%
+  summarise(B0 = mean(pred.b0.mean),
+            HC.asym = mean(pred.HCmax.mean),
+            WQ1 = mean(Primary),
+            WQ2 = mean(Secondary),
+            WQ3 = mean(Tertiary)) %>%
+  mutate(WQ = WQ1+WQ2+WQ3)
+doCoralGrowth = function(n, CoralCover, B0, HC.asym,WQ) {
+  WQ.mn.sd = c(-0.68, 0.03)
+  # b0.wq <- B0 + WQ * rnorm(length(WQ), mean=WQ.mn.sd[1], sd=WQ.mn.sd[2])
+  b0.wq <- B0 + WQ * WQ.mn.sd
+  b1.wq <- b0.wq / log(HC.asym)
+  b1.wq <- b0.wq / log(HC.asym)
+  CoralCover <- log(CoralCover)
+  b0.wq = as.numeric(b0.wq); b1.wq = as.numeric(b1.wq); CoralCover=as.numeric(CoralCover)
+  df = matrix(nrow=n+1, ncol=3)
+  # B1 <- B0/log(HC.asym)
+  # CoralCover <- log(CoralCover)
+  # B0 = as.numeric(B0); B1 = as.numeric(B1); CoralCover=as.numeric(CoralCover)
+  # browser()
+   df[1,1] = 0
+   df[1,2] = exp(CoralCover)
+  for (i in 1:n) {
+ CoralCover.t1 <- (b0.wq + (1 - b1.wq)*CoralCover)
+  # browser()
+  
+  df[i+1,1] = i
+  df[i+1,2] = exp(CoralCover.t1)
+  df[i+1,3] = exp(CoralCover.t1)-exp(CoralCover)
+  
+  CoralCover = CoralCover.t1
+  }
+  colnames(df) = c("Year", "CoralCover", "CoralGrowth")
+  # browser()
+  return(df)
+}
+
+doCoralGrowth2 = function(n,CoralCover, B0,  HC.asym) {
+  # b0.wq <- B0 + WQ * rnorm(length(WQ), mean=WQ.mn.sd[1], sd=WQ.mn.sd[2])
+  # b1.wq <- b0.wq / log(HC.asym)
+  df = matrix(nrow=n+1, ncol=3)
+  B1 <- B0/log(HC.asym)
+  CoralCover <- log(CoralCover)
+  B0 = as.numeric(B0); B1 = as.numeric(B1); CoralCover=as.numeric(CoralCover)
+  # browser()
+   df[1,1] = 0
+   df[1,2] = exp(CoralCover)
+  for (i in 1:n) {
+  CoralCover.t1 <- (B0 + (1 - B1)*CoralCover)
+  # browser()
+  
+  df[i+1,1] = i
+  df[i+1,2] = exp(CoralCover.t1)
+  df[i+1,3] = exp(CoralCover.t1)-exp(CoralCover)
+  
+  CoralCover = CoralCover.t1
+  }
+  colnames(df) = c("Year", "CoralCover", "CoralGrowth")
+  # browser()
+  return(df)
+}
+
+CC.tmp = as.data.frame(doCoralGrowth(30,0.1, dat.gridSum[1,4], dat.gridSum[1,5],dat.gridSum[1,9])) %>% mutate(ReefName = NA, Start=NA)
+
+CC.tmp = CC.tmp[-c(1:31),]
+CCs = c(0.1, 1:20)
+for (i in 1:length(dat.gridSum$REEF_NAME)){
+  # for (j in CCs){
+CCtmp2 = as.data.frame(doCoralGrowth(30,0.1, dat.gridSum[i,4], dat.gridSum[i,5],dat.gridSum[i,9]))
+# CCtmp2$Start = j
+CC.tmp = bind_rows(CC.tmp, CCtmp2)
+  # }
+}
+CC.tmp$ReefName = rep(dat.gridSum$REEF_NAME, each=31)
+CC.tmp$REEF_NAME = rep(dat.gridSum$REEF_NAME, each=31)
+CC.tmp$ReefID = rep(dat.gridSum$REEF_ID, each=31)
+CC.tmp$Sector = rep(dat.gridSum$SECTOR, each=31)
+
+dat.gridSum = dat.gridSum %>% mutate(HC90 = 0.8 * HC.asym)
+CC.tmp = CC.tmp %>% left_join(select(dat.gridSum, REEF_NAME, HC90))
+CC.tmp$isabove = ifelse(CC.tmp$CoralCover > CC.tmp$HC90, 1,0)
+CC = CC.tmp %>% group_by(ReefName, isabove) %>% mutate(Max = max(Year)) %>%
+  ungroup() %>% group_by(ReefName) %>% 
+  mutate(Max = (min(Max))+1, Years2Rec = Max-Year, CC2 = round(CoralCover,0)) %>%
+  filter(Years2Rec>0)
+
+library(ggdist)
+p1.2  = ggplot(CC.tmp %>% filter(ReefID %in% c("14-116", "17-034", "18-075", "23-082a")), aes(x=Year, y=CoralCover, colour = ReefName)) +
+  stat_lineribbon(alpha=0.3) +
+  facet_wrap(~ReefName) + theme_classic() + theme(legend.position = "none")
+p1.2
+p1.3 = ggplot(CC.tmp, aes(x=Year, y=CoralCover)) +
+  stat_lineribbon(alpha=0.3) +
+  facet_wrap(~Sector) + theme_classic() + theme(legend.position = "none")
+p1.3
+# FOr all starts
+CC.tmp1 = as.data.frame(doCoralGrowth(30,0.1, dat.gridSum[1,4], dat.gridSum[1,5],dat.gridSum[1,9])) %>% mutate(ReefName = NA, Start=NA)
+```
+
+
+
+```{r, cache=T, eval=FALSE}
+CC.tmp1 = CC.tmp1[-c(1:31),]
+CCs = c(0.1, 1:20)
+for (i in 1:length(dat.gridSum$REEF_NAME)){
+  print(i)
+for (j in CCs){
+  print(j)
+CCtmp2 = as.data.frame(doCoralGrowth(20,j, dat.gridSum[i,4], dat.gridSum[i,5],dat.gridSum[i,9]))
+CCtmp2$Start = j
+
+CC.tmp1 = bind_rows(CC.tmp1, CCtmp2)
+  }
+}
+
+CC.tmp1$ReefName = rep(dat.gridSum$REEF_NAME, each=21*length(CCs))
+CC.tmp1$REEF_NAME = rep(dat.gridSum$REEF_NAME, each=21*length(CCs))
+CC.tmp1$ReefID = rep(dat.gridSum$REEF_ID, each=21*length(CCs))
+CC.tmp1$Sector = rep(dat.gridSum$SECTOR, each=21*length(CCs))
+
+
+
+
+CC.tmp1 = CC.tmp1 %>% left_join(select(dat.gridSum, REEF_NAME, HC90))
+CC.tmp1$isabove = ifelse(CC.tmp1$CoralCover > CC.tmp1$HC90, 1,0)
+CC.tmp1$above = (CC.tmp1$CoralCover - CC.tmp1$HC90)
+CC1 = CC.tmp1 %>% group_by(ReefName,Start,isabove) %>% mutate(Max = max(Year)) %>%
+  ungroup() %>% group_by(ReefName, Start) %>% 
+  mutate(Max = (min(Max))+1, Years2Rec = Max-Year, CC2 = round(CoralCover,0)) %>%
+  filter(Years2Rec>0) %>% 
+  group_by(ReefName, REEF_NAME, REEF_ID, Sector, Start) %>%
+  summarise(Years2Rec = max(Years2Rec), above = max(above)) #%>% filter(Years2Rec != 21) 
+CC1Sum = CC1 %>% group_by(Sector, Start) %>%
+  summarise(Mn = mean(Years2Rec),se = sd(Years2Rec)/sqrt(n()))
+CCJB = CC1 %>% filter(REEF_ID == "18-075") #%>%
+  # group_by(Sector,Years2Rec) %>% 
+  # summarise(Start = min(Start))
+pRec.JB = ggplot(CCJB, aes(x=Start, y=Years2Rec)) + 
+  geom_smooth() +
+  geom_point() + xlab("Coral Cover") + ylab("years to Recovery") +
+  geom_line() + theme_light() +ggtitle("John Brewer Reef")
+
+CCKP = CC1 %>% filter(REEF_ID == "18-079") #%>%
+  # group_by(Sector,Years2Rec) %>% 
+  # summarise(Start = min(Start))
+pRec.KP = ggplot(CCKP, aes(x=Start, y=Years2Rec)) + 
+  geom_smooth() +
+  geom_point() + xlab("Coral Cover") + ylab("years to Recovery") +
+  geom_line() + theme_light() +ggtitle("Keeper Reef")
+```
+
+# Import and Plot AIMS modelled times series
+
+This section will load in the AIMS data accessible through their website which models coral cover trajectories
+
+## Assumptions and Issues to be addressed
+
+-   This is using the manta tow hard coral estimates, I believe the growth parameter estimates [@macneil2019] are based off the benthic transect data. This was corrected for in the[@mellin2019] paper but need to see how.
+-   Looks like Cooktown / Lizard Reefs had their growth parameters underestimated ***will need to be remodelled***
+
+```{r Import AIMS time series, cache=F}
+dat.AIMSRef = read.csv("Data/AIMS-Reef_Reference.csv") %>% rename(Reef_Name = AIMS_REEF_NAME)
+dat.AIMS = read.csv("Data/AIMS_ModelledCoralCover_Reef.csv") %>% 
+  left_join(dat.AIMSRef) %>% #filter(!domain_name %in% c("CG", "PC", "PO")) %>%
+  mutate(ReefID = ifelse(grepl("14-116",ReefID, fixed = T),"14-116", ReefID),
+         ReefName = ifelse(grepl("14-116",ReefName, fixed = T),
+                            "Lizard Island Reef (14-116)", ReefName)) %>%
+  mutate(domain_name = factor(SECT_NAME),
+         date = as.Date(date)) %>%
+  rename(median_HC = median, lower_HC_CI = lower, 
+         upper_HC_CI = upper, mean_HC = mean) %>%
+  mutate(median_HC = median_HC*100, lower_HC_CI = lower_HC_CI*100, 
+         upper_HC_CI = upper_HC_CI*100, mean_HC = mean_HC*100) %>%
+  relocate(ReefName, .after = Reef_Name)
+  
+
+datatable(dat.AIMS %>%  
+            mutate(across(where(is.numeric), ~ round(., 4))),
+          style = "default")
+```
+
+```{r Plot Time Series}
+ggplot(dat.AIMS %>% filter(ReefID %in% c("14-116", "17-034", "18-075", "23-082a")), aes(x=report_year, y=median_HC, colour = ReefName, fill=ReefName)) +
+  geom_line(colour="black")+
+  geom_pointrange(aes(ymin=lower_HC_CI, ymax=upper_HC_CI)) +
+  geom_ribbon(aes(ymin=lower_HC_CI, ymax=upper_HC_CI), alpha=0.3, colour=NA) +
+  facet_wrap(~ReefName, scales = "free_y") + theme_bw() + theme(legend.position = "none")
+
+ggplot(dat.AIMS %>% filter(ReefID %in% c("14-116")), aes(x=report_year, y=median_HC, colour = ReefName, fill=ReefName)) +
+  geom_line(colour="black")+
+  geom_pointrange(aes(ymin=lower_HC_CI, ymax=upper_HC_CI)) +
+  geom_ribbon(aes(ymin=lower_HC_CI, ymax=upper_HC_CI), alpha=0.3, colour=NA) +
+  facet_wrap(~ReefName, scales = "free_y") + theme_bw() + theme(legend.position = "none")
+
+```
+
+# Import and plot LTMP recorded disturbance events
+
+```{r}
+
+secorder = c("CG", "PC",  "CL", "CA","IN", "TO","CU", "WH", "PO", "SW","CB")
+secorderlabs = c("Cape Grenville", "Princess Charlotte Bay",  "Cooktown / Lizard Island",   "Cairns","Innisfail", "Townsville", "Cape Upstart", "Whitsunday", "Pompey","Swain","Capricorn Bunker")
+#Importing data
+dat.DIST <- read.csv("Data/Disturbances_manta.csv") 
+###
+
+
+#Plotting ALL DISTURBANCES across ALL REEFS
+df.DIST <- dat.DIST %>%
+  left_join(dat.AIMSRef, by = c( "FULLREEF_ID")) %>%
+  mutate(DISTURBANCE_TYPE=replace(DISTURBANCE_TYPE, DISTURBANCE_TYPE=="m","u")) %>% #said these need to be changed to unknown in the email
+  filter(!SECT_NAME %in% c("Outside AIMS field sectors","PO","CG","PB")) %>%
+  filter(!DISTURBANCE_TYPE == "n") %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[b]\\b.*", "B", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[c]\\b.*", "C", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[d]\\b.*", "D", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[f]\\b.*", "F", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[n]\\b.*", "N", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[s]\\b.*", "S", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE = gsub(".*\\b[u]\\b.*", "U", DISTURBANCE_TYPE)) %>%
+  mutate(DISTURBANCE_TYPE=as.factor(DISTURBANCE_TYPE)) %>%
+  #filter(REPORT_YEAR > 1990) %>%
+  group_by(SECT_NAME, REPORT_YEAR, DISTURBANCE_TYPE) %>%
+  distinct(AIMS_REEF_NAME,REEF_NAME, REPORT_YEAR, DISTURBANCE_TYPE) %>%
+  mutate(SECTOR=factor(SECT_NAME, levels=secorderlabs, labels=secorderlabs))
+
+ggplot(df.DIST %>% filter(AIMS_REEF_NAME == "Lizard Isles"), aes(x=REPORT_YEAR, fill = DISTURBANCE_TYPE)) +
+  geom_histogram(binwidth=1) +
+  scale_fill_manual(values = c("B"="darkorange", "C" = "maroon4", "D" = "darkolivegreen3",
+                               "F"="burlywood4", "S" = "dodgerblue2", "U" = "grey")) +
+  theme_bw() + ggtitle("Lizard Island - Recorded Disturbances LTMP Manta Tow") 
+
+df.DIST.liz = df.DIST %>% filter(AIMS_REEF_NAME == "Lizard Isles")
+
+ggplot(dat.AIMS %>% filter(ReefID %in% c("14-116")), 
+       aes(x=report_year)) +
+  geom_line(aes(y=median_HC),colour="black")+
+  geom_linerange(data = df.DIST.liz, 
+                 position = position_dodge2(width = 0.8),
+               # arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+               aes(x = REPORT_YEAR, ymax = 25, 
+                   ymin = 15,color = DISTURBANCE_TYPE), size=0.8) +
+  ggrepel::geom_label_repel(data = df.DIST.liz,
+                           aes(x = REPORT_YEAR, y = 27 * 0.9,
+                               label = DISTURBANCE_TYPE,
+                               color = DISTURBANCE_TYPE)) +
+  geom_pointrange(aes(y=median_HC, ymin=lower_HC_CI, ymax=upper_HC_CI)) +
+  scale_colour_manual(values = c("B"="darkorange", "C" = "maroon4", 
+                                 "D" = "darkolivegreen3","F"="burlywood4", 
+                                 "S" = "dodgerblue2", "U" = "grey")) +
+  geom_ribbon(aes(ymin=lower_HC_CI, ymax=upper_HC_CI), fill="coral",
+              alpha=0.3, colour=NA) +
+  facet_wrap(~ReefName, scales = "free_y") + 
+  theme_bw() + 
+  theme(legend.position = "none")
+
+```
+
+## Infilling Lizard Island time series
+
+The data points for 2014,16,18,20 need to be estimates using the gompertz growth model. We will a complete time series for each year, with an additional column that holds the estimate for what coral "should have been"without disturbance
+
+```{r Infilling Lizard}
+dat.Liz = dat.AIMS %>% filter(ReefID %in% c("14-116")) %>%
+  select(ReefName, Reef_Name, FULLREEF_ID, ReefID, SECTOR, report_year,
+             median_HC:mean_HC)
+dat.grth.Liz = dat.gridSum[dat.gridSum$REEF_ID %in% c("14-116"),]
+
+
+# Simplified coral growth function
+doCoralGrowth.Simp = function(CoralCover, B0, HC.asym,WQ) {
+  # browser()
+  WQ.mn.sd = c(-0.68, 0.03)
+  # b0.wq <- B0 + WQ * rnorm(length(WQ), mean=WQ.mn.sd[1], sd=WQ.mn.sd[2])
+  b0.wq <- B0 + WQ * WQ.mn.sd
+  b1.wq <- b0.wq / log(HC.asym)
+  b1.wq <- b0.wq / log(HC.asym)
+  CoralCover <- log(CoralCover)
+  b0.wq = as.numeric(b0.wq); b1.wq = as.numeric(b1.wq); 
+  CoralCover=as.numeric(CoralCover)
+  # df = matrix(nrow=n+1, ncol=3)
+  # B1 <- B0/log(HC.asym)
+  # CoralCover <- log(CoralCover)
+  # B0 = as.numeric(B0); B1 = as.numeric(B1); CoralCover=as.numeric(CoralCover)
+  # browser()
+  #  df[1,1] = 0
+  #  df[1,2] = exp(CoralCover)
+  # for (i in 1:n) {
+  CoralCover.t1 = (b0.wq + (1 - b1.wq)*CoralCover)
+
+  CoralCover.t1 = exp(CoralCover.t1)
+  Change.t1 = CoralCover.t1-exp(CoralCover)
+  return(c(exp(CoralCover), CoralCover.t1, Change.t1))
+}
+
+
+dat.Liz.Infill = dat.AIMS %>% filter(ReefID %in% c("14-116")) %>%
+  select(ReefName, Reef_Name, FULLREEF_ID, ReefID, SECTOR) %>% distinct() %>%
+  expand_grid(report_year=1986:2024) %>%
+  left_join(dat.Liz) %>%
+  # mutate(mean_HC.lag = lag(mean_HC, n=1)) %>%
+  rowwise() %>%
+  mutate(Pred.Grth = doCoralGrowth.Simp(CoralCover=mean_HC,B0=dat.grth.Liz[,"B0"],
+                                     WQ =  dat.grth.Liz[,"WQ"], 
+                                     HC.asym = dat.grth.Liz[,"HC.asym"])[3]) %>%
+  ungroup() %>%
+  mutate(mean_HC.Pred = lag(mean_HC, n=1) + lag(Pred.Grth, n=1)) %>%
+  rowwise() %>%
+  mutate(Pred.Grth = ifelse(is.na(mean_HC),
+                            doCoralGrowth.Simp(CoralCover=mean_HC.Pred,
+                                     B0=dat.grth.Liz[,"B0"],
+                                     WQ =  dat.grth.Liz[,"WQ"], 
+                                     HC.asym = dat.grth.Liz[,"HC.asym"])[3],
+                            Pred.Grth)) %>%
+  ungroup() %>%
+  mutate(mean_HC.Pred = ifelse(is.na(mean_HC.Pred), 
+                               lag(mean_HC.Pred, n=1) + lag(Pred.Grth, n=1),
+                               mean_HC.Pred),
+         mean_HC.infill = ifelse(is.na(mean_HC),mean_HC.Pred, mean_HC)) %>%
+  select(-Pred.Grth, -mean_HC.Pred) %>%
+  rowwise() %>%
+  mutate(Pred.Grth = doCoralGrowth.Simp(CoralCover=mean_HC.infill,
+                                        B0=dat.grth.Liz[,"B0"],
+                                     WQ =  dat.grth.Liz[,"WQ"], 
+                                     HC.asym = dat.grth.Liz[,"HC.asym"])[3]) %>%
+  ungroup() %>%
+  mutate(mean_HC.Pred = lag(mean_HC.infill, n=1) + lag(Pred.Grth, n=1))%>%
+  mutate(meanHC.diff =  mean_HC.infill -mean_HC.Pred) %>%
+  mutate(meanHC.reldiff = meanHC.diff/mean_HC.Pred)
+
+ggplot(dat.AIMS %>% filter(ReefID %in% c("14-116")),
+       aes(x=report_year)) +
+  geom_line(aes(y=median_HC),colour="black")+
+  geom_line(data=dat.Liz.Infill, aes(y=mean_HC.infill),colour="red")+
+   geom_line(data=dat.Liz.Infill, aes(y=mean_HC.Pred),colour="darkred")+
+  geom_linerange(data = df.DIST.liz %>% filter(REPORT_YEAR >2010), 
+                 position = position_dodge2(width = 0.8),
+               # arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+               aes(x = REPORT_YEAR, ymax = 25, 
+                   ymin = 15,color = DISTURBANCE_TYPE), size=0.8) +
+  ggrepel::geom_label_repel(data = df.DIST.liz %>% filter(REPORT_YEAR >2010),
+                           aes(x = REPORT_YEAR, y = 27 * 0.9,
+                               label = DISTURBANCE_TYPE,
+                               color = DISTURBANCE_TYPE)) +
+  geom_pointrange(aes(y=median_HC, ymin=lower_HC_CI, ymax=upper_HC_CI)) +
+  scale_colour_manual(values = c("B"="darkorange", "C" = "maroon4", 
+                                 "D" = "darkolivegreen3","F"="burlywood4", 
+                                 "S" = "dodgerblue2", "U" = "grey")) +
+  geom_ribbon(aes(ymin=lower_HC_CI, ymax=upper_HC_CI), fill="coral",
+              alpha=0.3, colour=NA) +
+  facet_wrap(~ReefName, scales = "free_y") + 
+  theme_bw() + 
+  theme(legend.position = "none") +
+  coord_cartesian(xlim = c(2010,2024))
+
+```
+
+# Existing DHW-Mortality Relationship
+
+This section will focus on the existing dataset used to estimate the DHW - MOratlity relationship. Importantly it will compare different distributions for fitting the realtionship as the binomial model may force too steep of a slope thus predciting close to 100% mortality at high DHW.
+
+## Compare beta vs binomial regression
+
+```{r}
+dat.bleach = read.csv("Data/DHW_vs_Coral_Cover_Dataset.csv")
+# colnames(dat.bleach) = c("DHW", "Change")
+
+dat.bleach = dat.bleach %>%
+  mutate(Mort.bin = ifelse(Change>=0, 0.001, -Change/100))
+
+ggplot(dat.bleach, aes(x=DHW, y=Change)) +
+  geom_point() +
+  geom_smooth() +
+  # geom_smooth(method="glm",method.args=list(family="binomial")) +
+  theme_bw()
+
+ggplot(dat.bleach, aes(x=DHW, y=Mort.bin)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,16)) +
+  # geom_smooth() +
+  geom_smooth(method="glm",method.args=list(family="binomial")) +
+  theme_bw()
+
+# Compare betareg to binomail
+library(betareg)
+mod.beta = betareg(Mort.bin ~ DHW, data=dat.bleach)
+mod.bin = glm(Mort.bin ~ DHW, data=dat.bleach, family = binomial(link="logit"))
+
+plot(resid(mod.beta) ~ fitted(mod.beta))
+lines(lowess(resid(mod.beta) ~ fitted(mod.beta)))
+
+plot(resid(mod.bin) ~ fitted(mod.bin))
+lines(lowess(resid(mod.bin) ~ fitted(mod.bin)))
+DHARMa::testUniformity(mod.bin)
+
+dat.resid <- sum(resid(mod.beta, type = "pearson")^2)
+1 - pchisq(dat.resid, mod.beta$df.resid)
+
+dat.resid <- sum(resid(mod.bin, type = "pearson")^2)
+1 - pchisq(dat.resid, mod.bin$df.resid)
+
+car::Anova(mod.beta)
+car::Anova(mod.bin)
+
+newdata = with(dat.bleach, 
+               data.frame(DHW = seq(0, 16, len = 100)))
+fit = predict(mod.bin, newdata = newdata, type = "link", se = TRUE)
+q = qt(0.975, df = df.residual(mod.bin))
+newdata = cbind(newdata, fit = binomial()$linkinv(fit$fit),
+    lower = binomial()$linkinv(fit$fit - q * fit$se.fit), 
+    upper = binomial()$linkinv(fit$fit +
+        q * fit$se.fit))
+
+newdata2 = with(dat.bleach, 
+               data.frame(DHW = seq(0, 16, len = 100)))
+fit = predict(mod.beta, newdata = newdata2, type = "link")
+q = qt(0.975, df = df.residual(mod.beta))
+newdata2 =  cbind(newdata2, fit = binomial()$linkinv(fit))
+ggplot(data = newdata, aes(y = fit, x = DHW)) + 
+  geom_point(data = dat.bleach,aes(y = Mort.bin)) + 
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+    fill = "blue", alpha = 0.3) + geom_line() +
+  geom_line(data = newdata2, aes(y = fit, x = DHW), colour = "red") +
+  theme_classic()
+
+
+```
+
+# Model existing LTMP mortality dataset
+
+## Asssumptions
+
+-   Here we will take the the LMTP time series and manta tow disturbance datasets.
+
+-   We will initially assume that all mortality in multiple events are from bleaching to look at the extreme case
+
+    -   The point here is that if the % mortality estimates are lower than Hughes et al estimates even without accounting for other drivers of mortality than its definitely worth proceeding
+
+```{r LTMP DHW Realtionship}
+Disturbances_manta <- read.csv("Data/Disturbances_manta.csv") %>% 
+  left_join(select(dat.AIMSRef, Reef_Name, ReefName), 
+            by=c("AIMS_REEF_NAME"="Reef_Name"))  %>%
+  rename("report_year"="REPORT_YEAR")
+dat.mort = read.csv("Data/DisturbanceMortality.csv") %>%
+  filter(!is.na(Lag), !Lag > 2) %>% 
+  left_join(select(dat.AIMSRef, Reef_Name, ReefName)) %>%
+  select(-DISTURBANCE_TYPE) %>% distinct() |> 
+  left_join(select(Disturbances_manta, ReefName, report_year, DISTURBANCE_TYPE),
+            by=c("ReefName", "report_year"))
+dat.mort.bl = dat.mort %>% 
+  filter(!DISTURBANCE_TYPE %in% c("c", "d", "s","f"), 
+         #Abs.Change <0,
+         report_year %in% c(1999,2003,2017,2018, 2021, 2024))
+
+ggplot(dat.mort.bl, aes(x=report_year)) +
+  geom_bar(stat="count")
+
+hist(dat.mort.bl$Abs.Change); hist(dat.mort.bl$Rel.Change)
+
+
+
+dat.DHW = read.csv("Data/DHW_1985_2024_GBRReefs.csv") %>%
+  rename("ReefName"="LOC_NAME_S") 
+
+dat.agin = dat.DHW |> filter(grepl('Agincourt', ReefName)) |> 
+  group_by(Year) |> summarise(MaxDHW.mean = mean(MaxDHW.mean, na.rm = T))
+
+dat.DHW = dat.DHW |> 
+  left_join(dat.agin, by="Year") |> 
+  mutate(MaxDHW.mean = ifelse(grepl('Agincourt', ReefName)& is.na(MaxDHW.mean.x),
+                         MaxDHW.mean.y,MaxDHW.mean.x)) |> 
+  select(-MaxDHW.mean.x, -MaxDHW.mean.y)
+#need to get the max of both years
+dat.yrs = dat.mort.bl %>% select(ReefName, report_year) |> 
+  mutate(Prev = report_year-1) |> 
+  left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "report_year"="Year")) |> 
+  left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "Prev"="Year")) |> rowwise() |> 
+  mutate(MaxDHW = max(MaxDHW.mean.x, MaxDHW.mean.y)) |> 
+  select(-MaxDHW.mean.x, -MaxDHW.mean.y)
+  
+
+dat.mod = dat.mort.bl |> left_join(dat.yrs, by=c("ReefName", "report_year")) #|> 
+  #filter(MaxDHW > 0.1) 
+
+ggplot(dat.mod , aes(x=MaxDHW, y=Rel.Change)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() +facet_grid(~report_year)
+
+ggplot(dat.mod , aes(x=MaxDHW, y=Abs.Change.Cor)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12), ylim = c(-20,20)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() +facet_grid(~report_year)
+
+# dat.mod2 = dat.mort.bl |> 
+#   left_join(dat.DHW, by=c("ReefName", "report_year"="Year")) |> 
+#   filter(MaxDHW.mean > 0.5) 
+#   #filter(Rel.Change <0.50) #|> 
+#   #filter(!Reef_Name =="Fitzroy Island", !report_year==2019)
+# 
+# ggplot(dat.mod2 , aes(x=MaxDHW.mean, y=Rel.Change)) +
+#   geom_point() +
+#   coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+#   # geom_smooth() +
+#   geom_smooth(method="gam") +
+#   theme_bw() +facet_grid(~report_year)
+
+# need to add lots of other years with minimal DHW and disturbance
+```
+
+# Mortality Attribution Plotting
+
+```{r nAive attribution plot}
+dat.mort.plot = dat.mort |> 
+  filter(Abs.Change <0, !DISTURBANCE_TYPE %in% c('n')) |> 
+  mutate(Decade = plyr::round_any(report_year,10, floor),
+         AllTime = "AllTime")
+ggplot(dat.mort.plot, aes(x=report_year, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="count") +
+  theme_bw()
+#Counts
+ggplot(dat.mort.plot, aes(x=report_year, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="count", position = "fill") +
+  theme_bw()
+#years coral change
+ggplot(dat.mort.plot, aes(x=report_year, y=Abs.Change.Cor, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity", position = "fill") +
+  theme_bw()
+
+ggplot(dat.mort.plot, aes(x=report_year, y=Abs.Change.Cor, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity") +
+  theme_bw()
+#Decades
+ggplot(dat.mort.plot, aes(x=Decade, y=Abs.Change.Cor, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity", position = "fill") +
+  theme_bw() +
+  scale_fill_manual(values = c("b"="darkorange", "c" = "maroon4", 
+                                 "d" = "darkolivegreen3","f"="burlywood4", 
+                                 "s" = "dodgerblue2", "u" = "grey")) +
+  scale_colour_manual(values = c("b"="darkorange", "c" = "maroon4", 
+                                 "d" = "darkolivegreen3","f"="burlywood4", 
+                                 "s" = "dodgerblue2", "u" = "grey"))
+
+
+ggplot(dat.mort.plot, aes(x=Decade, y=Abs.Change.Cor, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity") +
+  theme_bw()
+# All Time
+ggplot(dat.mort.plot, aes(x=AllTime, y=Abs.Change.Cor, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity", position = "fill") +
+  theme_bw()
+
+ggplot(dat.mort.plot, aes(x=AllTime, y=Abs.Change.Cor, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity") +
+  theme_bw()
+```
+
+## Update Disturbance table from AIMS API
+
+```{r}
+
+```
+
+```{r Updated Disturbance Table}
+library(readr)
+# THis is  the benthic data
+
+dat.mort.att = read_csv("Data/240522 dist.lookup_AIMSLTMP.csv") |> 
+  # filter(Abs.Change <0, !DISTURBANCE_TYPE %in% c('n')) |> 
+  mutate(Decade = plyr::round_any(year,10, floor),
+         AllTime = "AllTime")
+
+ggplot(dat.mort.att |> filter(change <0), 
+       aes(x=Decade, y=change, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity", position = "fill") +
+  theme_bw() +
+  scale_fill_manual(values = c("b"="darkorange", "c" = "maroon4", 
+                                 "d" = "darkolivegreen3","f"="burlywood4", 
+                                 "s" = "dodgerblue2", "u" = "grey")) +
+  scale_colour_manual(values = c("b"="darkorange", "c" = "maroon4", 
+                                 "d" = "darkolivegreen3","f"="burlywood4", 
+                                 "s" = "dodgerblue2", "u" = "grey")) #+ 
+  facet_wrap(~A_SECTOR)
+
+
+
+ggplot(dat.mort.att |> filter(change <0), 
+       aes(x=Decade, y=change, colour=DISTURBANCE_TYPE,
+                     fill=DISTURBANCE_TYPE)) +
+  geom_bar(stat="identity", position = "fill") +
+  theme_bw() +
+  scale_fill_manual(values = c("b"="darkorange", "c" = "maroon4", 
+                                 "d" = "darkolivegreen3","f"="burlywood4", 
+                                 "s" = "dodgerblue2", "u" = "grey")) +
+  scale_colour_manual(values = c("b"="darkorange", "c" = "maroon4", 
+                                 "d" = "darkolivegreen3","f"="burlywood4", 
+                                 "s" = "dodgerblue2", "u" = "grey")) + 
+  facet_wrap(~A_SECTOR)
+
+
+# Ensure the dat.mort.att dataframe is filtered for negative 'change' values
+dat.mort.att_filtered <- dat.mort.att |> 
+  filter(change < 0) |>
+  group_by(Decade, DISTURBANCE_TYPE) |>
+  summarize(mean_change = mean(change, na.rm = TRUE)) |>
+  ungroup()
+
+# Plotting with ggplot2
+ggplot(dat.mort.att_filtered, aes(x = Decade, y = mean_change, colour = DISTURBANCE_TYPE, fill = DISTURBANCE_TYPE)) +
+  geom_col() +  # Create stacked bar plot with identity statistic
+  theme_bw() +  # Use a clean theme
+  scale_fill_manual(values = c(
+    "b" = "darkorange", 
+    "c" = "maroon4", 
+    "d" = "darkolivegreen3", 
+    "f" = "burlywood4", 
+    "s" = "dodgerblue2", 
+    "u" = "grey"
+  )) +  # Manual fill colors for disturbance types
+  scale_colour_manual(values = c(
+    "b" = "darkorange", 
+    "c" = "maroon4", 
+    "d" = "darkolivegreen3", 
+    "f" = "burlywood4", 
+    "s" = "dodgerblue2", 
+    "u" = "grey"
+  )) #+  # Manual color outline for disturbance types
+  facet_wrap(~A_SECTOR)  # Facet plot by sector
+  ggplot(dat.mort.att_filtered, aes(x = Decade, y = mean_change, colour = DISTURBANCE_TYPE, fill = DISTURBANCE_TYPE)) +
+  geom_col(position = position_dodge()) +  # Create side-by-side bar plot
+  theme_bw() +  # Use a clean theme
+  scale_fill_manual(values = c(
+    "b" = "darkorange", 
+    "c" = "maroon4", 
+    "d" = "darkolivegreen3", 
+    "f" = "burlywood4", 
+    "s" = "dodgerblue2", 
+    "u" = "grey"
+  )) +  # Manual fill colors for disturbance types
+  scale_colour_manual(values = c(
+    "b" = "darkorange", 
+    "c" = "maroon4", 
+    "d" = "darkolivegreen3", 
+    "f" = "burlywood4", 
+    "s" = "dodgerblue2", 
+    "u" = "grey"
+  )) #+  # Manual color outline for disturbance types
+  facet_wrap(~A_SECTOR)  # Facet plot by sector
+  
+```
+
+## Apply predicted growth to mortality estimates
+
+Next step is to apply growth curves. This will increase the loss as we will be comparing against what should be expected without coral disturbance.
+
+```{r Expected growth and decline}
+
+dat.grth = dat.mort.bl |> 
+  mutate(Prev.HC = mean_HC - Abs.Change.Cor) |> 
+  filter(ReefName %in% dat.gridSum$REEF_NAME) |> 
+  rowwise() %>%
+  mutate(Pred.Grth = doCoralGrowth.Simp(CoralCover=Prev.HC,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]
+         ) |> 
+  mutate(Abs.Change.Cor = Abs.Change.Cor - Pred.Grth,
+         Rel.Change.Cor = Abs.Change.Cor / (Prev.HC + Pred.Grth))
+
+dat.mod = dat.grth |> left_join(dat.yrs, by=c("ReefName", "report_year")) |> 
+  #filter(MaxDHW > 0.1) 
+  mutate(Era = ifelse(report_year %in% c(1999,2003), "1998/2002",
+                      ifelse(report_year %in% c(2017,2018), "2016/2017",
+                             ifelse(report_year %in% c(2021,2023), "2020/2022",NA))))
+ggplot(dat.mod , aes(x=MaxDHW, y=Rel.Change.Cor)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() +facet_grid(~report_year)
+
+ggplot(dat.mod , aes(x=MaxDHW, y=Abs.Change.Cor, 
+                     fill = as.factor(report_year),
+                     colour=as.factor(report_year))) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12), ylim = c(-20,20)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  # facet_grid(~report_year) +
+  theme_bw() 
+ggplot(dat.mod , aes(x=MaxDHW, y=Abs.Change.Cor, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-20,20)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  # facet_grid(~report_year) +
+  theme_bw() 
+
+ggplot(dat.mod , aes(x=MaxDHW, y=Rel.Change.Cor, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_grid(~report_year) +
+  theme_bw() 
+
+ggplot(dat.mod , aes(x=MaxDHW, y=Abs.Change.Cor)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12), ylim = c(-20,20)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  # facet_grid(~report_year) +
+  theme_bw() 
+
+# ReefName = dat.grth$ReefName[1]
+# B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"]
+
+# add in terry data
+dat.mod.Terry = dat.mod |> 
+  bind_rows(rename(dat.bleach, "Rel.Change.Cor" = "Change", "MaxDHW" = "DHW") |> 
+              mutate(Era = "Hughes et al 2018",
+                     Rel.Change.Cor = Rel.Change.Cor/100 )) |> 
+  mutate(Region = ifelse(SECTOR_NAME %in% c("CG", "PC", "CL"), "Northern",
+                         ifelse(SECTOR_NAME %in% c("CA", "IN", "TO", "WH"),
+                                "Central",
+                                 ifelse(SECTOR_NAME %in% c("PO", "SW", "CB"),
+                                        "Southern", "NA"))))
+library(ggokabeito)
+ggplot(dat.mod.Terry , aes(x=MaxDHW, y=Rel.Change.Cor, 
+                     fill = Era, shape=Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(0,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~SECTOR_NAME) +
+  theme_bw() 
+
+ggplot(dat.mod.Terry , aes(x=MaxDHW, y=Rel.Change.Cor, 
+                     fill = Era, shape=Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(0,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~Region) +
+  theme_bw() 
+
+```
+
+# DMS API - Taxa Specific mortality curves
+
+Repeat the above analysis but it compares the for each of the main taxa groups. Use DMS to extract Taxa specific as well as disturbance data
+
+-   Need to sort out SNAKE REEF and FRANKLAND ISLANDS to work out which is which
+
+```{r LTMP MMP Benthic, cache=T}
+# Connecting to RIMReP collection
+#Accessing S3 bucket
+
+#Establishing connection
+data_bucket <- s3_bucket("s3://gbr-dms-data-public/aims-ltmp-mmp-coralreef-model/data.parquet")
+
+#Accessing dataset
+data_df <- open_dataset(data_bucket)
+
+df.AIMS.full <- data_df |> 
+  #We will ignore the geometry column for now
+  select(!geometry) |> 
+  #Get the first 10 rows
+  # slice_head(n = 10) |> 
+  collect() 
+
+df.AIMS.full = df.AIMS.full |> mutate(across(where(is.character), as.factor))
+
+df.AIMS <- df.AIMS.full |> 
+  mutate(across(where(is.character), as.factor)) |> 
+  filter(data_type == "photo-transect", domain_category == "reef",
+         purpose == "COMPOSITION", variable == "HARD CORAL") |> 
+  select(domain_name,project_code,purpose, date,depth, lower:median, reef_zone:fid)
+
+library(fuzzyjoin)
+ci_str_detect <- function(x, y){str_detect(x, regex(y, ignore_case = TRUE))}
+# create % change column
+# df.BENT = df.AIMS |> rename("Reef_Name" = "domain_name") |>
+#   fuzzy_left_join(select(dat.AIMSRef, Reef_Name, ReefID, ReefName, SECT_NAME, SECTOR),match_fun = ci_str_detect)
+
+df.BENT.Exp = df.AIMS |> rename("Reef_Name" = "domain_name") |>
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID, ReefName, SECT_NAME, SECTOR), by=c("Reef_Name"="AIMS_REEF_NAME_cap"))
+
+df.BENT = df.AIMS |> rename("Reef_Name" = "domain_name") |>
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID, ReefName, SECT_NAME, SECTOR), by=c("Reef_Name"="AIMS_REEF_NAME_cap"))
+
+# df.BENT |> select(Reef_Name.x, Reef_Name.y:SECTOR) |> distinct() |> 
+#   write.csv("Data/moreAIMSmatches.csv")
+
+nomatch = df.BENT |> filter(is.na(ReefName)) |> ungroup() |> distinct(Reef_Name)
+#Inshore MMP reef
+datatable(df.BENT %>% slice_head(n=50) |> 
+            mutate(across(where(is.numeric), ~ round(., 4))),
+          style = "default")
+
+# find the max DHW for each reef
+dat.yrs.bent = df.BENT |>  ungroup() |> distinct(ReefName, date, report_year) |>
+  filter(!is.na(ReefName)) |> 
+  mutate(Date = as.Date(as.character(date)), Prev = report_year-1,
+         Year = year(date), Month = month(date),
+         DHWYear = ifelse(Month >=7 , Year, Year-1)) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "report_year"="Year")) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "Prev"="Year")) |> rowwise() |> 
+  # mutate(MaxDHW = max(MaxDHW.mean.x, MaxDHW.mean.y)) |> 
+  # select(-MaxDHW.mean.x, -MaxDHW.mean.y) |> 
+  # mutate(MaxDHW = ifelse(is.na(MaxDHW), 0, MaxDHW))
+   left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "DHWYear"="Year")) #|
+
+# calculate % decline for each reef / taxa paairn
+df.BENT = df.BENT %>% arrange(ReefName, Reef_Name, reefpage_category, depth, report_year)|>
+  group_by(ReefName,Reef_Name, depth, reefpage_category) |> 
+  mutate(Change = mean - lag(mean, n=1),
+         Rel.Change = Change / lag(mean, n=1),
+         Lag = report_year - lag(report_year, n=1)) |> 
+  relocate(c("Change", "Lag", "Rel.Change"), .before = median) |> 
+  left_join(dat.yrs.bent)
+
+
+dat.mod.bent = df.BENT |> filter(Lag <3) |> 
+  filter(!project_code =="MMP") |> 
+  # filter(abs(Change) > 0.005) |> 
+  filter(reefpage_category %in% c("Acropora", "Porites", "Pocilloporidae",
+                                  "Merulinidae", "Rare groups", "Other")) |> 
+  #filter(MaxDHW > 0.1) 
+  left_join(select(Disturbances_manta, ReefName, report_year, DISTURBANCE_TYPE),
+            by=c("ReefName", "report_year")) |> 
+  filter(
+    !DISTURBANCE_TYPE %in% c("c", "d", "s","f"), 
+    report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024)
+    ) |> 
+  mutate(
+    Era = case_when(
+      report_year %in% c(1999, 2003) ~ "1998/2002",
+      report_year %in% c(2017, 2018) ~ "2016/2017",
+      report_year %in% c(2021, 2023) ~ "2020/2022",
+      report_year == 2024 ~ "2024",
+      TRUE ~ NA_character_
+    ))
+
+
+
+ggplot(dat.mod.bent , aes(x=MaxDHW.mean, y=Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), c(-0.1,0.1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  facet_wrap(~reefpage_category, scales = "free_y") +
+  theme_bw() 
+
+ggplot(dat.mod.bent , aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.95) + scale_color_viridis_d(end=0.95) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  facet_wrap(~reefpage_category, scales = "free_y") +
+  theme_bw() 
+
+ggplot(dat.mod.bent, aes(x=MaxDHW.mean, y=Rel.Change)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12),ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+    facet_wrap(~reefpage_category, scales = "free_y") +
+  theme_bw() 
+
+ggplot(dat.mod.bent, aes(x=MaxDHW.mean, y=Rel.Change)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12),ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~reefpage_category, scales = "free_y") +
+  theme_bw() 
+  
+
+```
+
+## MMP Data
+
+```{r MMP}
+#### Fix this section
+# calculate % decline for each reef / for MMP
+
+df.MMP.Exp = df.AIMS.full |> rename("Reef_Name" = "domain_name") |>
+  filter(!Reef_Name %in% c("CA", "TO", "CB", "IN", "WH")) |> 
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID,
+                   ReefName, SECT_NAME, SECTOR),
+            by=c("Reef_Name"="AIMS_REEF_NAME_cap")) |> 
+  filter(project_code == "MMP",data_type == "photo-transect",
+         purpose == "GROUP_LEVEL",
+         variable == "HARD CORAL" ) |> 
+  select(ReefName,Reef_Name,project_code,purpose, date,depth, 
+         lower:median, reef_zone:fid) |> 
+  arrange(ReefName, Reef_Name, reefpage_category, depth, reef_zone, report_year)
+
+
+df.MMP <- df.AIMS.full |> 
+  mutate(across(where(is.character), as.factor)) |> 
+  filter(data_type == "photo-transect", project_code == "MMP", 
+         purpose == "GROUP_LEVEL", domain_category == "reef", 
+         variable == "HARD CORAL") |> 
+  select(domain_name,project_code,purpose, date,depth, lower:median, reef_zone:fid) 
+
+df.MMP = df.AIMS.full |> rename("Reef_Name" = "domain_name") |>
+  filter(!Reef_Name %in% c("CA", "TO", "CB", "IN", "WH")) |> 
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID,
+                   ReefName, SECT_NAME, SECTOR),
+            by=c("Reef_Name"="AIMS_REEF_NAME_cap")) |> 
+  filter(project_code == "MMP",data_type == "photo-transect",
+         purpose == "GROUP_LEVEL",
+         variable == "HARD CORAL" ) |> 
+  select(ReefName,Reef_Name,project_code,purpose, date,depth, 
+         lower:median, reef_zone:fid) |> 
+  arrange(ReefName, Reef_Name, reefpage_category, depth, reef_zone, report_year)|>
+  group_by(ReefName,Reef_Name, depth, reefpage_category, reef_zone) |> 
+  mutate(Change = mean - lag(mean, n=1),
+         Rel.Change = Change / lag(mean, n=1),
+         Lag = report_year - lag(report_year, n=1)) |> 
+  relocate(c("Change", "Lag", "Rel.Change"), .before = median) 
+
+nomatch = df.MMP |> filter(is.na(ReefName)) |> ungroup() |> distinct(Reef_Name)
+# find the max DHW for each reef
+dat.yrs.MMP = df.MMP |>  ungroup() |> distinct(ReefName, date, report_year) |>
+  filter(!is.na(ReefName)) |> 
+  mutate(Date = as.Date(as.character(date)), Prev = report_year-1,
+         Year = year(date), Month = month(date),
+         DHWYear = ifelse(Month >=7 , Year, Year-1)) |> 
+   left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "DHWYear"="Year")) #|> 
+
+df.MMP = df.MMP |> left_join(dat.yrs.MMP)
+
+dat.mod.MMP = df.MMP |> filter(Lag <3) |> 
+  filter(project_code =="MMP") |> 
+  # filter(abs(Change) > 0.005) |> 
+  # filter(reefpage_category %in% c("Acropora", "Porites", "Pocilloporidae",
+  #                                 "Merulinidae", "Rare groups", "Other")) |> 
+  #filter(MaxDHW > 0.1) 
+  left_join(select(Disturbances_manta, ReefName, report_year, DISTURBANCE_TYPE),
+            by=c("ReefName", "report_year")) |> 
+  filter(
+    !DISTURBANCE_TYPE %in% c("c", "d", "s","f"), 
+    report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024)
+    ) |> 
+  mutate(
+    Era = case_when(
+      DHWYear %in% c(1998, 2002) ~ "1998/2002",
+      DHWYear %in% c(2016, 2017) ~ "2016/2017",
+      DHWYear %in% c(2020, 2022) ~ "2020/2022",
+      DHWYear == 2024 ~ "2024",
+      TRUE ~ NA_character_
+    ))
+
+
+ggplot(dat.mod.MMP, aes(x = MaxDHW.mean, y = Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), ylim = c(-0.15, 0.15)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()
+
+ggplot(dat.mod.MMP, aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), ylim = c(-0.5, 0.5)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()
+```
+
+# DMS API - Manta Tow and repeat exposure
+
+Repeat the above analysis but it compares the for each of the main taxa groups. Use DMS to extract Taxa specific as well as disturbance data
+
+```{r Retrieve data from AIMS API, cache=T}
+
+# Add AIMS region to data
+library(sf)
+library(lwgeom)
+
+gbr <- st_read("Data/GBR_AIMS") |> st_make_valid()
+# source("https://raw.githubusercontent.com/aodn/rimrep-training/main/CoTS_training_Jan2024/R_notebooks/useful_functions.R")
+
+data_bucket <- s3_bucket("s3://gbr-dms-data-public/gbrmpa-complete-gbr-features/data.parquet")
+  #Accessing dataset
+reefs = open_dataset(data_bucket) %>% 
+  filter(FEAT_NAME == "Reef", DATASET == "GBR Features") |> 
+  distinct(UNIQUE_ID, GBR_NAME, LOC_NAME_S, geometry, FEAT_NAME) %>%
+  collect() %>% 
+  #Turning into sf object and assigning reference system: GDA94 (EPSG: 4283)
+  st_as_sf(crs = 4283) |> st_make_valid()
+
+coast = open_dataset(data_bucket) %>% 
+  filter(DATASET == "GBR Features", FEAT_NAME == "Mainland") |> 
+  distinct(UNIQUE_ID, GBR_NAME, LOC_NAME_S, geometry, FEAT_NAME) %>%
+  collect() %>% 
+  #Turning into sf object and assigning reference system: GDA94 (EPSG: 4283)
+  st_as_sf(crs = 4283) |> st_make_valid()
+
+reefs_centroids <- st_centroid(reefs)
+reefs_join <- st_join(reefs_centroids, gbr)
+
+
+
+duplicates <- reefs_join %>%
+  group_by(LOC_NAME_S) %>%
+  filter(n() > 1)
+
+df.AIMS.Mant.Exp <- df.AIMS.full |> 
+  mutate(across(where(is.character), as.factor)) |> 
+  filter(data_type == "manta", domain_category == "reef",
+         purpose == "MANTA", variable == "HC") |> 
+  select(domain_name,project_code,date,depth, lower:median, reef_zone:fid) |> 
+  rename("Reef_Name" = "domain_name") |>
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID, ReefName, 
+                   SECT_NAME, SECTOR), by=c("Reef_Name"="AIMS_REEF_NAME_cap")) 
+
+write.csv(df.AIMS.Mant.Exp, "Manta.csv")
+write.csv(df.MMP.Exp, "MMP.csv")
+write.csv(df.BENT.Exp, "Benthic.csv")
+
+
+df.AIMS.Mant <- df.AIMS.full |> 
+  mutate(across(where(is.character), as.factor)) |> 
+  filter(data_type == "manta", domain_category == "reef",
+         purpose == "MANTA", variable == "HC") |> 
+  select(domain_name,project_code,date,depth, lower:median, reef_zone:fid)
+
+library(fuzzyjoiAIMSn)
+ci_str_detect <- function(x, y){str_detect(x, regex(y, ignore_case = TRUE))}
+# create % change column
+# df.BENT = df.AIMS |> rename("Reef_Name" = "domain_name") |>
+#   fuzzy_left_join(select(dat.AIMSRef, Reef_Name, ReefID, ReefName, SECT_NAME, SECTOR),match_fun = ci_str_detect)
+
+df.MANT = df.AIMS.Mant |> rename("Reef_Name" = "domain_name") |>
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID, ReefName, SECT_NAME, SECTOR), by=c("Reef_Name"="AIMS_REEF_NAME_cap"))
+
+# df.BENT |> select(Reef_Name.x, Reef_Name.y:SECTOR) |> distinct() |> 
+#   write.csv("Data/moreAIMSmatches.csv")
+
+nomatch = df.MANT|> filter(is.na(ReefName))
+#Inshore MMP reef
+datatable(df.MANT %>% slice_head(n=50) |> 
+            mutate(across(where(is.numeric), ~ round(., 4))),
+          style = "default")
+
+# find the max DHW for each reef
+dat.yrs.mant = df.MANT |>  ungroup() |> distinct(ReefName, date, report_year) |>
+  filter(!is.na(ReefName)) |> 
+  mutate(Date = as.Date(as.character(date)), Prev = report_year-1,
+         Year = year(date), Month = month(date),
+         DHWYear = ifelse(Month >=7 , Year, Year-1)) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "report_year"="Year")) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "Prev"="Year")) |> 
+   left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "DHWYear"="Year")) #|> 
+  # rowwise() |> 
+  # mutate(MaxDHW = max(MaxDHW.mean.x, MaxDHW.mean.y)) |> 
+  # select(-MaxDHW.mean.x, -MaxDHW.mean.y) |> 
+  # mutate(MaxDHW = ifelse(is.na(MaxDHW), 0, MaxDHW))
+
+# calculate % decline for each reef / taxa paairn
+df.MANT = df.MANT %>% arrange(ReefName, Reef_Name, reefpage_category, depth, report_year)|>
+  group_by(ReefName,Reef_Name, depth, reefpage_category) |> 
+  mutate(Change = mean - lag(mean, n=1),
+         Rel.Change = Change / lag(mean, n=1),
+         Lag = report_year - lag(report_year, n=1)) |> 
+  relocate(c("Change", "Lag", "Rel.Change"), .before = median) |> 
+  left_join(dat.yrs.mant)
+
+
+
+df.MANT = df.MANT |> 
+  mutate(Change.Cor = Change,
+         Prev.HC = mean - Change.Cor) |> 
+  filter(ReefName %in% dat.gridSum$REEF_NAME, !is.na(Lag),
+         Reef_Name != "MILLN REEF") |> 
+  rowwise() |> 
+  mutate(Pred.Grth = doCoralGrowth.Simp(CoralCover=Prev.HC*100,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]/100
+         ) |> 
+  mutate(Pred.Grth2 = ifelse(Lag==2, Pred.Grth+
+                  doCoralGrowth.Simp(CoralCover=(Prev.HC+Pred.Grth)*100,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]/100,
+                  Pred.Grth)) |> 
+  mutate(Abs.Change = Change.Cor - Pred.Grth2,
+         Rel.Change = Abs.Change / (Prev.HC + Pred.Grth2))
+
+
+library(dplyr)
+
+dat.mod.mant <- df.MANT %>%
+  filter(Lag < 3, project_code != "MMP", abs(Change)>0.01) %>% 
+  left_join(select(Disturbances_manta, ReefName, report_year, DISTURBANCE_TYPE), 
+            by = c("ReefName", "report_year")) %>%
+  filter(
+    !DISTURBANCE_TYPE %in% c("c", "d", "s", "f"),
+    report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024)
+  ) %>%
+  mutate(
+    Era = case_when(
+      DHWYear %in% c(1998, 2002) ~ "1998/2002",
+      DHWYear %in% c(2016, 2017) ~ "2016/2017",
+      DHWYear %in% c(2020, 2022) ~ "2020/2022",
+      DHWYear == 2024 ~ "2024",
+      TRUE ~ NA_character_
+    )
+  ) |> 
+  left_join(select(reefs_join,LOC_NAME_S,Region), by =c("ReefName"="LOC_NAME_S"))
+
+dat.mod.mantTerry = dat.mod.mant |> 
+  bind_rows(rename(dat.bleach, "Rel.Change" = "Change", "MaxDHW.mean" = "DHW") |> 
+              mutate(Era = "Hughes et al 2018",
+                     Rel.Change = Rel.Change/100 ))
+
+ggplot(dat.mod.mant, aes(x = MaxDHW.mean, y = Abs.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), ylim = c(-0.15, 0.15)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw() + 
+  facet_wrap(~Region)
+
+ggplot(dat.mod.mant, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 4)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()# + 
+  # facet_wrap(~Region)
+
+ggplot(dat.mod.mantTerry, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 4)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()# + 
+
+ggplot(dat.mod.mant , aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() 
+
+ggplot(dat.mod.mant |> filter(Region=="Southern GBR") , 
+       aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam", formula = y ~ s(x, k = 3)) +
+  theme_bw() 
+
+ggplot(dat.mod.mant, aes(x=MaxDHW.mean, y=Rel.Change)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12),ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() 
+
+  
+```
+
+### Updated - AIMS API - Manta Tow and repeat exposure
+
+```{r}
+load("Data/aims_ltmp/aims_ltmp.RData")
+df.AIMS.Mant <- reef_manta_df |> 
+  select(domain_name,project_code,report_year,date,depth, lower:median,mean, reef_zone, id, shelf,reefpage_category) |>
+  mutate(Reef_Name = toupper(domain_name)) 
+
+library(fuzzyjoin)
+ci_str_detect <- function(x, y){str_detect(x, regex(y, ignore_case = TRUE))}
+# create % change column
+# df.BENT = df.AIMS |> rename("Reef_Name" = "domain_name") |>
+#   fuzzy_left_join(select(dat.AIMSRef, Reef_Name, ReefID, ReefName, SECT_NAME, SECTOR),match_fun = ci_str_detect)
+dat.AIMSRef_key <- dat.AIMSRef %>%
+  filter(!ReefName %in% c("Round-Russell Reef (17-013)", "Snake Reef (14-087)")) %>%
+  mutate(AIMS_REEF_NAME_case = str_to_title(AIMS_REEF_NAME_cap))
+
+dup_ref <- dat.AIMSRef %>%
+  count(AIMS_REEF_NAME_cap, sort = TRUE) %>%
+  filter(n > 1)
+
+
+
+df.MANT = df.AIMS.Mant |> 
+  left_join(select(dat.AIMSRef_key, AIMS_REEF_NAME_cap, ReefID, ReefName, SECT_NAME, SECTOR), 
+            by=join_by("Reef_Name"=="AIMS_REEF_NAME_cap")) %>%
+  mutate(
+    year = floor(as.numeric(date)),
+    frac = as.numeric(date) - year,
+    date_approx = ymd(paste0(year, "-01-01")) +
+      round(frac * as.numeric(ymd(paste0(year + 1, "-01-01")) - ymd(paste0(year, "-01-01"))))
+  ) %>%
+  select(-year, -frac)
+
+dup_years <- df.MANT %>%
+  group_by(ReefName) %>%
+  count(report_year, sort = TRUE) %>%
+  filter(n > 1)
+
+nomatch = df.MANT|> filter(is.na(ReefName))
+#Inshore MMP reef
+datatable(df.MANT %>% slice_head(n=50) |> 
+            mutate(across(where(is.numeric), ~ round(., 4))),
+          style = "default")
+
+df.MANT <- df.MANT %>%
+  mutate(
+    year = floor(as.numeric(date)),
+    frac = as.numeric(date) - year,
+    date_approx = ymd(paste0(year, "-01-01")) +
+      round(frac * as.numeric(ymd(paste0(year + 1, "-01-01")) - ymd(paste0(year, "-01-01"))))
+  ) %>%
+  select(-year, -frac)
+
+# find the max DHW for each reef
+dat.yrs.mant = df.MANT |>  ungroup() |> 
+  # distinct(ReefName, date, report_year) |>
+  filter(!is.na(ReefName)) |> 
+  mutate(Date = date_approx, Prev = report_year-1,
+         Year = year(Date), Month = month(Date),
+         DHWYear = ifelse(Month >=7 , Year, Year-1)) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "report_year"="Year")) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "Prev"="Year")) |> 
+   left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "DHWYear"="Year")) #|> 
+  # rowwise() |> 
+  # mutate(MaxDHW = max(MaxDHW.mean.x, MaxDHW.mean.y)) |> 
+  # select(-MaxDHW.mean.x, -MaxDHW.mean.y) |> 
+  # mutate(MaxDHW = ifelse(is.na(MaxDHW), 0, MaxDHW))
+
+# calculate % decline for each reef / taxa paairn
+df.MANT = df.MANT %>% arrange(ReefName, Reef_Name, reefpage_category, depth, report_year)|>
+  group_by(ReefName,Reef_Name, depth, reefpage_category) |> 
+  mutate(Change = mean - lag(mean, n=1),
+         Rel.Change = Change / lag(mean, n=1),
+         Lag = report_year - lag(report_year, n=1)) |> 
+  relocate(c("Change", "Lag", "Rel.Change"), .before = median) |> 
+  left_join(dat.yrs.mant)
+
+
+
+df.MANT = df.MANT |> 
+  mutate(Change.Cor = Change,
+         Prev.HC = mean - Change.Cor) |> 
+  filter(ReefName %in% dat.gridSum$REEF_NAME, !is.na(Lag),
+         Reef_Name != "MILLN REEF") |> 
+  rowwise() |> 
+  mutate(Pred.Grth = doCoralGrowth.Simp(CoralCover=Prev.HC*100,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]/100
+         ) |> 
+  mutate(Pred.Grth2 = ifelse(Lag==2, Pred.Grth+
+                  doCoralGrowth.Simp(CoralCover=(Prev.HC+Pred.Grth)*100,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]/100,
+                  Pred.Grth)) |> 
+  mutate(Abs.Change = Change.Cor - Pred.Grth2,
+         Rel.Change = Abs.Change / (Prev.HC + Pred.Grth2))
+
+
+library(dplyr)
+
+dat.mod.mant <- df.MANT %>%
+  filter(Lag < 3, project_code != "MMP", abs(Change)>0.01) %>% 
+  left_join(select(Disturbances_manta, ReefName, report_year, DISTURBANCE_TYPE), 
+            by = c("ReefName", "report_year")) %>%
+  filter(
+    !DISTURBANCE_TYPE %in% c("c", "d", "s", "f"),
+    report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024,2025)
+  ) %>%
+  mutate(
+    Era = case_when(
+      DHWYear %in% c(1998, 2002) ~ "1998/2002",
+      DHWYear %in% c(2016, 2017) ~ "2016/2017",
+      DHWYear %in% c(2020, 2022) ~ "2020/2022",
+      DHWYear == 2024 ~ "2024",
+      TRUE ~ NA_character_
+    )
+  ) |> 
+  left_join(select(reefs_join,LOC_NAME_S,Region), by =c("ReefName"="LOC_NAME_S"))
+
+dat.mod.mantTerry = dat.mod.mant |> 
+  bind_rows(rename(dat.bleach, "Rel.Change" = "Change", "MaxDHW.mean" = "DHW") |> 
+              mutate(Era = "Hughes et al 2018",
+                     Rel.Change = Rel.Change/100 ))
+
+ggplot(dat.mod.mant, aes(x = MaxDHW.mean, y = Abs.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), ylim = c(-0.15, 0.15)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 2)) +  # k = 3 means 2 interior knots (3 knots total)
+  # geom_smooth(method = "glm") +
+  theme_bw() + 
+  facet_wrap(~Region)
+
+ggplot(dat.mod.mant, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 4)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()# + 
+  # facet_wrap(~Region)
+
+ggplot(dat.mod.mantTerry, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 4)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()# + 
+
+ggplot(dat.mod.mant , aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() 
+
+ggplot(dat.mod.mant , aes(x=MaxDHW.mean, y=Change.Cor, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-0.5,0.5)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() 
+
+ggplot(dat.mod.mant |> filter(Region=="Southern GBR") , 
+       aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam", formula = y ~ s(x, k = 3)) +
+  theme_bw() 
+
+ggplot(dat.mod.mant, aes(x=MaxDHW.mean, y=Rel.Change)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12),ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() 
+
+```
+
+# Compare LM vs GAUSSIAN GAM
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(mgcv)
+
+dat_plot <- dat.mod.mantTerry %>%
+  filter(is.finite(MaxDHW.mean), is.finite(Rel.Change)) %>%
+  mutate(Region = case_when(
+    Era == "Hughes et al 2018" ~ "Hughes et al 2018",
+    TRUE ~ Region
+  )) %>%
+  mutate(Era = factor(Era),
+         Region = factor(Region)) %>%
+  filter(!is.na(Era), !is.na(Region))
+
+# Prediction grid: DHW 0–15, for each Era x Region
+grid <- dat_plot %>%
+  distinct(Era, Region) %>%
+  tidyr::expand_grid(MaxDHW.mean = seq(0, 20, by = 0.05))
+
+fit_predict <- function(dat_sub, grid_sub, k = 4) {
+  # 1) Linear model
+  m_lm <- lm(Rel.Change ~ MaxDHW.mean, data = dat_sub)
+
+  pr_lm <- predict(m_lm, newdata = grid_sub, se.fit = TRUE)
+  out_lm <- grid_sub %>%
+    mutate(model = "LM",
+           fit = pr_lm$fit,
+           lwr = pr_lm$fit - 1.96 * pr_lm$se.fit,
+           upr = pr_lm$fit + 1.96 * pr_lm$se.fit)
+
+  # 2) GAM (Gaussian) on signed change
+  m_gam <- mgcv::gam(Rel.Change ~ s(MaxDHW.mean, k = k), data = dat_sub, method = "REML")
+  pr_gam <- predict(m_gam, newdata = grid_sub, se.fit = TRUE)
+  out_gam <- grid_sub %>%
+    mutate(model = paste0("GAM (k=", k, ")"),
+           fit = pr_gam$fit,
+           lwr = pr_gam$fit - 1.96 * pr_gam$se.fit,
+           upr = pr_gam$fit + 1.96 * pr_gam$se.fit)
+
+  bind_rows(out_lm, out_gam)
+}
+
+# Fit separately for each Era x Region (so each era has its own curve within region)
+pred <- dat_plot %>%
+  group_by(Era, Region) %>%
+  group_modify(~{
+    grid_sub <- grid %>%
+      filter(Era == .y$Era, Region == .y$Region) %>%
+      dplyr::select(MaxDHW.mean)   # <- drop grouping vars here
+    fit_predict(.x, grid_sub, k = 3)
+  }) %>%
+  ungroup()
+
+pred.era <- dat_plot %>%
+  group_by(Era) %>%
+  group_modify(~{
+    grid_sub <- grid %>%
+      filter(Era == .y$Era) %>%
+      dplyr::select(MaxDHW.mean)   # <- drop grouping vars here
+    fit_predict(.x, grid_sub, k = 3)
+  }) %>%
+  ungroup()
+
+pred.reg <- dat_plot %>%
+  group_by(Region) %>%
+  group_modify(~{
+    grid_sub <- grid %>%
+      filter(Region == .y$Region) %>%
+      dplyr::select(MaxDHW.mean)   # <- drop grouping vars here
+    fit_predict(.x, grid_sub, k = 3)
+  }) %>%
+  ungroup()
+
+
+x_max <- max(dat_plot$MaxDHW.mean, na.rm = TRUE)
+
+Fig3.ErasRegions <- ggplot(dat_plot, aes(MaxDHW.mean, Rel.Change, colour = Era, fill = Era)) +
+
+  # extrapolation shading
+  annotate("rect", xmin = x_max, xmax = Inf, ymin = -Inf, ymax = Inf,
+           fill = "grey80", alpha = 0.5) +
+  geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+  annotate("text", x = x_max + (20 - x_max) * 0.5, y = -0.9,
+           label = "Extrapolation", colour = "grey20", size = 4) +
+
+  geom_point(shape = 17, alpha = 0.5) +
+
+  geom_ribbon(
+    data = pred,
+    aes(x = MaxDHW.mean, y=fit, ymin = lwr, ymax = upr, group = Era),
+    alpha = 0.12,
+    colour = NA,
+    show.legend = FALSE     # keep legend clean (lines/points carry it)
+  ) +
+
+  geom_line(
+    data = pred,
+    aes(x = MaxDHW.mean, y = fit),
+    linewidth = 1,
+    inherit.aes = TRUE
+  ) +
+  scale_color_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  scale_fill_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(xlim = c(0, 20), ylim = c(-1, 1)) +
+  theme_classic() +
+  theme(legend.position="bottom") +
+  facet_grid(Region~model) +
+  labs(x = "DHW (°C-weeks)",
+       y = "Relative change (observed - expected growth)",
+       colour = NULL, fill = NULL)
+
+Fig3.Eras <- ggplot(dat_plot, aes(MaxDHW.mean, Rel.Change, colour = Era, fill = Era)) +
+
+  # extrapolation shading
+  annotate("rect", xmin = x_max, xmax = 20, ymin = -Inf, ymax = Inf,
+           fill = "grey80", alpha = 0.5) +
+  geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+  annotate("text", x = x_max + (20 - x_max) * 0.5, y = 0.9,
+           label = "Extrapolation", colour = "grey20", size = 4) +
+
+  geom_point(shape = 17, alpha = 0.5) +
+
+  geom_ribbon(
+    data = pred.era,
+    aes(x = MaxDHW.mean, y=fit, ymin = lwr, ymax = upr, group = Era),
+    alpha = 0.12,
+    colour = NA,
+    show.legend = FALSE     # keep legend clean (lines/points carry it)
+  ) +
+
+  geom_line(
+    data = pred.era,
+    aes(x = MaxDHW.mean, y = fit),
+    linewidth = 1,
+    inherit.aes = TRUE
+  ) +
+  scale_color_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  scale_fill_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  # scale_color_okabe_ito() +
+  # scale_fill_okabe_ito() +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(xlim = c(0, 20), ylim = c(-1, 1)) +
+  theme_classic() +
+  facet_grid(~model) +
+  labs(x = "DHW (°C-weeks)",
+       y = "Relative change (observed - expected growth)",
+       colour = NULL, fill = NULL)
+Fig3.Regions <- ggplot(dat_plot, aes(MaxDHW.mean, Rel.Change, colour = Region, fill = Region)) +
+
+  # extrapolation shading
+  annotate("rect", xmin = x_max, xmax = 20, ymin = -Inf, ymax = Inf,
+           fill = "grey80", alpha = 0.5) +
+  geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+  annotate("text", x = x_max + (20 - x_max) * 0.5, y = 0.9,
+           label = "Extrapolation", colour = "grey20", size = 4) +
+
+  geom_point(shape = 17, alpha = 0.5) +
+
+  geom_ribbon(
+    data = pred.reg,
+    aes(x = MaxDHW.mean, y=fit, ymin = lwr, ymax = upr, group = Region),
+    alpha = 0.12,
+    colour = NA,
+    show.legend = FALSE     # keep legend clean (lines/points carry it)
+  ) +
+
+  geom_line(
+    data = pred.reg,
+    aes(x = MaxDHW.mean, y = fit),
+    linewidth = 1,
+    inherit.aes = TRUE
+  ) +
+  scale_color_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  scale_fill_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+  # scale_color_okabe_ito() +
+  # scale_fill_okabe_ito() +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(xlim = c(0, 20), ylim = c(-1, 1)) +
+  theme_classic() +
+  facet_grid(~model) +
+  labs(x = "DHW (°C-weeks)",
+       y = "Relative change (observed - expected growth)",
+       colour = NULL, fill = NULL)
+
+Fig3.Eras
+Fig3.Regions
+ggsave("output/plots/Fig3_Eras.png", Fig3.Eras,  width = 8, height = 5, dpi = 300)
+ggsave("output/plots/Fig3_ErasRegions.png", Fig3.ErasRegions,  width = 5, height = 10, dpi = 300)
+ggsave("output/plots/Fig3_Regions.png", Fig3.Regions,  width = 8, height = 5, dpi = 300)
+```
+
+## Force 0-1 Models
+
+```{r}
+dat_plot2 <- dat.mod.mantTerry %>%
+  mutate(
+    net = -Rel.Change,                 # decline positive, growth negative
+    net_clip = pmax(pmin(net, 1), -1), # keep within [-1, 1] for stability
+    decline_prop = pmax(0, net),        # growth clipped to 0
+    Mort01 = (net_clip + 1)/2          # growth <0.5, no-change=0.5, decline>0.5
+  )
+
+library(dplyr)
+library(betareg)
+library(MASS)
+
+inv_logit <- function(x) 1 / (1 + exp(-x))
+
+dat_plot2 <- dat_plot2 %>%
+  filter(is.finite(MaxDHW.mean), is.finite(Mort01)) %>%
+  filter(Mort01 >= 0, Mort01 <= 1) %>%
+  filter(net>0)
+
+# Fractional logistic (quasi-binomial)
+mod_logit <- glm(decline_prop ~ MaxDHW.mean,
+                 data = dat_plot2,
+                 family = quasibinomial(link = "logit"))
+
+# Beta regression requires (0,1): nudge Mort01 into (0,1)
+n <- nrow(dat_plot2)
+dat_plot2 <- dat_plot2 %>%
+  mutate(Mort01_beta = (pmin(pmax(Mort01, 0), 1) * (n - 1) + 0.5) / n)
+
+mod_beta <- betareg(decline_prop ~ MaxDHW.mean,
+                    data = dat_plot2,
+                    link = "logit")
+
+grid <- data.frame(MaxDHW.mean = seq(0, 20, by = 0.05))
+
+# Logistic (quasi-binomial) CI (works natively)
+prL <- predict(mod_logit, newdata = grid, type = "link", se.fit = TRUE)
+grid$logit_fit <- inv_logit(prL$fit)
+grid$logit_lwr <- inv_logit(prL$fit - 1.96 * prL$se.fit)
+grid$logit_upr <- inv_logit(prL$fit + 1.96 * prL$se.fit)
+
+# Beta regression mean
+grid$beta_fit <- predict(mod_beta, newdata = grid, type = "response")
+
+# Beta regression CI via coefficient simulation
+Xg <- model.matrix(~ MaxDHW.mean, data = grid)
+
+b_all <- coef(mod_beta)
+V_all <- vcov(mod_beta)
+
+# If phi is included, drop it for mean-curve CI
+keep <- c("(Intercept)", "MaxDHW.mean")
+b <- b_all[keep]
+V <- V_all[keep, keep]
+
+set.seed(1)
+B <- 2000
+b_sim <- MASS::mvrnorm(B, mu = b, Sigma = V)
+
+eta_sim <- b_sim %*% t(Xg)   # B x ngrid
+mu_sim  <- inv_logit(eta_sim)
+
+grid$beta_lwr <- apply(mu_sim, 2, quantile, 0.025)
+grid$beta_upr <- apply(mu_sim, 2, quantile, 0.975)
+
+
+library(ggplot2)
+
+pred <- bind_rows(
+  grid %>% transmute(MaxDHW.mean, model = "Logistic (quasi-binomial)",
+                     fit = logit_fit, lwr = logit_lwr, upr = logit_upr),
+  grid %>% transmute(MaxDHW.mean, model = "Beta regression",
+                     fit = beta_fit, lwr = beta_lwr, upr = beta_upr)
+)
+
+x_max <- max(dat_plot2$MaxDHW.mean, na.rm = TRUE)
+
+ggplot(dat_plot2, aes(MaxDHW.mean, decline_prop)) +
+
+  annotate("rect", xmin = x_max, xmax = Inf, ymin = -Inf, ymax = Inf,
+           fill = "grey80", alpha = 0.5) +
+  geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+  annotate("text",
+           x = x_max + (15 - x_max) * 0.5,
+           y = 0.07,
+           label = "Extrapolation",
+           colour = "grey20",
+           size = 4) +
+
+  geom_point(shape = 17, colour = "red", alpha = 0.35) +
+
+  geom_ribbon(data = pred,
+              aes(x = MaxDHW.mean, ymin = lwr, ymax = upr, fill = model),
+              alpha = 0.15, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_line(data = pred,
+            aes(x = MaxDHW.mean, y = fit, colour = model, linetype = model),
+            linewidth = 1, inherit.aes = FALSE) +
+
+  coord_cartesian(xlim = c(0, 15), ylim = c(0, 1)) +
+  theme_classic() +
+  labs(x = "DHW (°C-weeks)", y = "Mort01 (growth<0.5, decline>0.5)",
+       colour = NULL, linetype = NULL)
+
+```
+
+
+
+# DMS API - Benthic Data
+
+```{r Retrieve benthic data from AIMS API, cache=T}
+# Add AIMS region to data
+library(sf)
+library(lwgeom)
+
+
+
+
+df.AIMS.Bent <- df.AIMS.full |> 
+  mutate(across(where(is.character), as.factor)) |> 
+  filter(data_type == "photo-transect", domain_category == "reef",
+         project_code == "LTMP", purpose == "GROUP_LEVEL", variable == "HARD CORAL") |> 
+  select(domain_name,project_code,date,depth, lower:median, reef_zone:fid)
+
+library(fuzzyjoin)
+ci_str_detect <- function(x, y){str_detect(x, regex(y, ignore_case = TRUE))}
+# create % change column
+# df.BENT = df.AIMS |> rename("Reef_Name" = "domain_name") |>
+#   fuzzy_left_join(select(dat.AIMSRef, Reef_Name, ReefID, ReefName, SECT_NAME, SECTOR),match_fun = ci_str_detect)
+
+df.BENT.HC = df.AIMS.Bent |> rename("Reef_Name" = "domain_name") |>
+  left_join(select(dat.AIMSRef, AIMS_REEF_NAME_cap, ReefID, ReefName, SECT_NAME, SECTOR), by=c("Reef_Name"="AIMS_REEF_NAME_cap"))
+
+# df.BENT |> select(Reef_Name.x, Reef_Name.y:SECTOR) |> distinct() |> 
+#   write.csv("Data/moreAIMSmatches.csv")
+
+nomatch = df.BENT.HC|> filter(is.na(ReefName))
+#Inshore MMP reef
+datatable(df.BENT.HC %>% slice_head(n=50) |> 
+            mutate(across(where(is.numeric), ~ round(., 4))),
+          style = "default")
+
+# find the max DHW for each reef
+dat.yrs.bent.hc = df.BENT.HC|>  ungroup() |> 
+  distinct(ReefName, date, report_year) |>
+  filter(!is.na(ReefName)) |> 
+  mutate(Date = as.Date(as.character(date)), Prev = report_year-1,
+         Year = year(date), Month = month(date),
+         DHWYear = ifelse(Month >=7 , Year, Year-1)) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "report_year"="Year")) |> 
+  # left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+  #           by=c("ReefName", "Prev"="Year")) |> 
+   left_join(dplyr::select(dat.DHW, ReefName, Year,MaxDHW.mean), 
+            by=c("ReefName", "DHWYear"="Year")) #|> 
+  # rowwise() |> 
+  # mutate(MaxDHW = max(MaxDHW.mean.x, MaxDHW.mean.y)) |> 
+  # select(-MaxDHW.mean.x, -MaxDHW.mean.y) |> 
+  # mutate(MaxDHW = ifelse(is.na(MaxDHW), 0, MaxDHW))
+
+# calculate % decline for each reef / taxa paairn
+df.BENT.HC = df.BENT.HC %>% arrange(ReefName, Reef_Name, reefpage_category, depth, report_year)|>
+  group_by(ReefName,Reef_Name, depth, reefpage_category) |> 
+  mutate(Change = mean - lag(mean, n=1),
+         Rel.Change = Change / lag(mean, n=1),
+         Lag = report_year - lag(report_year, n=1)) |> 
+  relocate(c("Change", "Lag", "Rel.Change"), .before = median) |> 
+  left_join(dat.yrs.bent.hc)
+
+df.BENT.HC = df.BENT.HC |> 
+  mutate(Change.Cor = Change,
+         Prev.HC = mean - Change.Cor) |> 
+  filter(ReefName %in% dat.gridSum$REEF_NAME, !is.na(Lag),
+         Reef_Name != "MILLN REEF") |> 
+  rowwise() |> 
+  mutate(Pred.Grth = doCoralGrowth.Simp(CoralCover=Prev.HC*100,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]/100
+         ) |> 
+  mutate(Pred.Grth2 = ifelse(Lag==2, Pred.Grth+
+                  doCoralGrowth.Simp(CoralCover=(Prev.HC+Pred.Grth)*100,
+                  B0=dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"B0"],
+                  WQ = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),"WQ"], 
+                  HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME==ReefName),
+                                                        "HC.asym"])[3]/100,
+                  Pred.Grth)) |> 
+  mutate(Abs.Change = Change.Cor - Pred.Grth2,
+         Rel.Change = Abs.Change / (Prev.HC + Pred.Grth2))
+
+
+library(dplyr)
+
+dat.mod.bent.hc <- df.BENT.HC %>%
+  filter(Lag < 3, project_code != "MMP") %>% 
+  left_join(select(Disturbances_manta, ReefName, report_year, DISTURBANCE_TYPE), 
+            by = c("ReefName", "report_year")) %>%
+  filter(
+    !DISTURBANCE_TYPE %in% c("c", "d", "s", "f"),
+    report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024)
+  ) %>%
+  mutate(
+    Era = case_when(
+      DHWYear %in% c(1998, 2002) ~ "1998/2002",
+      DHWYear %in% c(2016, 2017) ~ "2016/2017",
+      DHWYear %in% c(2020, 2022) ~ "2020/2022",
+      DHWYear == 2024 ~ "2024",
+      TRUE ~ NA_character_
+    )
+  ) |> 
+  left_join(select(reefs_join,LOC_NAME_S,Region), by =c("ReefName"="LOC_NAME_S"))
+dat.mod.benthcTerry = dat.mod.bent.hc |> 
+  bind_rows(rename(dat.bleach, "Rel.Change" = "Change", "MaxDHW.mean" = "DHW") |> 
+              mutate(Era = "Hughes et al 2018",
+                     Rel.Change = Rel.Change/100 ))
+
+ggplot(dat.mod.bent.hc, aes(x = MaxDHW.mean, y = Abs.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), ylim = c(-0.15, 0.15)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw() + 
+  facet_wrap(~Region)
+
+ggplot(dat.mod.bent.hc, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw() #+ 
+
+ggplot(dat.mod.benthcTerry, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw() #+ 
+  
+```
+
+```{r}
+ggplot(dat.mod.benthcTerry, 
+       aes(x = MaxDHW.mean, y = Rel.Change, 
+                         fill = Era, colour = Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + 
+  scale_color_viridis_d(end = 0.8) +
+  coord_cartesian(xlim = c(0, 12), 
+                  ylim = c(-1, 1)) +
+  scale_y_continuous(labels = scales::percent) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +  # k = 3 means 2 interior knots (3 knots total)
+  theme_bw()
+
+
+ggplot(dat.mod.mant , aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Era,
+                     colour=Era)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.8) + scale_color_viridis_d(end=0.8) +
+  coord_cartesian(xlim=c(0,12), ylim = c(-1,1)) +
+  scale_y_continuous(labels = scales::percent) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  theme_bw() 
+
+ggplot(dat.mod.mant, aes(x=MaxDHW.mean, y=Rel.Change)) +
+  geom_point() +
+  coord_cartesian(xlim=c(0,12),ylim = c(-1,1)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() 
+
+```
+
+# Compare First vs Second Exposure
+
+This section compares the mortality associated with the first exposure to \>4HW compared to subsequent exposures. This will be done in two ways first is to look at both the DHW-Mortality relationship and also a categorical response for each of bins of Heat exposure 4-8, 8-12.
+
+```{r Compare repeat exposure}
+
+dat.mod.repeat <- dat.mod.mant %>%
+  group_by(Reef_Name) %>%
+  filter(report_year > 2015) |> 
+  arrange(Reef_Name, report_year) %>%
+  mutate(
+    ExposureNo = ifelse(MaxDHW.mean > 4, cumsum(MaxDHW.mean > 4), NA),
+    ExposureCat = case_when(
+      ExposureNo == 1 ~ "First",
+      ExposureNo > 1 ~ "Repeat",
+      TRUE ~ NA_character_
+    ),
+    StressCat = case_when(
+      MaxDHW.mean < 4 ~ "0-4DHW",
+      MaxDHW.mean < 8 ~ "4-8DHW",
+      TRUE ~ "8-14DHW"
+    )
+  ) 
+
+dat.mod.repeat <- dat.mod.mant %>%
+  filter(report_year > 2015) %>%
+  group_by(Reef_Name) %>%
+  arrange(report_year, .by_group = TRUE) %>%
+  mutate(
+    exposed4 = MaxDHW.mean > 4,
+    ExposureNo = cumsum(exposed4),                 # 0,1,2,... across years
+    ExposureCat = case_when(
+      exposed4 & ExposureNo == 1 ~ "First",
+      exposed4 & ExposureNo  > 1 ~ "Repeat",
+      TRUE ~ "NotExposed"
+    ),
+    StressCat = case_when(
+      MaxDHW.mean < 4 ~ "0-4DHW",
+      MaxDHW.mean < 8 ~ "4-8DHW",
+      TRUE ~ "8-14DHW"
+    )
+  ) %>%
+  ungroup()
+
+library(sandwich)
+library(lmtest)
+
+dat_exp <- dat.mod.repeat %>%
+  filter(ExposureCat %in% c("First", "Repeat")) %>%
+  filter(is.finite(Abs.Change), is.finite(MaxDHW.mean))
+
+m1 <- lm(Abs.Change ~ ExposureCat + MaxDHW.mean + Region, data = dat_exp)
+
+# Cluster-robust SEs by reef
+coeftest(m1, vcov = vcovCL(m1, cluster = ~ Reef_Name))
+
+library(lme4)
+
+m1_re <- lmer(Abs.Change ~ ExposureCat + MaxDHW.mean + Region + (1|Reef_Name), data = dat_exp)
+summary(m1_re)
+
+library(ggplot2)
+
+ggplot(dat_exp |> filter(!is.na(ExposureCat)) , 
+                                aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = ExposureCat, shape=ExposureCat,
+                     colour=ExposureCat)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(4,12)) +
+  # geom_smooth() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) + 
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~Region) +
+  theme_bw()
+
+Fig4Repeat <- ggplot(dat_exp |> filter(!is.na(ExposureCat)) , 
+                                aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = ExposureCat, shape=ExposureCat,
+                     colour=ExposureCat)) +
+  geom_point(alpha=0.6) +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(4,12)) +
+  # geom_smooth() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) + 
+  scale_y_continuous(labels = scales::percent) +
+   labs(x = "DHW (°C-weeks)", y = "Relative coral cover change",
+       fill = "Exposure", shape = "Exposure", colour = "Exposure") +
+   theme(legend.position="bottom") +
+   # facet_grid(~Region)
+  # facet_wrap(~Region) +
+  theme_bw()
+Fig4Repeat
+ggsave("output/plots/Fig4_RepeatExposure.png", Fig4Repeat, width= 6, height = 4, dpi = 300)
+```
+
+
+
+
+## COmpare change to frquency of events
+
+```{r}
+library(dplyr)
+
+# 1A) Reef list (from the coral dataset, but we won't filter DHW to coral years)
+reef_keys <- dat.mod.repeat %>%
+  distinct(ReefName) %>%            # or distinct(Reef_Name) if that's what you have
+  filter(!is.na(ReefName))
+
+# 1B) Pull DHW series for those reefs since 2015 (all years available)
+dhw_2015 <- dat.DHW %>%
+  filter(ReefName %in% reef_keys$ReefName, Year >= 2015) %>%
+  arrange(ReefName, Year) %>%
+  group_by(ReefName) %>%
+  mutate(
+    ev4 = MaxDHW.mean > 4,
+    ev8 = MaxDHW.mean > 8,
+
+    # event numbering for >4 DHW (first / repeat)
+    exp4_no = cumsum(ev4),
+    exp4_cat = case_when(
+      ev4 & exp4_no == 1 ~ "First",
+      ev4 & exp4_no  > 1 ~ "Repeat",
+      TRUE ~ "NotExposed"
+    ),
+
+    # (optional) same idea for >8 DHW if useful
+    exp8_no = cumsum(ev8),
+    exp8_cat = case_when(
+      ev8 & exp8_no == 1 ~ "First",
+      ev8 & exp8_no  > 1 ~ "Repeat",
+      TRUE ~ "NotExposed"
+    )
+  ) %>%
+  ungroup()
+
+# 1C) Reef-level exposure summary from DHW (this is what you join to coral summary)
+exposure_summary <- dhw_2015 %>%
+  group_by(ReefName) %>%
+  summarise(
+    dhw_years = n_distinct(Year),
+    first_dhw_year = min(Year, na.rm = TRUE),
+    last_dhw_year  = max(Year, na.rm = TRUE),
+
+    n_ev4 = sum(ev4, na.rm = TRUE),
+    n_ev8 = sum(ev8, na.rm = TRUE),
+
+    freq_ev4 = n_ev4 / dhw_years,
+    freq_ev8 = n_ev8 / dhw_years,
+
+    first_ev4_year = ifelse(any(ev4), min(Year[ev4], na.rm = TRUE), NA_integer_),
+    first_ev8_year = ifelse(any(ev8), min(Year[ev8], na.rm = TRUE), NA_integer_),
+
+    ever_repeat4 = any(exp4_no >= 2, na.rm = TRUE),
+    ever_repeat8 = any(exp8_no >= 2, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+reef_summary <- dat.mod.repeat %>%
+  filter(report_year > 2015) %>%
+  filter(!is.na(ReefName), is.finite(mean)) %>%
+  group_by(ReefName) %>%
+  summarise(
+    Region = first(Region),
+    coral_years = n_distinct(report_year),
+    year_start = min(report_year, na.rm = TRUE),
+    year_end   = max(report_year, na.rm = TRUE),
+
+    cover_start = mean[which.min(report_year)],
+    cover_end   = mean[which.max(report_year)],
+
+    total_cover_change = cover_end - cover_start,
+    rel_total_change   = (cover_end - cover_start) / cover_start,
+
+    .groups = "drop"
+  ) %>%
+  filter(coral_years >= 3, is.finite(rel_total_change), cover_start > 0, year_end>2023)
+
+dist_summary <- reef_disturbance_df %>%
+  filter(year > 2015, sample_type=="MANTA", disturbance=="c") %>%
+  group_by(aims_reef_name, disturbance) %>%
+  summarise(
+    n_disturbances = n(),
+    .groups = "drop"
+  ) %>%
+  left_join(dat.AIMSRef_key |> dplyr::select(aims_reef_name = AIMS_REEF_NAME_case, ReefName), by = "aims_reef_name") 
+
+reef_summary2 <- reef_summary %>%
+  left_join(exposure_summary, by = "ReefName") %>%
+  left_join(dist_summary, by = "ReefName") %>%
+  mutate(COTSOutbreak = case_when(
+      n_disturbances > 0 ~ "COTS Outbreak", 
+      is.na(n_disturbances) ~ "No Outbreak"),
+      BleachingFreq = case_when(
+        freq_ev8 == 0 ~ "0",
+        freq_ev8 < 0.2 ~ "0-0.2/year",
+        TRUE ~ "0.2/year +"
+      ))
+
+m_freq <- lm(rel_total_change ~ freq_ev8 + Region, data = reef_summary2)
+summary(m_freq)
+
+
+library(ggplot2)
+ggplot(reef_summary2, aes(freq_ev8, total_cover_change, fill=COTSOutbreak, color = COTSOutbreak)) +
+  geom_point(alpha = 0.7) +
+  # geom_smooth(method = "gam", formula = y ~ s(x, k = 3), se = TRUE) +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() +
+  labs(x = "Frequency of >8 DHW years since 2015",
+       y = "Total coral cover change since 2015")
+
+Fig4Freq <- ggplot(reef_summary2, aes(BleachingFreq, total_cover_change, fill=COTSOutbreak)) +
+  # geom_point(alpha = 0.7) +
+  # geom_smooth(method = "gam", formula = y ~ s(x, k = 3), se = TRUE) +
+  geom_boxplot() +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() +
+  labs(x = "Frequency of >8 DHW years since 2015",
+       y = "Total coral cover change since 2015", fill = NULL)
+ggsave("output/plots/Fig4_Frequency.png", Fig4Freq, width = 6, height = 4, dpi = 300)
+
+```
+
+
+```{r}
+library(ggplot2)
+library(patchwork)
+
+# 1) Make them look consistent
+common_theme <- theme_bw(base_size = 11) +
+  theme(
+    plot.title = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(6, 6, 6, 6),
+    legend.title = element_text(size = 10),
+    legend.text  = element_text(size = 9)
+  )
+
+pA <- Fig4Repeat + common_theme
+pB <- Fig4Freq   + common_theme
+
+# 2) Combine + panel tags
+Fig4_AB <- (pA / pB) +
+  plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold", size = 14),
+        plot.tag.position = c(0.95, 0.95))
+
+Fig4_AB
+
+ggsave("output/plots/Fig4_AB.png", Fig4_AB, width = 6, height = 8, dpi = 300, bg = "white")
+
+pA2 <- pA + theme(legend.position = "bottom")
+pB2 <- pB + theme(legend.position = "bottom")
+
+
+# Okabe-Ito palette
+cols_exposure <- c(
+  "First"  = "#E69F00",  # orange
+  "Repeat" = "#0072B2"   # blue
+)
+
+cols_outbreak <- c(
+  "COTS Outbreak" = "#D55E00",  # vermillion
+  "No Outbreak"   = "#009E73"   # bluish green/teal
+)
+
+# cols_exposure <- c(
+#   "First"  = "#E3B23C",  # warm gold
+#   "Repeat" = "#3F2E8C"   # indigo
+# )
+# 
+# cols_outbreak <- c(
+#   "COTS Outbreak" = "#E76F51",  # coral
+#   "No Outbreak"   = "#2A9D8F"   # blue-green
+# )
+
+Fig4Repeat_h <- Fig4Repeat +
+  scale_colour_manual(values = cols_exposure) +
+  scale_fill_manual(values = cols_exposure) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50")
+
+Fig4Freq_h <- Fig4Freq +
+  scale_colour_manual(values = cols_outbreak) +
+  scale_fill_manual(values = cols_outbreak) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") 
+Fig4Repeat_h <- Fig4Repeat_h +
+  guides(fill = guide_legend(override.aes = list(alpha = 0.25)))  # if you use ribbons
+
+
+pA <- Fig4Repeat_h + common_theme
+pB <- Fig4Freq_h  + common_theme
+
+# 2) Combine + panel tags
+Fig4_AB <- (pA / pB) +
+  plot_annotation(tag_levels = "A") &
+  theme(plot.tag = element_text(face = "bold", size = 14),
+        plot.tag.position = c(0.95, 0.95))
+
+Fig4_AB
+
+ggsave("output/plots/Fig4_AB.png", Fig4_AB, width = 6, height = 8, dpi = 300, bg = "white")
+```
+
+
+### MAp of Thermal Stress
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+
+# ---- inputs you said you already have ----
+# reefs : sf polygons (reef outlines)
+# coast : sf polygon/lines (coastline)
+# reef_summary2 : data.frame with ReefName, freq_ev8, rel_total_change (since 2015)
+
+# Read sector shapefile (pick the .shp inside that folder)
+shp <- list.files("data/SectorShapefile", pattern = "\\.shp$", full.names = TRUE)[1]
+sectors <- st_read(shp, quiet = TRUE) |> st_make_valid()
+
+# Choose the sector name/id column (edit if yours differs)
+sect_id <- intersect(names(sectors), c("SECT_NAME","SECTOR","Sector","NAME","Name"))[1]
+stopifnot(!is.na(sect_id))
+
+# Make sure geometries share a CRS
+target_crs <- st_crs(sectors)
+coast <- st_transform(coast, target_crs)
+reefs <- st_transform(reefs, target_crs)
+
+# Choose reef-name column in reefs (edit if needed)
+reef_id <- intersect(names(reefs), c("ReefName","REEF_NAME","LOC_NAME_S","domain_name","name"))[1]
+stopifnot(!is.na(reef_id))
+
+# Reef points = centroids/point-on-surface (point-on-surface is safer for polygons)
+reef_pts <- st_point_on_surface(reefs) |>
+  mutate(ReefName = .data[[reef_id]]) |>
+  left_join(reef_summary2, by = "ReefName") |>
+  filter(is.finite(freq_ev8), is.finite(rel_total_change))
+
+# Spatial join reefs -> sectors to get sector id per reef
+reef_pts2 <- st_join(
+  reef_pts,
+  sectors |> dplyr::select(!!sect_id),
+  left = TRUE
+)
+
+# Sector-level summaries
+sector_stats <- reef_pts2 |>
+  st_drop_geometry() |>
+  group_by(sector = .data[[sect_id]]) |>
+  summarise(
+    n_reefs = n(),
+    freq_mean = mean(freq_ev8, na.rm = TRUE),
+    freq_max  = max(freq_ev8, na.rm = TRUE),
+    chg_mean  = mean(total_cover_change, na.rm = TRUE),
+    chg_se    = sd(total_cover_change, na.rm = TRUE) / sqrt(sum(is.finite(total_cover_change))),
+    .groups = "drop"
+  )
+
+# Join stats back onto sector polygons
+sectors2 <- sectors |>
+  mutate(sector = .data[[sect_id]]) |>
+  left_join(sector_stats, by = "sector")
+
+# Label positions + label text
+sector_labs <- sectors2 |>
+  filter(is.finite(freq_mean)) |>
+  mutate(
+    lab_pt = st_point_on_surface(geometry),
+    label = sprintf(
+      "freq>8: %.2f\na max: %.2f\nΔcover: %+.0f ± %.0f%%",
+      freq_mean, freq_max, 100*chg_mean, 100*chg_se
+    )
+  )
+
+```
+## Plot by Sectors
+
+```{r}
+# Harmonious continuous palette (low -> high)
+pal <- c("#2A9D8F", "#E9C46A", "#E76F51")  # teal -> sand -> coral
+
+FigMapFreq <- ggplot() +
+
+  # coast behind everything
+  geom_sf(data = coast, fill = "grey92", colour = "grey50", linewidth = 0.2) +
+
+  # sector polygons coloured by mean frequency
+  geom_sf(
+    data = sectors2,
+    aes(fill = freq_mean),
+    colour = "grey25",
+    linewidth = 0.25,
+    alpha = 0.95
+  ) +
+
+  # reef outlines (very light)
+  # geom_sf(data = reefs, fill = NA, colour = "grey60", linewidth = 0.08, alpha = 0.4) +
+
+  # reef points (size + colour by reef-level frequency)
+  geom_sf(
+    data = reef_pts2,
+    aes(colour = freq_ev8, size = freq_ev8*10),
+    alpha = 0.9,
+  ) +
+
+  # sector labels (adjust size as needed)
+  geom_sf_text(
+    data = sector_labs,
+    aes(geometry = lab_pt, label = label),
+    size = 3.0,
+    colour = "black",
+    lineheight = 0.95
+  ) +
+
+  # One palette for both fill and colour
+  scale_fill_gradientn(colours = pal, limits = c(0, 0.5), name = "Freq >8 DHW") +
+  scale_colour_gradientn(colours = pal, limits = c(0, 0.5), name = "Freq >8 DHW") +
+
+  # Size scale (hide legend to avoid clutter; colourbar is enough)
+  scale_size(range = c(0.8, 4.2), limits = c(0, 1), guide = "none") +
+
+  coord_sf(expand = FALSE) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.title = element_blank(),
+    axis.text  = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "right"
+  ) +
+  labs(title = NULL)
+
+FigMapFreq
+
+```
+
+```{r}
+library(sf)
+library(dplyr)
+
+# degrees -> 2x2 rotation matrix (sf vignette style)
+rot_mat <- function(deg){
+  a <- deg * pi / 180
+  matrix(c(cos(a), sin(a), -sin(a), cos(a)), nrow = 2, ncol = 2)
+}
+
+# rotate an sf/sfc around a single (x,y) centre in projected units
+rotate_sf <- function(x, deg, center_xy){
+  stopifnot(length(center_xy) == 2)
+
+  g <- st_geometry(x)
+  ctr <- st_sfc(st_point(center_xy), crs = st_crs(x))
+
+  # (g - ctr) * R + ctr  (sf affine ops)
+  g2 <- (g - ctr) * rot_mat(deg) + ctr
+
+  st_geometry(x) <- g2
+  x
+}
+
+crs_proj <- 3577
+
+sectors_p <- st_transform(sectors2, crs_proj) |> st_make_valid()
+reefs_p   <- st_transform(reefs,    crs_proj) |> st_make_valid()
+coast_p   <- st_transform(coast,    crs_proj) |> st_make_valid()
+
+reef_pts_p    <- st_transform(reef_pts2,    crs_proj)
+sector_labs_p <- st_transform(sector_labs,  crs_proj)
+
+
+
+# choose a single rotation centre (union centroid of sectors is a good anchor)
+ctr_xy <- st_coordinates(st_centroid(st_union(sectors_p)))[1,]
+
+angle_deg <- 25 # clockwise; use +45 if you want the other direction
+
+sectors_r <- rotate_sf(sectors_p, angle_deg, ctr_xy)
+reefs_r   <- rotate_sf(reefs_p,   angle_deg, ctr_xy)
+coast_r   <- rotate_sf(coast_p,   angle_deg, ctr_xy)
+plot(coast_r["geometry"], main = "Rotated Coast", key.pos = NULL)
+reef_pts_r    <- rotate_sf(reef_pts_p,    angle_deg, ctr_xy)
+sector_labs_r <- rotate_sf(sector_labs_p, angle_deg, ctr_xy)
+plot(sectors_r["freq_mean"], main = "Rotated Sectors", key.pos = NULL)
+
+bb <- st_bbox(sectors_r)
+
+pad <- 100  # ~120 km; tweak until it matches your reference look
+
+xlim <- c(bb["xmin"] - pad, bb["xmax"] + pad)
+ylim <- c(bb["ymin"] - pad, bb["ymax"] + pad)
+
+bb2 <- bb
+bb2[c("xmin","ymin")] <- bb2[c("xmin","ymin")] - pad
+bb2[c("xmax","ymax")] <- bb2[c("xmax","ymax")] + pad
+
+coast_r   <- st_crop(coast_r,   bb2)
+
+pal <- c("#2A9D8F", "#E9C46A", "#E76F51")
+
+ggplot() +
+  geom_sf(data = coast_r, fill=NA,colour = "grey50", linewidth = 0.2) +
+  geom_sf(data = reefs_r, fill = NA, colour = "grey60", linewidth = 0.08, alpha = 0.5) +
+  geom_sf(data = sectors_r, aes(fill = freq_mean), colour = "grey25", linewidth = 0.25, alpha=0.8) +
+  
+  geom_sf(data = reef_pts_r, aes(colour = freq_ev8, size = freq_ev8), alpha = 0.9) +
+  geom_sf_text(
+    data = sector_labs_r,
+    aes(geometry = lab_pt, label = label),
+    size = 3.0, lineheight = 0.95
+  ) +
+  scale_fill_gradientn(colours = pal, limits = c(0, 0.3), name = "Freq >8 DHW") +
+  scale_colour_gradientn(colours = pal, limits = c(0, 0.3), name = "Freq >8 DHW") +
+  scale_size(range = c(0.8, 4.2), limits = c(0, 1), guide = "none") +
+  coord_sf(xlim = xlim+9000, ylim = ylim, expand = FALSE, datum = NA) +
+  theme_classic(base_size = 12) +
+  theme(
+    axis.title = element_blank(),
+    axis.text  = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  )
+
+
+```
+
+
+
+```{r}
+ggplot(dat.mod.repeat |> filter(!is.na(ExposureCat)) , 
+                                aes(x=MaxDHW.mean, y=Abs.Change, 
+                     fill = ExposureCat, shape=ExposureCat,
+                     colour=ExposureCat)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(4,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~Region) +
+  theme_bw()
+
+
+ggplot(dat.mod.repeat |> filter(ExposureCat=="First") , 
+                                aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = Region, shape=Region,
+                     colour=Region)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(4,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  #facet_wrap(~Region) +
+  theme_bw()
+
+ggplot(dat.mod.repeat |> filter(!is.na(ExposureCat)) , 
+       aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = ExposureCat, shape=ExposureCat,
+                     colour=ExposureCat)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(4,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~SECTOR_NAME) +
+  facet_wrap(~Region) +
+  theme_bw()   
+
+ggplot(dat.mod.repeat |> filter(!is.na(ExposureCat)) , 
+       aes(x=MaxDHW.mean, y=Rel.Change, 
+                     fill = ExposureCat, shape=ExposureCat,
+                     colour=ExposureCat)) +
+  geom_point() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  coord_cartesian(xlim=c(4,12)) +
+  # geom_smooth() +
+  geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~SECTOR_NAME) +
+  # facet_wrap(~Region) +
+  theme_bw() 
+
+
+
+ggplot(dat.mod.repeat |> filter(!is.na(ExposureCat)) , 
+       aes(x=StressCat, y=Rel.Change, 
+                     fill = ExposureCat, shape=ExposureCat)) +
+  geom_boxplot() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  # geom_smooth() +
+  # geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~SECTOR_NAME) +
+  theme_bw()  
+
+ggplot(dat.mod.repeat |> filter(!is.na(ExposureCat)) , 
+       aes(x=StressCat, y=Change.Cor/100, 
+                     fill = ExposureCat, shape=ExposureCat)) +
+  geom_boxplot() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  # geom_smooth() +
+  # geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~SECTOR_NAME) +
+  theme_bw() 
+
+
+ggplot(dat.mod.repeat |> filter(!is.na(ExposureCat)) , 
+       aes(x=StressCat, y=Change.Cor/100, 
+                     fill = ExposureCat, shape=ExposureCat)) +
+  geom_boxplot() +
+  scale_fill_viridis_d(end = 0.98,option = "D", begin = 0.1, direction = -1) +
+  scale_color_viridis_d(end= 0.98,option = "D", begin = 0.1,direction = -1) +
+  # scale_fill_okabe_ito() + scale_color_okabe_ito() +
+  # geom_smooth() +
+  # geom_smooth(method="gam") +
+  scale_y_continuous(labels = scales::percent) +
+  # facet_wrap(~SECTOR_NAME) +
+  theme_bw()  
+
+```
+
+# DHW - Aerial Score Relationship
+
+This will tell us if corals are adapting to bleaching itself or are more resilient towards the associated mortality
+
+# Disturbance Layers - Cyclones, Bleaching, COTS
+
+## Assumptions and Issues to be addressed
+
+-   4km/5km resolution coarse scale for reef level only.
+
+-   Need to check if cyclone exposure accounts for reef structure for sheltered vs exposed sides.
+
+-   Need to decide if reefs are split into flanks or we use reef wide averages.
+
+# References

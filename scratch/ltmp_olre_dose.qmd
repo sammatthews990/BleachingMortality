@@ -1,0 +1,122 @@
+#### Bayesian Binomial-OLRE
+
+```{r brms-dose-ltmp-olre}
+#| label: brms-dose-ltmp-olre
+#| fig-cap: "LTMP Benthic — 6-panel Binomial-OLRE dose-response."
+#| fig-width: 12
+#| fig-height: 14
+
+library(brms); library(dplyr); library(patchwork)
+d <- dat.ml.ltmp.clean; m <- fit_brmsb_ltmp; sp <- scale_params_ltmp
+dhw_ext <- max(d$MaxDHW.mean, na.rm = TRUE)
+dhw_max_s <- (20 - sp$MaxDHW.mean["mean"]) / sp$MaxDHW.mean["sd2"]
+
+brms_pred_ltmp_olre <- function(mod, nd) {
+  nd$n_trials <- 1L
+  pp <- posterior_epred(mod, newdata = nd, re_formula = NA)
+  nd$pred    <- apply(pp, 2, median)
+  nd$pred_lo <- apply(pp, 2, quantile, 0.05)
+  nd$pred_hi <- apply(pp, 2, quantile, 0.95)
+  nd$MaxDHW.mean <- nd$MaxDHW_s * sp$MaxDHW.mean["sd2"] + sp$MaxDHW.mean["mean"]
+  nd
+}
+
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+
+# Panel A: DHW
+ga <- data.frame(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200),
+  secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+ga <- brms_pred_ltmp_olre(m, ga)
+pA2 <- ggplot() + es + el +
+  geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "coral", alpha = 0.2) +
+  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "coral", linewidth = 1) +
+  labs(x = "Max DHW", y = "Mortality Proportion", title = "(A) Binomial-OLRE DHW Dose-Response") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel B: Prior Exposure main effect
+hl_raw <- seq(quantile(d$histmDHW6, 0.05, na.rm=T), quantile(d$histmDHW6, 0.95, na.rm=T), length.out = 100)
+hl_s <- (hl_raw - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+gb_main <- data.frame(histmDHW6_s = hl_s, MaxDHW_s = 0, secc3m_s = 0, cloudp_90_s = 0,
+  winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0, n_trials = 1L)
+pp_b <- posterior_epred(m, newdata = gb_main, re_formula = NA)
+gb_main$pred <- apply(pp_b, 2, median); gb_main$pred_lo <- apply(pp_b, 2, quantile, 0.05); gb_main$pred_hi <- apply(pp_b, 2, quantile, 0.95)
+gb_main$histmDHW6 <- gb_main$histmDHW6_s * sp$histmDHW6["sd2"] + sp$histmDHW6["mean"]
+pB2_main <- ggplot(gb_main, aes(x = histmDHW6, y = pred)) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), fill = "purple", alpha = 0.15) +
+  geom_line(colour = "purple", linewidth = 1) +
+  labs(x = "Prior Severe Bleaching Count", y = "Mortality Proportion", title = "(B) Prior Exposure Main Effect") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel C: DHW x Prior Exposure
+hl_q <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+hl_qs <- (hl_q - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+gc <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), histmDHW6_s = hl_qs) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+gc <- brms_pred_ltmp_olre(m, gc) %>%
+  mutate(histmDHW6 = histmDHW6_s * sp$histmDHW6["sd2"] + sp$histmDHW6["mean"],
+         lbl = factor(paste0(round(histmDHW6, 1), " prior"), levels = paste0(round(hl_q, 1), " prior")))
+pC2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Prior", fill = "Prior", title = "(C) DHW x Prior Exposure") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel D: DHW x Cloud Cover
+cl_q <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+cl_qs <- (cl_q - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+gd <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), cloudp_90_s = cl_qs) %>%
+  mutate(secc3m_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+gd <- brms_pred_ltmp_olre(m, gd) %>%
+  mutate(cloudp_90 = cloudp_90_s * sp$cloudp_90["sd2"] + sp$cloudp_90["mean"],
+         lbl = factor(paste0(round(cloudp_90*100,0), "%"), levels = paste0(round(cl_q*100,0), "%")))
+pD2 <- ggplot(gd, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover", title = "(D) DHW x Cloud Cover") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel E: DHW x % Acropora
+al_q <- quantile(d$prop_acropora, c(0.1, 0.5, 0.9), na.rm = TRUE)
+al_qs <- (al_q - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+ge <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), prop_acropora_s = al_qs) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+ge <- brms_pred_ltmp_olre(m, ge) %>%
+  mutate(prop_acropora = prop_acropora_s * sp$prop_acropora["sd2"] + sp$prop_acropora["mean"],
+         lbl = factor(paste0(round(prop_acropora*100,0), "% Acrop."), levels = paste0(round(al_q*100,0), "% Acrop.")))
+pE2 <- ggplot(ge, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set2") + scale_fill_brewer(palette = "Set2") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Acropora", fill = "Acropora", title = "(E) DHW x % Acropora") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel F: Worst vs Best
+cl_10s <- (quantile(d$cloudp_90, 0.10, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+cl_90s <- (quantile(d$cloudp_90, 0.90, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+h_10s <- (quantile(d$histmDHW6, 0.10, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+h_90s <- (quantile(d$histmDHW6, 0.90, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+a_10s <- (quantile(d$prop_acropora, 0.10, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+a_90s <- (quantile(d$prop_acropora, 0.90, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+gf <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 200), 2),
+  scenario = rep(c("Worst case", "Best case"), each = 200),
+  cloudp_90_s = rep(c(cl_10s, cl_90s), each = 200),
+  histmDHW6_s = rep(c(h_10s, h_90s), each = 200),
+  prop_acropora_s = rep(c(a_90s, a_10s), each = 200),
+  secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gf <- brms_pred_ltmp_olre(m, gf); gf$scenario <- factor(gf$scenario, levels = c("Worst case", "Best case"))
+gfe <- gf %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+pF2 <- ggplot() + es + el +
+  geom_ribbon(data = gfe, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = gf %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = gf %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = gf, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Scenario", title = "(F) Worst vs Best Case") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA2 + pB2_main) / (pC2 + pD2) / (pE2 + pF2)
+```
+
+#### Quasibinomial GLM
