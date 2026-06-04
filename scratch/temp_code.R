@@ -1,6 +1,3 @@
-## ----setup--------------------------------------------------------------------
-#| label: setup
-
 # ── Core libraries ──
 library(tidyr)
 library(dplyr)
@@ -46,10 +43,6 @@ secorderlabs <- c("Cape Grenville", "Princess Charlotte Bay", "Cooktown / Lizard
 select <- dplyr::select
 filter <- dplyr::filter
 
-
-## ----helper-functions---------------------------------------------------------
-#| label: helper-functions
-
 # ── Gompertz coral growth function (simplified, single time-step) ──
 # Returns c(current_cover, next_cover, change)
 doCoralGrowth.Simp <- function(CoralCover, B0, HC.asym, WQ) {
@@ -92,11 +85,6 @@ doCoralGrowth <- function(n, CoralCover, B0, HC.asym, WQ) {
 # ── Inverse logit ──
 inv_logit <- function(x) 1 / (1 + exp(-x))
 
-
-## ----growth-params------------------------------------------------------------
-#| label: growth-params
-#| cache: true
-
 dat.grid <- read.csv("Data/COTSModParams.csv")
 
 dat.gridSum <- dat.grid %>%
@@ -118,12 +106,6 @@ dat.gridSum <- dat.grid %>%
     WQ = WQ1 + WQ2 + WQ3,
     HC90 = 0.8 * HC.asym
   )
-
-
-## ----growth-curves------------------------------------------------------------
-#| label: growth-curves
-#| cache: true
-#| fig-cap: "Modelled coral recovery trajectories from 0.1% cover, by sector. Ribbons show inter-reef variability."
 
 # Simulate 30-year recovery from 0.1% cover for all reefs
 CC.tmp <- data.frame()
@@ -148,10 +130,6 @@ ggplot(CC.tmp, aes(x = Year, y = CoralCover)) +
   theme(legend.position = "none") +
   labs(x = "Years since disturbance", y = "Coral cover (%)")
 
-
-## ----dhw-mortality-comparison-------------------------------------------------
-#| label: dhw-mortality-comparison
-
 dat.bleach <- read.csv("Data/DHW_vs_Coral_Cover_Dataset.csv") %>%
   mutate(Mort.bin = ifelse(Change >= 0, 0.001, -Change / 100))
 
@@ -172,11 +150,6 @@ newdata2 <- with(dat.bleach, data.frame(DHW = seq(0, 16, len = 100)))
 fit_beta <- predict(mod.beta, newdata = newdata2, type = "link")
 newdata2 <- cbind(newdata2, fit = binomial()$linkinv(fit_beta))
 
-
-## ----dhw-mortality-plot-------------------------------------------------------
-#| label: dhw-mortality-plot
-#| fig-cap: "Comparison of binomial (black) and beta regression (red) fits to the DHW–mortality relationship from Hughes et al. (2018) data."
-
 ggplot(data = newdata, aes(y = fit, x = DHW)) +
   geom_point(data = dat.bleach, aes(y = Mort.bin)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), fill = "blue", alpha = 0.3) +
@@ -185,11 +158,6 @@ ggplot(data = newdata, aes(y = fit, x = DHW)) +
   theme_classic() +
   labs(x = "DHW (°C-weeks)", y = "Mortality proportion",
        caption = "Black = binomial GLM, Red = beta regression")
-
-
-## ----manta-tow-data-----------------------------------------------------------
-#| label: manta-tow-data
-#| cache: true
 
 load("Data/aims_ltmp/aims_ltmp.RData")
 
@@ -288,11 +256,6 @@ df.MANT <- df.MANT |>
     Rel.Change = Abs.Change / (Prev.HC + Pred.Grth2)
   )
 
-
-## ----manta-model-data---------------------------------------------------------
-#| label: manta-model-data
-#| cache: true
-
 # Load spatial regions
 gbr <- st_read("Data/GBR_AIMS") |> st_make_valid()
 data_bucket <- s3_bucket("s3://gbr-dms-data-public/gbrmpa-complete-gbr-features/data.parquet")
@@ -327,11 +290,6 @@ dat.mod.mant <- df.MANT %>%
   ) |>
   left_join(select(reefs_join, LOC_NAME_S, Region), by = c("ReefName" = "LOC_NAME_S"))
 
-
-## ----manta-plots--------------------------------------------------------------
-#| label: manta-plots
-#| fig-cap: "Manta tow DHW vs relative change by era and region."
-
 ggplot(dat.mod.mant,
        aes(x = MaxDHW.mean, y = Rel.Change, fill = Era, colour = Era)) +
   geom_point(alpha = 0.5) +
@@ -342,11 +300,6 @@ ggplot(dat.mod.mant,
   geom_smooth(method = "gam", formula = y ~ s(x, k = 4)) +
   theme_bw() +
   labs(x = "DHW (°C-weeks)", y = "Relative change (growth-adjusted)")
-
-
-## ----lm-vs-gam----------------------------------------------------------------
-#| label: lm-vs-gam
-#| fig-cap: "LM vs GAM fits stratified by bleaching era."
 
 dat.mod.mantTerry <- dat.mod.mant |>
   bind_rows(rename(dat.bleach, "Rel.Change" = "Change", "MaxDHW.mean" = "DHW") |>
@@ -413,10 +366,6 @@ Fig3.Eras <- ggplot(dat_plot, aes(MaxDHW.mean, Rel.Change, colour = Era, fill = 
 
 Fig3.Eras
 ggsave("output/plots/Fig3_Eras.png", Fig3.Eras, width = 8, height = 5, dpi = 300)
-
-
-## ----model-extrapolation-fits-------------------------------------------------
-#| label: model-extrapolation-fits
 
 # ── ReefMod mortality function (Bozec et al.) ──
 reefmod_M <- function(DHW, d = 7, s = 1, threshold = 3) {
@@ -514,13 +463,6 @@ dat_aims_mort <- dat.mod.mant %>%
 
 aims_fits <- fit_four_models(dat_aims_mort, "MaxDHW.mean", "Mort.prop", max_dhw = 25)
 
-
-## ----model-extrapolation-plot-------------------------------------------------
-#| label: model-extrapolation-plot
-#| fig-cap: "Model choice & extrapolation sensitivity. Left: Hughes et al. (2018) single-event data. Right: AIMS LTMP manta tow data (growth-corrected, multi-event). Grey shading indicates extrapolation beyond the observed DHW range. Black lines show the ReefMod process-based mortality curve (solid = heat-sensitive, dashed = heat-tolerant)."
-#| fig-height: 7
-#| fig-width: 12
-
 # ── Helper: build a plot from fits ──
 build_extrap_plot <- function(fits, title_label, caption_text = NULL, x_limit = 20) {
   g <- fits$grid %>% filter(DHW <= x_limit)
@@ -607,10 +549,6 @@ Fig_Extrapolation
 ggsave("output/plots/Fig_ModelChoice_Extrapolation.png", Fig_Extrapolation,
        width = 12, height = 7, dpi = 300)
 
-
-## ----model-extrapolation-table------------------------------------------------
-#| label: model-extrapolation-table
-
 # Extract predictions at key DHW values
 extract_at_dhw <- function(fits, dataset_label, dhw_vals = c(8, 10, 12, 15, 20)) {
   g <- fits$grid %>% filter(round(DHW, 1) %in% dhw_vals)
@@ -634,11 +572,6 @@ extrap_table <- bind_rows(
 datatable(extrap_table,
           caption = "Predicted mortality proportion at key DHW thresholds.",
           options = list(pageLength = 12, dom = "t"))
-
-
-## ----benthic-data-------------------------------------------------------------
-#| label: benthic-data
-#| cache: true
 
 load("Data/aims_ltmp/aims_ltmp.RData")
 df.AIMS.full <- reef_photo_df
@@ -735,11 +668,6 @@ dat.mod.bent.hc <- df.BENT.HC %>%
   ) |> 
   left_join(select(reefs_join, LOC_NAME_S, Region), by = c("ReefName" = "LOC_NAME_S"))
 
-
-## ----benthic-plots------------------------------------------------------------
-#| label: benthic-plots
-#| fig-cap: "Benthic transect DHW vs relative change by era and region."
-
 ggplot(dat.mod.bent.hc, aes(x = MaxDHW.mean, y = Rel.Change, fill = Era, colour = Era)) +
   geom_point() +
   scale_fill_viridis_d(end = 0.8) + 
@@ -751,10 +679,6 @@ ggplot(dat.mod.bent.hc, aes(x = MaxDHW.mean, y = Rel.Change, fill = Era, colour 
   theme_bw() +
   labs(x = "DHW (°C-weeks)", y = "Relative change (growth-adjusted)",
        title = "Benthic Transect: LTMP (Offshore) vs MMP (Inshore)")
-
-
-## ----repeat-exposure----------------------------------------------------------
-#| label: repeat-exposure
 
 dat.mod.repeat <- dat.mod.mant %>%
   filter(report_year > 2015) %>%
@@ -784,11 +708,6 @@ dat_exp <- dat.mod.repeat %>%
 m1_re <- lmer(Abs.Change ~ ExposureCat + MaxDHW.mean + Region + (1|Reef_Name), data = dat_exp)
 summary(m1_re)
 
-
-## ----repeat-exposure-plots----------------------------------------------------
-#| label: repeat-exposure-plots
-#| fig-cap: "Relative coral cover change by first vs repeat DHW exposure >4."
-
 Fig4Repeat <- ggplot(dat_exp |> filter(!is.na(ExposureCat)), 
        aes(x = MaxDHW.mean, y = Rel.Change, fill = ExposureCat, shape = ExposureCat, colour = ExposureCat)) +
   geom_point(alpha = 0.6) +
@@ -803,10 +722,6 @@ Fig4Repeat <- ggplot(dat_exp |> filter(!is.na(ExposureCat)),
   theme(legend.position = "bottom")
 
 Fig4Repeat
-
-
-## ----frequency-analysis-------------------------------------------------------
-#| label: frequency-analysis
 
 # Total cover change vs frequency of >8 DHW since 2015
 reef_keys <- dat.mod.repeat %>%
@@ -879,11 +794,6 @@ Fig4Freq <- ggplot(reef_summary2, aes(BleachingFreq, total_cover_change, fill = 
 
 Fig4Freq
 
-
-## ----spatial-mapping----------------------------------------------------------
-#| label: spatial-mapping
-#| fig-cap: "Spatial distribution of thermal stress frequency ( >8 DHW) across the GBR."
-
 shp <- list.files("data/SectorShapefile", pattern = "\\.shp$", full.names = TRUE)[1]
 sectors <- st_read(shp, quiet = TRUE) |> st_make_valid()
 sect_id <- intersect(names(sectors), c("SECT_NAME","SECTOR","Sector","NAME","Name"))[1]
@@ -941,10 +851,6 @@ FigMapFreq <- ggplot() +
 
 FigMapFreq
 
-
-## ----ml-load-cheung-----------------------------------------------------------
-#| label: ml-load-cheung
-
 load("data/Cheungetal2025/01_sstvar_blchrf.RData")
 
 # Target predictors from Cheung et al.
@@ -976,10 +882,6 @@ if (max(cheung_predictors$year) < 2024) {
 }
 cat("Missing data summary:\n")
 print(colSums(is.na(cheung_predictors)))
-
-
-## ----ml-data-join-------------------------------------------------------------
-#| label: ml-data-join
 
 # 1. Manta tow data
 dat.ml.mant <- dat.mod.mant %>%
@@ -1019,10 +921,6 @@ cat("LTMP Benthic ML dataset:", nrow(dat.ml.ltmp), "observations\n")
 cat("MMP Inshore ML dataset:", nrow(dat.ml.mmp), "observations\n")
 cat("Combined ML dataset:", nrow(dat.ml.all), "observations\n")
 
-
-## ----ml-join-summary----------------------------------------------------------
-#| label: ml-join-summary
-
 datatable(
   dat.ml.all %>%
     select(ReefName, DHWYear, survey_type, Abs.Change, Rel.Change,
@@ -1031,12 +929,6 @@ datatable(
     mutate(across(where(is.numeric), ~ round(., 3))),
   caption = "Sample of Combined ML dataset with Cheung predictors"
 )
-
-
-## ----ml-correlation-----------------------------------------------------------
-#| label: ml-correlation
-#| fig-cap: "Correlation matrix of environmental predictors and mortality response (Combined dataset)."
-#| fig-height: 8
 
 library(corrplot)
 
@@ -1058,10 +950,6 @@ if (nrow(cor_data) > 10) {
 } else {
   cat("Insufficient matched data for correlation analysis.\n")
 }
-
-
-## ----ml-modelling-------------------------------------------------------------
-#| label: ml-modelling
 
 library(ranger)
 library(gbm)
@@ -1160,13 +1048,6 @@ datatable(results %>% mutate(across(where(is.numeric), ~ round(., 3))),
           caption = "Machine Learning Model Performance (OOB/CV R²). 
           'Null' = mean only, 'DHW Only' = MaxDHW.mean predictor only, 'Multi' = all predictors.")
 
-
-## ----ml-variable-importance---------------------------------------------------
-#| label: ml-variable-importance
-#| fig-cap: "Variable importance from Random Forest models (Manta vs Combined) for absolute change."
-#| fig-width: 10
-#| fig-height: 7
-
 get_vi <- function(mod_name, label) {
   if (exists(mod_name)) {
     mod <- get(mod_name)
@@ -1202,13 +1083,6 @@ if (nrow(vi_all) > 0) {
          title = "Variable Importance Comparison across Models and Eras")
 }
 
-
-## ----ml-partial-dependence----------------------------------------------------
-#| label: ml-partial-dependence
-#| fig-cap: "Partial dependence of absolute coral cover change on key predictors."
-#| fig-height: 8
-#| fig-width: 10
-
 library(pdp)
 
 if (exists("rf_combined_all_abschange")) {
@@ -1232,13 +1106,6 @@ if (exists("rf_combined_all_abschange")) {
   wrap_plots(pd_plots, ncol = 2)
 }
 
-
-## ----brms-pca-----------------------------------------------------------------
-#| label: brms-pca
-#| fig-cap: "PCA Biplot of environmental predictors from Cheung et al. (2025). The selected parsimonious variables are highlighted in red."
-#| fig-width: 8
-#| fig-height: 6
-
 predictor_vars <- c("mcur_90", "cloudp_90", "secc3m", "cbclus2", "histmDHW6", 
                     "yrsince6", "histmDHW4", "yrsince4", "winyear_sd", "winyear_mean")
 
@@ -1257,10 +1124,6 @@ autoplot(pca_fit, data = pca_data, loadings = TRUE, loadings.label = TRUE,
   labs(title = "PCA of Environmental Predictors",
        x = paste0("PC1 (", round(summary(pca_fit)$importance[2, 1] * 100, 1), "%)"),
        y = paste0("PC2 (", round(summary(pca_fit)$importance[2, 2] * 100, 1), "%)"))
-
-
-## ----brms-data-prep-----------------------------------------------------------
-#| label: brms-data-prep
 
 # 1. Select manta tow matched dataset with Cheung predictors
 dat.ml.mant.clean <- dat.ml.mant %>%
@@ -1308,11 +1171,6 @@ dat.ml.mant.clean <- dat.ml.mant.clean %>%
 
 cat("Final scaled Manta Tow model dataset:", N_obs, "observations across", 
     length(unique(dat.ml.mant.clean$ReefName)), "unique reefs.\n")
-
-
-## ----brms-modelling-----------------------------------------------------------
-#| label: brms-modelling
-#| cache: true
 
 library(brms)
 library(loo)
@@ -1438,10 +1296,6 @@ print(summary(fit3_brms))
 cat("\n=== Model 3b: Binomial-OLRE (Bayesian Quasibinomial) ===\n")
 print(summary(fit3b_brms))
 
-
-## ----brms-loo-compare---------------------------------------------------------
-#| label: brms-loo-compare
-
 library(brms)
 library(dplyr)
 library(loo)
@@ -1468,13 +1322,6 @@ datatable(
   caption = "LOO-CV Model Comparison — Beta Models (Additive → Interactive → Full Interactive)."
 )
 
-
-## ----brms-diagnostics---------------------------------------------------------
-#| label: brms-diagnostics
-#| fig-cap: "Posterior predictive check (y vs yrep) demonstrating how closely simulated datasets from the posterior match the observed mortality distribution."
-#| fig-width: 8
-#| fig-height: 5
-
 library(brms)
 library(bayesplot)
 pp_check(fit2_brms, ndraws = 50) +
@@ -1482,69 +1329,14 @@ pp_check(fit2_brms, ndraws = 50) +
   labs(title = "Posterior Predictive Check (Interactive Model)",
        x = "Mortality Proportion", y = "Density")
 
-
-## ----brms-marginal-effects----------------------------------------------------
-#| label: brms-marginal-effects
-#| fig-cap: "Bayesian conditional effects (Interactive Model) on original predictor scales."
-#| fig-width: 10
-#| fig-height: 8
-
-# Helper: back-transform standardized axis to original scale
-backtransform_ce <- function(ce_data, x_var, orig_var) {
-  sp <- scale_params[[orig_var]]
-  ce_data[[x_var]] <- ce_data[[x_var]] * sp["sd2"] + sp["mean"]
-  ce_data
-}
-
-# Extract conditional effects from fit2_brms
-ce_dhw    <- conditional_effects(fit2_brms, effects = "MaxDHW_s")[[1]] %>% backtransform_ce("MaxDHW_s", "MaxDHW.mean")
-ce_hist   <- conditional_effects(fit2_brms, effects = "histmDHW6_s")[[1]] %>% backtransform_ce("histmDHW6_s", "histmDHW6")
-ce_secchi <- conditional_effects(fit2_brms, effects = "secc3m_s")[[1]] %>% backtransform_ce("secc3m_s", "secc3m")
-ce_cloud  <- conditional_effects(fit2_brms, effects = "cloudp_90_s")[[1]] %>% backtransform_ce("cloudp_90_s", "cloudp_90")
-
-# Also back-transform the interaction surface
-ce_int <- conditional_effects(fit2_brms, effects = "MaxDHW_s:secc3m_s")[[1]]
-ce_int$MaxDHW_s <- ce_int$MaxDHW_s * scale_params$MaxDHW.mean["sd2"] + scale_params$MaxDHW.mean["mean"]
-# secc3m_s is a conditioning factor — back-transform its label
-if ("secc3m_s" %in% names(ce_int)) {
-  ce_int$secc3m_s <- round(ce_int$secc3m_s * scale_params$secc3m["sd2"] + scale_params$secc3m["mean"], 1)
-  ce_int$secc3m_s <- factor(paste0(ce_int$secc3m_s, " m"))
-}
-
-p_dhw <- ggplot(ce_dhw, aes(x = MaxDHW_s, y = estimate__)) +
-  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "steelblue", alpha = 0.25) +
-  geom_line(color = "steelblue", linewidth = 1) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion") +
-  theme_bw(base_size = 11)
-
-p_hist <- ggplot(ce_hist, aes(x = histmDHW6_s, y = estimate__)) +
-  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "coral", alpha = 0.25) +
-  geom_line(color = "coral", linewidth = 1) +
-  labs(x = "Prior Severe Bleaching (count >6 DHW)", y = "Mortality Proportion") +
-  theme_bw(base_size = 11)
-
-p_secchi <- ggplot(ce_secchi, aes(x = secc3m_s, y = estimate__)) +
-  geom_ribbon(aes(ymin = lower__, ymax = upper__), fill = "darkgreen", alpha = 0.25) +
-  geom_line(color = "darkgreen", linewidth = 1) +
-  labs(x = "Secchi Depth (m)", y = "Mortality Proportion") +
-  theme_bw(base_size = 11)
-
-p_interact <- ggplot(ce_int, aes(x = MaxDHW_s, y = estimate__, colour = secc3m_s, fill = secc3m_s)) +
-  geom_ribbon(aes(ymin = lower__, ymax = upper__), alpha = 0.15) +
-  geom_line(linewidth = 1) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
-       colour = "Secchi Depth", fill = "Secchi Depth") +
-  theme_bw(base_size = 11)
-
-library(patchwork)
-(p_dhw + p_hist) / (p_secchi + p_interact)
-
-
-## ----brms-halfeye-manta-------------------------------------------------------
-#| label: brms-halfeye-manta
-#| fig-cap: "Manta Tow — Posterior coefficient distributions (Full Interactive Beta Model)."
-#| fig-width: 10
-#| fig-height: 6
+fit_qbin <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
+                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 + winyear_sd,
+  data = dat.ml.mant.clean,
+  family = quasibinomial(link = "logit")
+)
+cat("Quasibinomial GLM summary:\n")
+print(summary(fit_qbin))
 
 library(brms)
 library(dplyr)
@@ -1572,12 +1364,55 @@ ggplot(draws_manta, aes(x = estimate, y = reorder(term, estimate))) +
        subtitle = "Full Interactive Beta Model with (1|ReefName) random intercept") +
   theme_bw(base_size = 12)
 
+library(brms); library(dplyr); library(tidybayes)
 
-## ----brms-dose-manta----------------------------------------------------------
-#| label: brms-dose-manta
-#| fig-cap: "Manta Tow — 4-panel Bayesian dose-response summary."
-#| fig-width: 12
-#| fig-height: 10
+draws_manta_olre <- as_draws_df(fit3b_brms) %>%
+  select(starts_with("b_")) %>%
+  pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+  filter(term != "b_Intercept") %>%
+  mutate(term = gsub("b_", "", term),
+         term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("histmDHW6_s", "Prior Exposure", term),
+         term = gsub("secc3m_s", "Secchi Depth", term),
+         term = gsub("cloudp_90_s", "Cloud Cover", term),
+         term = gsub("winyear_sd_s", "Winter SST SD", term),
+         term = gsub("mcur_90_s", "Current Speed", term),
+         term = gsub(":", " × ", term))
+
+ggplot(draws_manta_olre, aes(x = estimate, y = reorder(term, estimate))) +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi,
+               fill = "coral", alpha = 0.7, normalize = "xy") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL,
+       title = "Manta Tow — Posterior Effect Distributions",
+       subtitle = "Binomial-OLRE Model with (1|ReefName) + (1|obs_id) random intercepts") +
+  theme_bw(base_size = 12)
+
+coef_df <- as.data.frame(coef(summary(fit_qbin)))
+names(coef_df) <- c("Estimate", "SE", "t", "p")
+coef_df$Term <- rownames(coef_df)
+coef_df <- coef_df[coef_df$Term != "(Intercept)", ]
+z90 <- qnorm(0.95)
+coef_df$lo <- coef_df$Estimate - z90 * coef_df$SE
+coef_df$hi <- coef_df$Estimate + z90 * coef_df$SE
+coef_df$Term <- gsub("MaxDHW.mean", "DHW", coef_df$Term)
+coef_df$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_df$Term)
+coef_df$Term <- gsub("secc3m", "Secchi Depth", coef_df$Term)
+coef_df$Term <- gsub("cloudp_90", "Cloud Cover", coef_df$Term)
+coef_df$Term <- gsub("winyear_sd", "Winter SST SD", coef_df$Term)
+coef_df$Term <- gsub("mcur_90", "Current Speed", coef_df$Term)
+coef_df$Term <- gsub(":", " × ", coef_df$Term)
+coef_df$sig <- ifelse(coef_df$lo > 0 | coef_df$hi < 0, "Significant", "Not significant")
+coef_df$Term <- reorder(coef_df$Term, coef_df$Estimate)
+
+ggplot(coef_df, aes(x = Estimate, y = Term, colour = sig)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
+  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
+  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
+       title = "Quasibinomial GLM — Effect Sizes (90% CI)") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
 
 library(brms)
 library(dplyr)
@@ -1665,362 +1500,44 @@ pD <- ggplot() + es + el +
 
 (pA + pB) / (pC + pD)
 
+library(brms); library(dplyr)
+d <- dat.ml.mant.clean; m <- fit3b_brms
+dhw_ext <- max(d$MaxDHW.mean, na.rm = TRUE)
+dhw_max_s <- (20 - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
 
-## ----qbin-full-model----------------------------------------------------------
-#| label: qbin-full-model
-
-# ── 1. Fit the full interaction quasibinomial model ──
-fit_qbin <- glm(
-  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
-                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 + winyear_sd,
-  data = dat.ml.mant.clean,
-  family = quasibinomial(link = "logit")
-)
-
-cat("Quasibinomial GLM summary:\n")
-print(summary(fit_qbin))
-
-
-## ----qbin-effect-sizes--------------------------------------------------------
-#| label: qbin-effect-sizes
-#| fig-cap: "Coefficient estimates (logit scale) from the quasibinomial GLM with 90% confidence intervals. The dashed line marks zero effect."
-#| fig-width: 8
-#| fig-height: 5
-
-# Extract coefficients and SEs (drop intercept)
-coef_df <- as.data.frame(coef(summary(fit_qbin)))
-names(coef_df) <- c("Estimate", "SE", "t", "p")
-coef_df$Term <- rownames(coef_df)
-coef_df <- coef_df[coef_df$Term != "(Intercept)", ]
-
-# 90% CI
-z90 <- qnorm(0.95)
-coef_df$lo <- coef_df$Estimate - z90 * coef_df$SE
-coef_df$hi <- coef_df$Estimate + z90 * coef_df$SE
-
-# Clean labels
-coef_df$Term <- gsub("MaxDHW.mean", "DHW", coef_df$Term)
-coef_df$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_df$Term)
-coef_df$Term <- gsub("secc3m", "Secchi Depth", coef_df$Term)
-coef_df$Term <- gsub("cloudp_90", "Cloud Cover", coef_df$Term)
-coef_df$Term <- gsub("winyear_sd", "Winter SST SD", coef_df$Term)
-coef_df$Term <- gsub("mcur_90", "Current Speed", coef_df$Term)
-coef_df$Term <- gsub(":", " × ", coef_df$Term)
-
-# Significance flag
-coef_df$sig <- ifelse(coef_df$lo > 0 | coef_df$hi < 0, "Significant", "Not significant")
-
-# Order by effect size
-coef_df$Term <- reorder(coef_df$Term, coef_df$Estimate)
-
-ggplot(coef_df, aes(x = Estimate, y = Term, colour = sig)) +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
-  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
-  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
-       title = "Quasibinomial GLM — Effect Sizes (90% CI)") +
-  theme_bw(base_size = 12) +
-  theme(legend.position = "bottom")
-
-
-## ----qbin-dose-response-------------------------------------------------------
-#| label: qbin-dose-response
-#| fig-cap: "Quasibinomial GLM dose-response: (A) Beta vs Quasibinomial comparison, (B) DHW × Prior Exposure interaction, (C) DHW × Water Clarity interaction, (D) Worst-case vs Best-case mortality envelopes."
-#| fig-width: 12
-#| fig-height: 10
-
-library(patchwork)
-
-# Helper: predict with 90% CI on response scale via link-scale SE
-predict_qbin_ci <- function(model, newdata, level = 0.90) {
-  z <- qnorm(1 - (1 - level) / 2)
-  p <- predict(model, newdata = newdata, type = "link", se.fit = TRUE)
-  newdata$pred    <- plogis(p$fit)
-  newdata$pred_lo <- plogis(p$fit - z * p$se.fit)
-  newdata$pred_hi <- plogis(p$fit + z * p$se.fit)
-  newdata
+brms_pred_olre <- function(mod, nd, sp = scale_params) {
+  nd$n_trials <- 1L
+  pp <- posterior_epred(mod, newdata = nd, re_formula = NA)
+  nd$pred    <- apply(pp, 2, median)
+  nd$pred_lo <- apply(pp, 2, quantile, 0.05)
+  nd$pred_hi <- apply(pp, 2, quantile, 0.95)
+  nd$MaxDHW.mean <- nd$MaxDHW_s * sp$MaxDHW.mean["sd2"] + sp$MaxDHW.mean["mean"]
+  nd
 }
 
-# Extrapolation threshold: max observed DHW in the data
-dhw_extrap <- max(dat.ml.mant.clean$MaxDHW.mean, na.rm = TRUE)
-
-# Reusable extrapolation shading layer
-extrap_shade <- annotate("rect",
-  xmin = dhw_extrap, xmax = 20, ymin = -Inf, ymax = Inf,
-  fill = "grey80", alpha = 0.35
-)
-extrap_label <- annotate("text",
-  x = (dhw_extrap + 20) / 2, y = 0.05,
-  label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3
-)
-
-# ── 2. Median-level DHW grid for Beta vs Qbin comparison (Panel A) ──
-dhw_grid <- data.frame(
-  MaxDHW.mean = seq(0, 20, length.out = 200),
-  secc3m      = median(dat.ml.mant.clean$secc3m, na.rm = TRUE),
-  cloudp_90   = median(dat.ml.mant.clean$cloudp_90, na.rm = TRUE),
-  winyear_sd  = median(dat.ml.mant.clean$winyear_sd, na.rm = TRUE),
-  histmDHW6   = median(dat.ml.mant.clean$histmDHW6, na.rm = TRUE),
-  mcur_90     = median(dat.ml.mant.clean$mcur_90, na.rm = TRUE)
-)
-dhw_grid <- predict_qbin_ci(fit_qbin, dhw_grid)
-
-# Beta predictions on same grid
-dhw_grid_s <- dhw_grid %>%
-  mutate(
-    MaxDHW_s     = (MaxDHW.mean - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"],
-    secc3m_s     = (secc3m      - scale_params$secc3m["mean"])      / scale_params$secc3m["sd2"],
-    cloudp_90_s  = (cloudp_90   - scale_params$cloudp_90["mean"])   / scale_params$cloudp_90["sd2"],
-    winyear_sd_s = (winyear_sd  - scale_params$winyear_sd["mean"])  / scale_params$winyear_sd["sd2"],
-    histmDHW6_s  = (histmDHW6   - scale_params$histmDHW6["mean"])   / scale_params$histmDHW6["sd2"],
-    mcur_90_s    = (mcur_90     - scale_params$mcur_90["mean"])     / scale_params$mcur_90["sd2"],
-    Region   = dat.ml.mant.clean$Region[1],
-    ReefName = dat.ml.mant.clean$ReefName[1]
-  )
-pred_beta <- fitted(fit2_brms, newdata = dhw_grid_s, re_formula = NA, summary = TRUE)
-dhw_grid$pred_beta    <- pred_beta[, "Estimate"]
-dhw_grid$pred_beta_lo <- pred_beta[, "Q2.5"]
-dhw_grid$pred_beta_hi <- pred_beta[, "Q97.5"]
-
-pA <- ggplot() +
-  extrap_shade + extrap_label +
-  geom_point(data = dat.ml.mant.clean, aes(x = MaxDHW.mean, y = Mort.prop.nudge),
-             alpha = 0.35, size = 1.2) +
-  geom_ribbon(data = dhw_grid, aes(x = MaxDHW.mean, ymin = pred_beta_lo, ymax = pred_beta_hi),
-              fill = "steelblue", alpha = 0.15) +
-  geom_ribbon(data = dhw_grid, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi),
-              fill = "firebrick", alpha = 0.12) +
-  geom_line(data = dhw_grid, aes(x = MaxDHW.mean, y = pred_beta, colour = "Beta (brms)"), linewidth = 1) +
-  geom_line(data = dhw_grid, aes(x = MaxDHW.mean, y = pred, colour = "Quasibinomial GLM"),
-            linewidth = 1, linetype = "dashed") +
-  scale_colour_manual(values = c("Beta (brms)" = "steelblue", "Quasibinomial GLM" = "firebrick")) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Model",
-       title = "(A) Beta vs Quasibinomial") +
-  coord_cartesian(ylim = c(0, 1)) +
-  theme_bw(base_size = 11) +
-  theme(legend.position = c(0.3, 0.85))
-
-# ── 3. DHW × histmDHW6 interaction (Panel B) ──
-hist_levels <- quantile(dat.ml.mant.clean$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
-grid_hist <- expand.grid(
-  MaxDHW.mean = seq(0, 20, length.out = 200),
-  histmDHW6   = hist_levels
-) %>% mutate(
-  secc3m     = median(dat.ml.mant.clean$secc3m, na.rm = TRUE),
-  cloudp_90  = median(dat.ml.mant.clean$cloudp_90, na.rm = TRUE),
-  winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm = TRUE),
-  mcur_90    = median(dat.ml.mant.clean$mcur_90, na.rm = TRUE)
-)
-grid_hist <- predict_qbin_ci(fit_qbin, grid_hist) %>%
-  mutate(hist_label = factor(paste0(round(histmDHW6, 1), " prior events"),
-                             levels = paste0(round(hist_levels, 1), " prior events")))
-
-pB <- ggplot(grid_hist, aes(x = MaxDHW.mean, y = pred, colour = hist_label, fill = hist_label)) +
-  extrap_shade + extrap_label +
-  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
-  geom_line(linewidth = 1) +
-  scale_colour_brewer(palette = "Set1") +
-  scale_fill_brewer(palette = "Set1") +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
-       colour = "Prior Exposure\n(>6 DHW events)", fill = "Prior Exposure\n(>6 DHW events)",
-       title = "(B) DHW × Prior Exposure") +
-  coord_cartesian(ylim = c(0, 1)) +
-  theme_bw(base_size = 11) +
-  theme(legend.position = c(0.35, 0.85))
-
-# ── 4. DHW × cloudp_90 interaction (Panel C) ──
-cloud_levels <- quantile(dat.ml.mant.clean$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
-grid_cloud <- expand.grid(
-  MaxDHW.mean = seq(0, 20, length.out = 200),
-  cloudp_90   = cloud_levels
-) %>% mutate(
-  secc3m     = median(dat.ml.mant.clean$secc3m, na.rm = TRUE),
-  histmDHW6  = median(dat.ml.mant.clean$histmDHW6, na.rm = TRUE),
-  winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm = TRUE),
-  mcur_90    = median(dat.ml.mant.clean$mcur_90, na.rm = TRUE)
-)
-grid_cloud <- predict_qbin_ci(fit_qbin, grid_cloud) %>%
-  mutate(cloud_label = factor(paste0(round(cloudp_90 * 100, 0), "%"),
-                              levels = paste0(round(cloud_levels * 100, 0), "%")))
-
-pC <- ggplot(grid_cloud, aes(x = MaxDHW.mean, y = pred, colour = cloud_label, fill = cloud_label)) +
-  extrap_shade + extrap_label +
-  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
-  geom_line(linewidth = 1) +
-  scale_colour_brewer(palette = "Dark2") +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
-       colour = "Cloud Cover", fill = "Cloud Cover",
-       title = "(C) DHW × Cloud Cover") +
-  coord_cartesian(ylim = c(0, 1)) +
-  theme_bw(base_size = 11) +
-  theme(legend.position = c(0.35, 0.85))
-
-# ── 5. Worst-case vs Best-case (Panel D) ──
-# Worst: low cloud (5th %ile), zero prior exposure
-# Best:  high cloud (95th %ile), high prior exposure (95th %ile)
-grid_scenario <- data.frame(
-  MaxDHW.mean = rep(seq(0, 20, length.out = 200), 2),
-  scenario = rep(c("Worst case", "Best case"), each = 200),
-  cloudp_90 = rep(c(quantile(dat.ml.mant.clean$cloudp_90, 0.05, na.rm = TRUE),
-                    quantile(dat.ml.mant.clean$cloudp_90, 0.95, na.rm = TRUE)), each = 200),
-  histmDHW6 = rep(c(0,
-                    quantile(dat.ml.mant.clean$histmDHW6, 0.95, na.rm = TRUE)), each = 200),
-  secc3m     = median(dat.ml.mant.clean$secc3m, na.rm = TRUE),
-  winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm = TRUE),
-  mcur_90    = median(dat.ml.mant.clean$mcur_90, na.rm = TRUE)
-)
-grid_scenario <- predict_qbin_ci(fit_qbin, grid_scenario)
-grid_scenario$scenario <- factor(grid_scenario$scenario, levels = c("Worst case", "Best case"))
-
-grid_envelope <- grid_scenario %>%
-  select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
-  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
-
-pD <- ggplot() +
-  extrap_shade + extrap_label +
-  geom_ribbon(data = grid_envelope,
-              aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`),
-              fill = "grey70", alpha = 0.25) +
-  geom_ribbon(data = grid_scenario %>% filter(scenario == "Worst case"),
-              aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
-  geom_ribbon(data = grid_scenario %>% filter(scenario == "Best case"),
-              aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
-  geom_line(data = grid_scenario, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
-  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
-       colour = "Scenario",
-       title = "(D) Worst vs Best Case",
-       subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure") +
-  coord_cartesian(ylim = c(0, 1)) +
-  theme_bw(base_size = 11) +
-  theme(legend.position = c(0.35, 0.85),
-        plot.subtitle = element_text(size = 8))
-
-(pA + pB) / (pC + pD)
-
-
-## ----qbin-ltmp-model----------------------------------------------------------
-#| label: qbin-ltmp-model
-
-# Compute proportion Acropora from composition-level benthic data
-# df.AIMS.full is loaded in the benthic-data chunk
-acrop_comp <- df.AIMS.full %>%
-  filter(data_type == "photo-transect", domain_category == "reef",
-         purpose == "COMPOSITION", variable == "HARD CORAL") %>%
-  mutate(Reef_Name_Clean = gsub(" REEF(S)?| ISLAND| IS", "", toupper(domain_name))) %>%
-  left_join(dat.Ref.Clean %>% select(AIMS_REEF_NAME_Clean, ReefName),
-            by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")) %>%
-  filter(!is.na(ReefName)) %>%
-  group_by(ReefName, report_year, depth) %>%
-  summarise(
-    total_hc = sum(mean, na.rm = TRUE),
-    acrop_cover = sum(mean[grepl("Acropora", reefpage_category, ignore.case = TRUE)], na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(prop_acropora = ifelse(total_hc > 0, acrop_cover / total_hc, 0))
-
-cat("Acropora composition summary:\n")
-cat("  Rows:", nrow(acrop_comp), "\n")
-cat("  Mean prop_acropora:", round(mean(acrop_comp$prop_acropora, na.rm = TRUE), 3), "\n")
-
-# Prepare LTMP benthic data with bounded mortality proportion
-dat.ml.ltmp.clean <- dat.ml.ltmp %>%
-  filter(!is.na(mcur_90), !is.na(Rel.Change)) %>%
-  left_join(acrop_comp %>% select(ReefName, report_year, depth, prop_acropora),
-            by = c("ReefName", "report_year", "depth")) %>%
-  mutate(prop_acropora = replace_na(prop_acropora, median(prop_acropora, na.rm = TRUE)))
-
-N_ltmp <- nrow(dat.ml.ltmp.clean)
-dat.ml.ltmp.clean <- dat.ml.ltmp.clean %>%
-  mutate(
-    Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
-    Mort.prop.nudge = (Mort.prop * (N_ltmp - 1) + 0.5) / N_ltmp
-  )
-
-cat("LTMP Benthic model dataset:", N_ltmp, "observations\n")
-cat("  prop_acropora range:", round(range(dat.ml.ltmp.clean$prop_acropora, na.rm = TRUE), 3), "\n")
-
-fit_qbin_ltmp <- glm(
-  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
-                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 +
-                    MaxDHW.mean * prop_acropora + winyear_sd,
-  data = dat.ml.ltmp.clean,
-  family = quasibinomial(link = "logit")
-)
-cat("LTMP Quasibinomial GLM summary (with Acropora proportion):\n")
-print(summary(fit_qbin_ltmp))
-
-
-## ----qbin-ltmp-effects--------------------------------------------------------
-#| label: qbin-ltmp-effects
-#| fig-cap: "LTMP Benthic — Coefficient estimates (logit scale) with 90% CI."
-#| fig-width: 8
-#| fig-height: 5
-
-coef_ltmp <- as.data.frame(coef(summary(fit_qbin_ltmp)))
-names(coef_ltmp) <- c("Estimate", "SE", "t", "p")
-coef_ltmp$Term <- rownames(coef_ltmp)
-coef_ltmp <- coef_ltmp[coef_ltmp$Term != "(Intercept)", ]
-z90 <- qnorm(0.95)
-coef_ltmp$lo <- coef_ltmp$Estimate - z90 * coef_ltmp$SE
-coef_ltmp$hi <- coef_ltmp$Estimate + z90 * coef_ltmp$SE
-coef_ltmp$Term <- gsub("MaxDHW.mean", "DHW", coef_ltmp$Term)
-coef_ltmp$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_ltmp$Term)
-coef_ltmp$Term <- gsub("secc3m", "Secchi Depth", coef_ltmp$Term)
-coef_ltmp$Term <- gsub("cloudp_90", "Cloud Cover", coef_ltmp$Term)
-coef_ltmp$Term <- gsub("winyear_sd", "Winter SST SD", coef_ltmp$Term)
-coef_ltmp$Term <- gsub("mcur_90", "Current Speed", coef_ltmp$Term)
-coef_ltmp$Term <- gsub("prop_acropora", "Prop. Acropora", coef_ltmp$Term)
-coef_ltmp$Term <- gsub(":", " × ", coef_ltmp$Term)
-coef_ltmp$sig <- ifelse(coef_ltmp$lo > 0 | coef_ltmp$hi < 0, "Significant", "Not significant")
-coef_ltmp$Term <- reorder(coef_ltmp$Term, coef_ltmp$Estimate)
-
-ggplot(coef_ltmp, aes(x = Estimate, y = Term, colour = sig)) +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
-  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
-  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
-       title = "LTMP Benthic — Effect Sizes (90% CI)") +
-  theme_bw(base_size = 12) + theme(legend.position = "bottom")
-
-
-## ----qbin-ltmp-dose-----------------------------------------------------------
-#| label: qbin-ltmp-dose
-#| fig-cap: "LTMP Benthic — 4-panel dose-response summary."
-#| fig-width: 12
-#| fig-height: 10
-
-library(patchwork)
-pci <- function(mod, nd, level = 0.90) {
-  z <- qnorm(1 - (1 - level)/2); p <- predict(mod, newdata = nd, type = "link", se.fit = TRUE)
-  nd$pred <- plogis(p$fit); nd$pred_lo <- plogis(p$fit - z*p$se.fit); nd$pred_hi <- plogis(p$fit + z*p$se.fit); nd }
-dhw_ext <- max(dat.ml.ltmp.clean$MaxDHW.mean, na.rm = TRUE)
 es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
 el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
-d <- dat.ml.ltmp.clean; m <- fit_qbin_ltmp
 
-# Panel A: DHW dose-response
-ga <- data.frame(MaxDHW.mean = seq(0, 20, length.out = 200), secc3m = median(d$secc3m, na.rm=T),
-  cloudp_90 = median(d$cloudp_90, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
-  winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-  prop_acropora = median(d$prop_acropora, na.rm=T))
-ga <- pci(m, ga)
-pA2 <- ggplot() + es + el +
+# Panel A: DHW
+ga <- data.frame(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200),
+  secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+ga <- brms_pred_olre(m, ga)
+pA <- ggplot() + es + el +
   geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
-  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "steelblue", alpha = 0.2) +
-  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "steelblue", linewidth = 1) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) LTMP: DHW Dose-Response") +
+  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "coral", alpha = 0.2) +
+  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "coral", linewidth = 1) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) Binomial-OLRE DHW Dose-Response") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
 
 # Panel B: DHW × Prior Exposure
-hl <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
-gb <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), histmDHW6 = hl) %>%
-  mutate(secc3m = median(d$secc3m, na.rm=T), cloudp_90 = median(d$cloudp_90, na.rm=T),
-         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-         prop_acropora = median(d$prop_acropora, na.rm=T))
-gb <- pci(m, gb) %>% mutate(lbl = factor(paste0(round(histmDHW6,1)," prior"), levels = paste0(round(hl,1)," prior")))
-pB2 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+hl_raw <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+hl_s <- (hl_raw - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+gb <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), histmDHW6_s = hl_s) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gb <- brms_pred_olre(m, gb) %>%
+  mutate(histmDHW6 = histmDHW6_s * scale_params$histmDHW6["sd2"] + scale_params$histmDHW6["mean"],
+         lbl = factor(paste0(round(histmDHW6, 1), " prior"), levels = paste0(round(hl_raw, 1), " prior")))
+pB <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
   geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
   scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Prior Exposure", fill = "Prior Exposure",
@@ -2028,13 +1545,14 @@ pB2 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
 
 # Panel C: DHW × Cloud Cover
-cl <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
-gc <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), cloudp_90 = cl) %>%
-  mutate(secc3m = median(d$secc3m, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
-         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-         prop_acropora = median(d$prop_acropora, na.rm=T))
-gc <- pci(m, gc) %>% mutate(lbl = factor(paste0(round(cloudp_90*100,0),"%"), levels = paste0(round(cl*100,0),"%")))
-pC2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+cl_raw <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+cl_s <- (cl_raw - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+gc <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), cloudp_90_s = cl_s) %>%
+  mutate(secc3m_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gc <- brms_pred_olre(m, gc) %>%
+  mutate(cloudp_90 = cloudp_90_s * scale_params$cloudp_90["sd2"] + scale_params$cloudp_90["mean"],
+         lbl = factor(paste0(round(cloudp_90*100,0), "%"), levels = paste0(round(cl_raw*100,0), "%")))
+pC <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
   geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
   scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
@@ -2042,16 +1560,19 @@ pC2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
 
 # Panel D: Worst vs Best
-gd <- data.frame(MaxDHW.mean = rep(seq(0, 20, length.out = 200), 2),
+cl_05 <- (quantile(d$cloudp_90, 0.05, na.rm=T) - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+cl_95 <- (quantile(d$cloudp_90, 0.95, na.rm=T) - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+h_00 <- (0 - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+h_95 <- (quantile(d$histmDHW6, 0.95, na.rm=T) - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+gd <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 200), 2),
   scenario = rep(c("Worst case", "Best case"), each = 200),
-  cloudp_90 = rep(c(quantile(d$cloudp_90, 0.05, na.rm=T), quantile(d$cloudp_90, 0.95, na.rm=T)), each = 200),
-  histmDHW6 = rep(c(0, quantile(d$histmDHW6, 0.95, na.rm=T)), each = 200),
-  secc3m = median(d$secc3m, na.rm=T), winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-  prop_acropora = median(d$prop_acropora, na.rm=T))
-gd <- pci(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
+  cloudp_90_s = rep(c(cl_05, cl_95), each = 200),
+  histmDHW6_s = rep(c(h_00, h_95), each = 200),
+  secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gd <- brms_pred_olre(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
 ge <- gd %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
   pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
-pD2 <- ggplot() + es + el +
+pD <- ggplot() + es + el +
   geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
   geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
   geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
@@ -2061,12 +1582,120 @@ pD2 <- ggplot() + es + el +
        title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
 
-(pA2 + pB2) / (pC2 + pD2)
+(pA + pB) / (pC + pD)
 
+library(patchwork)
 
-## ----brms-ltmp-model----------------------------------------------------------
-#| label: brms-ltmp-model
-#| cache: true
+predict_qbin_ci <- function(model, newdata, level = 0.90) {
+  z <- qnorm(1 - (1 - level) / 2)
+  p <- predict(model, newdata = newdata, type = "link", se.fit = TRUE)
+  newdata$pred    <- plogis(p$fit)
+  newdata$pred_lo <- plogis(p$fit - z * p$se.fit)
+  newdata$pred_hi <- plogis(p$fit + z * p$se.fit)
+  newdata
+}
+
+dhw_extrap <- max(dat.ml.mant.clean$MaxDHW.mean, na.rm = TRUE)
+extrap_shade <- annotate("rect", xmin = dhw_extrap, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+extrap_label <- annotate("text", x = (dhw_extrap + 20) / 2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+
+dhw_grid <- data.frame(MaxDHW.mean = seq(0, 20, length.out = 200),
+  secc3m = median(dat.ml.mant.clean$secc3m, na.rm = TRUE),
+  cloudp_90 = median(dat.ml.mant.clean$cloudp_90, na.rm = TRUE),
+  winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm = TRUE),
+  histmDHW6 = median(dat.ml.mant.clean$histmDHW6, na.rm = TRUE),
+  mcur_90 = median(dat.ml.mant.clean$mcur_90, na.rm = TRUE))
+dhw_grid <- predict_qbin_ci(fit_qbin, dhw_grid)
+
+pA <- ggplot() + extrap_shade + extrap_label +
+  geom_point(data = dat.ml.mant.clean, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+  geom_ribbon(data = dhw_grid, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "steelblue", alpha = 0.15) +
+  geom_line(data = dhw_grid, aes(x = MaxDHW.mean, y = pred), colour = "steelblue", linewidth = 1) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) DHW Dose-Response") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+hist_levels <- quantile(dat.ml.mant.clean$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+grid_hist <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), histmDHW6 = hist_levels) %>%
+  mutate(secc3m = median(dat.ml.mant.clean$secc3m, na.rm=T), cloudp_90 = median(dat.ml.mant.clean$cloudp_90, na.rm=T),
+         winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm=T), mcur_90 = median(dat.ml.mant.clean$mcur_90, na.rm=T))
+grid_hist <- predict_qbin_ci(fit_qbin, grid_hist) %>%
+  mutate(hist_label = factor(paste0(round(histmDHW6, 1), " prior events"), levels = paste0(round(hist_levels, 1), " prior events")))
+
+pB <- ggplot(grid_hist, aes(x = MaxDHW.mean, y = pred, colour = hist_label, fill = hist_label)) +
+  extrap_shade + extrap_label +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
+       colour = "Prior Exposure\n(>6 DHW events)", fill = "Prior Exposure\n(>6 DHW events)", title = "(B) DHW × Prior Exposure") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+cloud_levels <- quantile(dat.ml.mant.clean$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+grid_cloud <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), cloudp_90 = cloud_levels) %>%
+  mutate(secc3m = median(dat.ml.mant.clean$secc3m, na.rm=T), histmDHW6 = median(dat.ml.mant.clean$histmDHW6, na.rm=T),
+         winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm=T), mcur_90 = median(dat.ml.mant.clean$mcur_90, na.rm=T))
+grid_cloud <- predict_qbin_ci(fit_qbin, grid_cloud) %>%
+  mutate(cloud_label = factor(paste0(round(cloudp_90*100,0), "%"), levels = paste0(round(cloud_levels*100,0), "%")))
+
+pC <- ggplot(grid_cloud, aes(x = MaxDHW.mean, y = pred, colour = cloud_label, fill = cloud_label)) +
+  extrap_shade + extrap_label +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover", title = "(C) DHW × Cloud Cover") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+grid_scenario <- data.frame(MaxDHW.mean = rep(seq(0, 20, length.out = 200), 2),
+  scenario = rep(c("Worst case", "Best case"), each = 200),
+  cloudp_90 = rep(c(quantile(dat.ml.mant.clean$cloudp_90, 0.05, na.rm=T), quantile(dat.ml.mant.clean$cloudp_90, 0.95, na.rm=T)), each = 200),
+  histmDHW6 = rep(c(0, quantile(dat.ml.mant.clean$histmDHW6, 0.95, na.rm=T)), each = 200),
+  secc3m = median(dat.ml.mant.clean$secc3m, na.rm=T), winyear_sd = median(dat.ml.mant.clean$winyear_sd, na.rm=T),
+  mcur_90 = median(dat.ml.mant.clean$mcur_90, na.rm=T))
+grid_scenario <- predict_qbin_ci(fit_qbin, grid_scenario)
+grid_scenario$scenario <- factor(grid_scenario$scenario, levels = c("Worst case", "Best case"))
+grid_envelope <- grid_scenario %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+
+pD <- ggplot() + extrap_shade + extrap_label +
+  geom_ribbon(data = grid_envelope, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = grid_scenario %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = grid_scenario %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = grid_scenario, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
+       title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA + pB) / (pC + pD)
+
+acrop_comp <- df.AIMS.full %>%
+  filter(data_type == "photo-transect", domain_category == "reef",
+         purpose == "COMPOSITION", variable == "HARD CORAL") %>%
+  mutate(Reef_Name_Clean = gsub(" REEF(S)?| ISLAND| IS", "", toupper(domain_name))) %>%
+  left_join(dat.Ref.Clean %>% select(AIMS_REEF_NAME_Clean, ReefName),
+            by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")) %>%
+  filter(!is.na(ReefName)) %>%
+  group_by(ReefName, report_year, depth) %>%
+  summarise(total_hc = sum(mean, na.rm = TRUE),
+    acrop_cover = sum(mean[grepl("Acropora", reefpage_category, ignore.case = TRUE)], na.rm = TRUE),
+    .groups = "drop") %>%
+  mutate(prop_acropora = ifelse(total_hc > 0, acrop_cover / total_hc, 0))
+
+dat.ml.ltmp.clean <- dat.ml.ltmp %>%
+  filter(!is.na(mcur_90), !is.na(Rel.Change)) %>%
+  left_join(acrop_comp %>% select(ReefName, report_year, depth, prop_acropora),
+            by = c("ReefName", "report_year", "depth")) %>%
+  mutate(prop_acropora = replace_na(prop_acropora, median(prop_acropora, na.rm = TRUE)))
+N_ltmp <- nrow(dat.ml.ltmp.clean)
+dat.ml.ltmp.clean <- dat.ml.ltmp.clean %>%
+  mutate(Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
+         Mort.prop.nudge = (Mort.prop * (N_ltmp - 1) + 0.5) / N_ltmp)
+cat("LTMP Benthic model dataset:", N_ltmp, "observations\n")
+
+fit_qbin_ltmp <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
+                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 +
+                    MaxDHW.mean * prop_acropora + winyear_sd,
+  data = dat.ml.ltmp.clean, family = quasibinomial(link = "logit"))
+print(summary(fit_qbin_ltmp))
 
 # Scale LTMP predictors (same Gelman scaling)
 scale_params_ltmp <- list(
@@ -2135,45 +1764,62 @@ print(summary(fit_brms_ltmp))
 cat("\nBeta R²:"); print(bayes_R2(fit_brms_ltmp))
 cat("\nBinomial-OLRE R²:"); print(bayes_R2(fit_brmsb_ltmp))
 
-
-## ----brms-halfeye-ltmp--------------------------------------------------------
-#| label: brms-halfeye-ltmp
-#| fig-cap: "LTMP Benthic — Posterior coefficient distributions."
-#| fig-width: 10
-#| fig-height: 6
-
-library(brms)
-library(dplyr)
-library(tidybayes)
+library(brms); library(dplyr); library(tidybayes)
 draws_ltmp <- as_draws_df(fit_brms_ltmp) %>%
   select(starts_with("b_")) %>%
   pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
   filter(term != "b_Intercept") %>%
-  mutate(term = gsub("b_", "", term),
-         term = gsub("MaxDHW_s", "DHW", term),
-         term = gsub("histmDHW6_s", "Prior Exposure", term),
-         term = gsub("secc3m_s", "Secchi Depth", term),
-         term = gsub("cloudp_90_s", "Cloud Cover", term),
-         term = gsub("winyear_sd_s", "Winter SST SD", term),
-         term = gsub("mcur_90_s", "Current Speed", term),
-         term = gsub("prop_acropora_s", "Prop. Acropora", term),
-         term = gsub(":", " × ", term))
-
+  mutate(term = gsub("b_", "", term), term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("histmDHW6_s", "Prior Exposure", term), term = gsub("secc3m_s", "Secchi Depth", term),
+         term = gsub("cloudp_90_s", "Cloud Cover", term), term = gsub("winyear_sd_s", "Winter SST SD", term),
+         term = gsub("mcur_90_s", "Current Speed", term), term = gsub("prop_acropora_s", "Prop. Acropora", term),
+         term = gsub(":", " x ", term))
 ggplot(draws_ltmp, aes(x = estimate, y = reorder(term, estimate))) +
-  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi,
-               fill = "darkorange", alpha = 0.7, normalize = "xy") +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi, fill = "darkorange", alpha = 0.7, normalize = "xy") +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  labs(x = "Posterior Estimate (logit scale)", y = NULL,
-       title = "LTMP Benthic — Posterior Effect Distributions",
-       subtitle = "Beta Model with (1|ReefName) random intercept") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL, title = "LTMP Benthic — Posterior Effect Distributions (Beta)") +
   theme_bw(base_size = 12)
 
+library(brms); library(dplyr); library(tidybayes)
+draws_ltmp_olre <- as_draws_df(fit_brmsb_ltmp) %>%
+  select(starts_with("b_")) %>%
+  pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+  filter(term != "b_Intercept") %>%
+  mutate(term = gsub("b_", "", term), term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("histmDHW6_s", "Prior Exposure", term), term = gsub("secc3m_s", "Secchi Depth", term),
+         term = gsub("cloudp_90_s", "Cloud Cover", term), term = gsub("winyear_sd_s", "Winter SST SD", term),
+         term = gsub("mcur_90_s", "Current Speed", term), term = gsub("prop_acropora_s", "Prop. Acropora", term),
+         term = gsub(":", " x ", term))
+ggplot(draws_ltmp_olre, aes(x = estimate, y = reorder(term, estimate))) +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi, fill = "coral", alpha = 0.7, normalize = "xy") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL, title = "LTMP Benthic — Posterior Effect Distributions (Binomial-OLRE)") +
+  theme_bw(base_size = 12)
 
-## ----brms-dose-ltmp-----------------------------------------------------------
-#| label: brms-dose-ltmp
-#| fig-cap: "LTMP Benthic — 4-panel Bayesian dose-response summary."
-#| fig-width: 12
-#| fig-height: 10
+coef_ltmp <- as.data.frame(coef(summary(fit_qbin_ltmp)))
+names(coef_ltmp) <- c("Estimate", "SE", "t", "p")
+coef_ltmp$Term <- rownames(coef_ltmp)
+coef_ltmp <- coef_ltmp[coef_ltmp$Term != "(Intercept)", ]
+z90 <- qnorm(0.95)
+coef_ltmp$lo <- coef_ltmp$Estimate - z90 * coef_ltmp$SE
+coef_ltmp$hi <- coef_ltmp$Estimate + z90 * coef_ltmp$SE
+coef_ltmp$Term <- gsub("MaxDHW.mean", "DHW", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("secc3m", "Secchi Depth", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("cloudp_90", "Cloud Cover", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("winyear_sd", "Winter SST SD", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("mcur_90", "Current Speed", coef_ltmp$Term)
+coef_ltmp$Term <- gsub("prop_acropora", "Prop. Acropora", coef_ltmp$Term)
+coef_ltmp$Term <- gsub(":", " x ", coef_ltmp$Term)
+coef_ltmp$sig <- ifelse(coef_ltmp$lo > 0 | coef_ltmp$hi < 0, "Significant", "Not significant")
+coef_ltmp$Term <- reorder(coef_ltmp$Term, coef_ltmp$Estimate)
+ggplot(coef_ltmp, aes(x = Estimate, y = Term, colour = sig)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
+  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
+  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
+       title = "LTMP Benthic — Effect Sizes (90% CI)") +
+  theme_bw(base_size = 12) + theme(legend.position = "bottom")
 
 library(brms)
 library(dplyr)
@@ -2204,7 +1850,21 @@ pA2 <- ggplot() + es + el +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) Bayesian LTMP: DHW Dose-Response") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
 
-# Panel B: DHW × Prior Exposure
+# Panel B: Prior Exposure alone (main effect)
+hl_range_raw <- seq(quantile(d$histmDHW6, 0.05, na.rm = TRUE), quantile(d$histmDHW6, 0.95, na.rm = TRUE), length.out = 100)
+hl_range_s <- (hl_range_raw - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+gb_main <- data.frame(histmDHW6_s = hl_range_s, MaxDHW_s = 0,
+  secc3m_s = 0, cloudp_90_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+gb_main <- brms_pred_ltmp(m, gb_main) %>%
+  mutate(histmDHW6 = histmDHW6_s * sp$histmDHW6["sd2"] + sp$histmDHW6["mean"])
+pB2_main <- ggplot(gb_main, aes(x = histmDHW6, y = pred)) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), fill = "purple", alpha = 0.15) +
+  geom_line(colour = "purple", linewidth = 1) +
+  labs(x = "Prior Severe Bleaching Count", y = "Mortality Proportion", title = "(B) Prior Exposure Main Effect",
+       subtitle = "DHW held at median") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel C: DHW × Prior Exposure
 hl_raw <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
 hl_s <- (hl_raw - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
 gb <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 100), histmDHW6_s = hl_s) %>%
@@ -2212,14 +1872,14 @@ gb <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 100), histmDHW6_s
 gb <- brms_pred_ltmp(m, gb) %>%
   mutate(histmDHW6 = histmDHW6_s * sp$histmDHW6["sd2"] + sp$histmDHW6["mean"],
          lbl = factor(paste0(round(histmDHW6, 1), " prior"), levels = paste0(round(hl_raw, 1), " prior")))
-pB2 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+pC2 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
   geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
   scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Prior Exposure", fill = "Prior Exposure",
-       title = "(B) DHW × Prior Exposure") +
+       title = "(C) DHW × Prior Exposure") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
 
-# Panel C: DHW × Cloud Cover
+# Panel D: DHW × Cloud Cover
 cl_raw <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
 cl_s <- (cl_raw - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
 gc <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 100), cloudp_90_s = cl_s) %>%
@@ -2227,181 +1887,298 @@ gc <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 100), cloudp_90_s
 gc <- brms_pred_ltmp(m, gc) %>%
   mutate(cloudp_90 = cloudp_90_s * sp$cloudp_90["sd2"] + sp$cloudp_90["mean"],
          lbl = factor(paste0(round(cloudp_90 * 100, 0), "%"), levels = paste0(round(cl_raw * 100, 0), "%")))
-pC2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+pD2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
   geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
   scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
-       title = "(C) DHW × Cloud Cover") +
+       title = "(D) DHW × Cloud Cover") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
 
-# Panel D: Worst vs Best
-cl_05 <- (quantile(d$cloudp_90, 0.05, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
-cl_95 <- (quantile(d$cloudp_90, 0.95, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
-h_00 <- (0 - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
-h_95 <- (quantile(d$histmDHW6, 0.95, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
-gd <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 100), 2),
+# Panel E: DHW × % Acropora
+al_raw <- quantile(d$prop_acropora, c(0.1, 0.5, 0.9), na.rm = TRUE)
+al_s <- (al_raw - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+ge_acrop <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 100), prop_acropora_s = al_s) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+ge_acrop <- brms_pred_ltmp(m, ge_acrop) %>%
+  mutate(prop_acropora = prop_acropora_s * sp$prop_acropora["sd2"] + sp$prop_acropora["mean"],
+         lbl = factor(paste0(round(prop_acropora*100, 0), "% Acrop."), levels = paste0(round(al_raw*100, 0), "% Acrop.")))
+pE2 <- ggplot(ge_acrop, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set2") + scale_fill_brewer(palette = "Set2") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Acropora", fill = "Acropora",
+       title = "(E) DHW × % Acropora") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel F: Worst vs Best
+cl_10 <- (quantile(d$cloudp_90, 0.10, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+cl_90 <- (quantile(d$cloudp_90, 0.90, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+h_10  <- (quantile(d$histmDHW6, 0.10, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+h_90  <- (quantile(d$histmDHW6, 0.90, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+a_10  <- (quantile(d$prop_acropora, 0.10, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+a_90  <- (quantile(d$prop_acropora, 0.90, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+
+gf <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 100), 2),
   scenario = rep(c("Worst case", "Best case"), each = 100),
-  cloudp_90_s = rep(c(cl_05, cl_95), each = 100),
-  histmDHW6_s = rep(c(h_00, h_95), each = 100),
-  secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
-gd <- brms_pred_ltmp(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
-ge <- gd %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  cloudp_90_s = rep(c(cl_10, cl_90), each = 100),
+  histmDHW6_s = rep(c(h_10, h_90), each = 100),
+  prop_acropora_s = rep(c(a_90, a_10), each = 100),
+  secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gf <- brms_pred_ltmp(m, gf); gf$scenario <- factor(gf$scenario, levels = c("Worst case", "Best case"))
+gfe <- gf %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
   pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
-pD2 <- ggplot() + es + el +
-  geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
-  geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
-  geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
-  geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+
+pF2 <- ggplot() + es + el +
+  geom_ribbon(data = gfe, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = gf %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = gf %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = gf, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
   scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
-       title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure") +
+       title = "(F) Worst vs Best Case",
+       subtitle = "Worst: low cloud (10th), no prior (10th), high Acropora (90th) | Best: high cloud (90th), prior (90th), low Acropora (10th)") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
 
-(pA2 + pB2) / (pC2 + pD2)
+(pA2 + pB2_main) / (pC2 + pD2) / (pE2 + pF2)
 
+library(brms); library(dplyr); library(patchwork)
+d <- dat.ml.ltmp.clean; m <- fit_brmsb_ltmp; sp <- scale_params_ltmp
+dhw_ext <- max(d$MaxDHW.mean, na.rm = TRUE)
+dhw_max_s <- (20 - sp$MaxDHW.mean["mean"]) / sp$MaxDHW.mean["sd2"]
 
-## ----qbin-mmp-model-----------------------------------------------------------
-#| label: qbin-mmp-model
+brms_pred_ltmp_olre <- function(mod, nd) {
+  nd$n_trials <- 1L
+  pp <- posterior_epred(mod, newdata = nd, re_formula = NA)
+  nd$pred    <- apply(pp, 2, median)
+  nd$pred_lo <- apply(pp, 2, quantile, 0.05)
+  nd$pred_hi <- apply(pp, 2, quantile, 0.95)
+  nd$MaxDHW.mean <- nd$MaxDHW_s * sp$MaxDHW.mean["sd2"] + sp$MaxDHW.mean["mean"]
+  nd
+}
+
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+
+# Panel A: DHW
+ga <- data.frame(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200),
+  secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+ga <- brms_pred_ltmp_olre(m, ga)
+pA2 <- ggplot() + es + el +
+  geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "coral", alpha = 0.2) +
+  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "coral", linewidth = 1) +
+  labs(x = "Max DHW", y = "Mortality Proportion", title = "(A) Binomial-OLRE DHW Dose-Response") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel B: Prior Exposure main effect
+hl_raw <- seq(quantile(d$histmDHW6, 0.05, na.rm=T), quantile(d$histmDHW6, 0.95, na.rm=T), length.out = 100)
+hl_s <- (hl_raw - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+gb_main <- data.frame(histmDHW6_s = hl_s, MaxDHW_s = 0, secc3m_s = 0, cloudp_90_s = 0,
+  winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0, n_trials = 1L)
+pp_b <- posterior_epred(m, newdata = gb_main, re_formula = NA)
+gb_main$pred <- apply(pp_b, 2, median); gb_main$pred_lo <- apply(pp_b, 2, quantile, 0.05); gb_main$pred_hi <- apply(pp_b, 2, quantile, 0.95)
+gb_main$histmDHW6 <- gb_main$histmDHW6_s * sp$histmDHW6["sd2"] + sp$histmDHW6["mean"]
+pB2_main <- ggplot(gb_main, aes(x = histmDHW6, y = pred)) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), fill = "purple", alpha = 0.15) +
+  geom_line(colour = "purple", linewidth = 1) +
+  labs(x = "Prior Severe Bleaching Count", y = "Mortality Proportion", title = "(B) Prior Exposure Main Effect") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel C: DHW x Prior Exposure
+hl_q <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+hl_qs <- (hl_q - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+gc <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), histmDHW6_s = hl_qs) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+gc <- brms_pred_ltmp_olre(m, gc) %>%
+  mutate(histmDHW6 = histmDHW6_s * sp$histmDHW6["sd2"] + sp$histmDHW6["mean"],
+         lbl = factor(paste0(round(histmDHW6, 1), " prior"), levels = paste0(round(hl_q, 1), " prior")))
+pC2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Prior", fill = "Prior", title = "(C) DHW x Prior Exposure") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel D: DHW x Cloud Cover
+cl_q <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+cl_qs <- (cl_q - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+gd <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), cloudp_90_s = cl_qs) %>%
+  mutate(secc3m_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0, prop_acropora_s = 0)
+gd <- brms_pred_ltmp_olre(m, gd) %>%
+  mutate(cloudp_90 = cloudp_90_s * sp$cloudp_90["sd2"] + sp$cloudp_90["mean"],
+         lbl = factor(paste0(round(cloudp_90*100,0), "%"), levels = paste0(round(cl_q*100,0), "%")))
+pD2 <- ggplot(gd, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover", title = "(D) DHW x Cloud Cover") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel E: DHW x % Acropora
+al_q <- quantile(d$prop_acropora, c(0.1, 0.5, 0.9), na.rm = TRUE)
+al_qs <- (al_q - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+ge <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), prop_acropora_s = al_qs) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+ge <- brms_pred_ltmp_olre(m, ge) %>%
+  mutate(prop_acropora = prop_acropora_s * sp$prop_acropora["sd2"] + sp$prop_acropora["mean"],
+         lbl = factor(paste0(round(prop_acropora*100,0), "% Acrop."), levels = paste0(round(al_q*100,0), "% Acrop.")))
+pE2 <- ggplot(ge, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set2") + scale_fill_brewer(palette = "Set2") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Acropora", fill = "Acropora", title = "(E) DHW x % Acropora") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel F: Worst vs Best
+cl_10s <- (quantile(d$cloudp_90, 0.10, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+cl_90s <- (quantile(d$cloudp_90, 0.90, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+h_10s <- (quantile(d$histmDHW6, 0.10, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+h_90s <- (quantile(d$histmDHW6, 0.90, na.rm=T) - sp$histmDHW6["mean"]) / sp$histmDHW6["sd2"]
+a_10s <- (quantile(d$prop_acropora, 0.10, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+a_90s <- (quantile(d$prop_acropora, 0.90, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+gf <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 200), 2),
+  scenario = rep(c("Worst case", "Best case"), each = 200),
+  cloudp_90_s = rep(c(cl_10s, cl_90s), each = 200),
+  histmDHW6_s = rep(c(h_10s, h_90s), each = 200),
+  prop_acropora_s = rep(c(a_90s, a_10s), each = 200),
+  secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gf <- brms_pred_ltmp_olre(m, gf); gf$scenario <- factor(gf$scenario, levels = c("Worst case", "Best case"))
+gfe <- gf %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+pF2 <- ggplot() + es + el +
+  geom_ribbon(data = gfe, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = gf %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = gf %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = gf, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Scenario", title = "(F) Worst vs Best Case") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA2 + pB2_main) / (pC2 + pD2) / (pE2 + pF2)
+
+library(patchwork)
+pci <- function(mod, nd, level = 0.90) {
+  z <- qnorm(1 - (1 - level)/2); p <- predict(mod, newdata = nd, type = "link", se.fit = TRUE)
+  nd$pred <- plogis(p$fit); nd$pred_lo <- plogis(p$fit - z*p$se.fit); nd$pred_hi <- plogis(p$fit + z*p$se.fit); nd }
+dhw_ext <- max(dat.ml.ltmp.clean$MaxDHW.mean, na.rm = TRUE)
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+d <- dat.ml.ltmp.clean; m <- fit_qbin_ltmp
+
+# Panel A: DHW dose-response
+ga <- data.frame(MaxDHW.mean = seq(0, 20, length.out = 200), secc3m = median(d$secc3m, na.rm=T),
+  cloudp_90 = median(d$cloudp_90, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
+  winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+  prop_acropora = median(d$prop_acropora, na.rm=T))
+ga <- pci(m, ga)
+pA2 <- ggplot() + es + el +
+  geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "steelblue", alpha = 0.2) +
+  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "steelblue", linewidth = 1) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) LTMP: DHW Dose-Response") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel B: Prior Exposure alone (main effect)
+hl_range <- seq(quantile(d$histmDHW6, 0.05, na.rm = TRUE), quantile(d$histmDHW6, 0.95, na.rm = TRUE), length.out = 100)
+gb_main <- data.frame(histmDHW6 = hl_range, MaxDHW.mean = median(d$MaxDHW.mean, na.rm = TRUE),
+  secc3m = median(d$secc3m, na.rm=T), cloudp_90 = median(d$cloudp_90, na.rm=T),
+  winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+  prop_acropora = median(d$prop_acropora, na.rm=T))
+gb_main <- pci(m, gb_main)
+pB2_main <- ggplot(gb_main, aes(x = histmDHW6, y = pred)) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), fill = "purple", alpha = 0.15) +
+  geom_line(colour = "purple", linewidth = 1) +
+  labs(x = "Prior Severe Bleaching Count", y = "Mortality Proportion", title = "(B) Prior Exposure Main Effect",
+       subtitle = "DHW held at median") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel C: DHW × Prior Exposure
+hl <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+gb <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), histmDHW6 = hl) %>%
+  mutate(secc3m = median(d$secc3m, na.rm=T), cloudp_90 = median(d$cloudp_90, na.rm=T),
+         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+         prop_acropora = median(d$prop_acropora, na.rm=T))
+gb <- pci(m, gb) %>% mutate(lbl = factor(paste0(round(histmDHW6,1)," prior"), levels = paste0(round(hl,1)," prior")))
+pC2 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Prior Exposure", fill = "Prior Exposure",
+       title = "(C) DHW × Prior Exposure") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel D: DHW × Cloud Cover
+cl <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+gc <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), cloudp_90 = cl) %>%
+  mutate(secc3m = median(d$secc3m, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
+         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+         prop_acropora = median(d$prop_acropora, na.rm=T))
+gc <- pci(m, gc) %>% mutate(lbl = factor(paste0(round(cloudp_90*100,0),"%"), levels = paste0(round(cl*100,0),"%")))
+pD2 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
+       title = "(D) DHW × Cloud Cover") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel E: DHW × % Acropora
+al_raw <- quantile(d$prop_acropora, c(0.1, 0.5, 0.9), na.rm = TRUE)
+ge_acrop <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), prop_acropora = al_raw) %>%
+  mutate(secc3m = median(d$secc3m, na.rm=T), cloudp_90 = median(d$cloudp_90, na.rm=T),
+         histmDHW6 = median(d$histmDHW6, na.rm=T), winyear_sd = median(d$winyear_sd, na.rm=T),
+         mcur_90 = median(d$mcur_90, na.rm=T))
+ge_acrop <- pci(m, ge_acrop) %>%
+  mutate(lbl = factor(paste0(round(prop_acropora * 100, 0), "% Acrop."), levels = paste0(round(al_raw * 100, 0), "% Acrop.")))
+pE2 <- ggplot(ge_acrop, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set2") + scale_fill_brewer(palette = "Set2") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Acropora", fill = "Acropora",
+       title = "(E) DHW × % Acropora") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel F: Worst vs Best
+cl_10 <- quantile(d$cloudp_90, 0.10, na.rm = TRUE)
+cl_90 <- quantile(d$cloudp_90, 0.90, na.rm = TRUE)
+h_10  <- quantile(d$histmDHW6, 0.10, na.rm = TRUE)
+h_90  <- quantile(d$histmDHW6, 0.90, na.rm = TRUE)
+a_10  <- quantile(d$prop_acropora, 0.10, na.rm = TRUE)
+a_90  <- quantile(d$prop_acropora, 0.90, na.rm = TRUE)
+
+gf <- data.frame(MaxDHW.mean = rep(seq(0, 20, length.out = 200), 2),
+  scenario = rep(c("Worst case", "Best case"), each = 200),
+  cloudp_90 = rep(c(cl_10, cl_90), each = 200),
+  histmDHW6 = rep(c(h_10, h_90), each = 200),
+  prop_acropora = rep(c(a_90, a_10), each = 200),
+  secc3m = median(d$secc3m, na.rm=T), winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T))
+gf <- pci(m, gf); gf$scenario <- factor(gf$scenario, levels = c("Worst case", "Best case"))
+gfe <- gf %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+
+pF2 <- ggplot() + es + el +
+  geom_ribbon(data = gfe, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = gf %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = gf %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = gf, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
+       title = "(F) Worst vs Best Case",
+       subtitle = "Worst: low cloud (10th), no prior (10th), high Acropora (90th) | Best: high cloud (90th), prior (90th), low Acropora (10th)") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA2 + pB2_main) / (pC2 + pD2) / (pE2 + pF2)
 
 dat.ml.mmp.clean <- dat.ml.mmp %>%
   filter(!is.na(mcur_90), !is.na(Rel.Change)) %>%
   left_join(acrop_comp %>% select(ReefName, report_year, depth, prop_acropora),
             by = c("ReefName", "report_year", "depth")) %>%
   mutate(prop_acropora = replace_na(prop_acropora, median(prop_acropora, na.rm = TRUE)))
-
 N_mmp <- nrow(dat.ml.mmp.clean)
 dat.ml.mmp.clean <- dat.ml.mmp.clean %>%
-  mutate(
-    Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
-    Mort.prop.nudge = (Mort.prop * (N_mmp - 1) + 0.5) / N_mmp
-  )
-
+  mutate(Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
+         Mort.prop.nudge = (Mort.prop * (N_mmp - 1) + 0.5) / N_mmp)
 cat("MMP Inshore model dataset:", N_mmp, "observations\n")
-cat("  prop_acropora range:", round(range(dat.ml.mmp.clean$prop_acropora, na.rm = TRUE), 3), "\n")
-cat("  Depth levels:", sort(unique(dat.ml.mmp.clean$depth)), "\n")
 
 fit_qbin_mmp <- glm(
   Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
                     MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 +
                     MaxDHW.mean * prop_acropora + winyear_sd + depth,
-  data = dat.ml.mmp.clean,
-  family = quasibinomial(link = "logit")
-)
-cat("MMP Quasibinomial GLM summary (with Acropora proportion + depth):\n")
+  data = dat.ml.mmp.clean, family = quasibinomial(link = "logit"))
 print(summary(fit_qbin_mmp))
-
-
-## ----qbin-mmp-effects---------------------------------------------------------
-#| label: qbin-mmp-effects
-#| fig-cap: "MMP Inshore — Coefficient estimates (logit scale) with 90% CI."
-#| fig-width: 8
-#| fig-height: 5
-
-coef_mmp <- as.data.frame(coef(summary(fit_qbin_mmp)))
-names(coef_mmp) <- c("Estimate", "SE", "t", "p")
-coef_mmp$Term <- rownames(coef_mmp)
-coef_mmp <- coef_mmp[coef_mmp$Term != "(Intercept)", ]
-coef_mmp$lo <- coef_mmp$Estimate - z90 * coef_mmp$SE
-coef_mmp$hi <- coef_mmp$Estimate + z90 * coef_mmp$SE
-coef_mmp$Term <- gsub("MaxDHW.mean", "DHW", coef_mmp$Term)
-coef_mmp$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_mmp$Term)
-coef_mmp$Term <- gsub("secc3m", "Secchi Depth", coef_mmp$Term)
-coef_mmp$Term <- gsub("cloudp_90", "Cloud Cover", coef_mmp$Term)
-coef_mmp$Term <- gsub("winyear_sd", "Winter SST SD", coef_mmp$Term)
-coef_mmp$Term <- gsub("mcur_90", "Current Speed", coef_mmp$Term)
-coef_mmp$Term <- gsub("prop_acropora", "Prop. Acropora", coef_mmp$Term)
-coef_mmp$Term <- gsub("^depth$", "Survey Depth", coef_mmp$Term)
-coef_mmp$Term <- gsub(":", " × ", coef_mmp$Term)
-coef_mmp$sig <- ifelse(coef_mmp$lo > 0 | coef_mmp$hi < 0, "Significant", "Not significant")
-coef_mmp$Term <- reorder(coef_mmp$Term, coef_mmp$Estimate)
-
-ggplot(coef_mmp, aes(x = Estimate, y = Term, colour = sig)) +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
-  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
-  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
-       title = "MMP Inshore — Effect Sizes (90% CI)") +
-  theme_bw(base_size = 12) + theme(legend.position = "bottom")
-
-
-## ----qbin-mmp-dose------------------------------------------------------------
-#| label: qbin-mmp-dose
-#| fig-cap: "MMP Inshore — 4-panel dose-response summary."
-#| fig-width: 12
-#| fig-height: 10
-
-dhw_ext <- max(dat.ml.mmp.clean$MaxDHW.mean, na.rm = TRUE)
-es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
-el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
-d <- dat.ml.mmp.clean; m <- fit_qbin_mmp
-
-# Panel A: DHW dose-response
-ga <- data.frame(MaxDHW.mean = seq(0, 20, length.out = 200), secc3m = median(d$secc3m, na.rm=T),
-  cloudp_90 = median(d$cloudp_90, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
-  winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-  prop_acropora = median(d$prop_acropora, na.rm=T), depth = median(d$depth, na.rm=T))
-ga <- pci(m, ga)
-pA3 <- ggplot() + es + el +
-  geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
-  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "steelblue", alpha = 0.2) +
-  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "steelblue", linewidth = 1) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) MMP: DHW Dose-Response") +
-  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
-
-# Panel B: DHW × Prior Exposure
-hl <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
-gb <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), histmDHW6 = hl) %>%
-  mutate(secc3m = median(d$secc3m, na.rm=T), cloudp_90 = median(d$cloudp_90, na.rm=T),
-         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-         prop_acropora = median(d$prop_acropora, na.rm=T), depth = median(d$depth, na.rm=T))
-gb <- pci(m, gb) %>% mutate(lbl = factor(paste0(round(histmDHW6,1)," prior"), levels = paste0(round(hl,1)," prior")))
-pB3 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
-  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
-  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Prior Exposure", fill = "Prior Exposure",
-       title = "(B) DHW × Prior Exposure") +
-  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
-
-# Panel C: DHW × Cloud Cover
-cl <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
-gc <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), cloudp_90 = cl) %>%
-  mutate(secc3m = median(d$secc3m, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
-         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-         prop_acropora = median(d$prop_acropora, na.rm=T), depth = median(d$depth, na.rm=T))
-gc <- pci(m, gc) %>% mutate(lbl = factor(paste0(round(cloudp_90*100,0),"%"), levels = paste0(round(cl*100,0),"%")))
-pC3 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
-  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
-  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
-       title = "(C) DHW × Cloud Cover") +
-  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
-
-# Panel D: Worst vs Best
-gd <- data.frame(MaxDHW.mean = rep(seq(0, 20, length.out = 200), 2),
-  scenario = rep(c("Worst case", "Best case"), each = 200),
-  cloudp_90 = rep(c(quantile(d$cloudp_90, 0.05, na.rm=T), quantile(d$cloudp_90, 0.95, na.rm=T)), each = 200),
-  histmDHW6 = rep(c(0, quantile(d$histmDHW6, 0.95, na.rm=T)), each = 200),
-  secc3m = median(d$secc3m, na.rm=T), winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
-  prop_acropora = median(d$prop_acropora, na.rm=T), depth = median(d$depth, na.rm=T))
-gd <- pci(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
-ge <- gd %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
-  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
-pD3 <- ggplot() + es + el +
-  geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
-  geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
-  geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
-  geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
-  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
-  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
-       title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure") +
-  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
-
-(pA3 + pB3) / (pC3 + pD3)
-
-
-## ----brms-mmp-model-----------------------------------------------------------
-#| label: brms-mmp-model
-#| cache: true
 
 # Scale MMP predictors
 scale_params_mmp <- list(
@@ -2466,43 +2243,61 @@ print(summary(fit_brms_mmp))
 cat("\nBeta R²:"); print(bayes_R2(fit_brms_mmp))
 cat("\nBinomial-OLRE R²:"); print(bayes_R2(fit_brmsb_mmp))
 
-
-## ----brms-halfeye-mmp---------------------------------------------------------
-#| label: brms-halfeye-mmp
-#| fig-cap: "MMP Inshore — Posterior coefficient distributions."
-#| fig-width: 10
-#| fig-height: 5
-
-library(brms)
-library(dplyr)
-library(tidybayes)
+library(brms); library(dplyr); library(tidybayes)
 draws_mmp <- as_draws_df(fit_brms_mmp) %>%
   select(starts_with("b_")) %>%
   pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
   filter(term != "b_Intercept") %>%
-  mutate(term = gsub("b_", "", term),
-         term = gsub("MaxDHW_s", "DHW", term),
-         term = gsub("secc3m_s", "Secchi Depth", term),
-         term = gsub("cloudp_90_s", "Cloud Cover", term),
-         term = gsub("prop_acropora_s", "Prop. Acropora", term),
-         term = gsub("^depth$", "Survey Depth", term),
-         term = gsub(":", " × ", term))
-
+  mutate(term = gsub("b_", "", term), term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("secc3m_s", "Secchi Depth", term), term = gsub("cloudp_90_s", "Cloud Cover", term),
+         term = gsub("prop_acropora_s", "Prop. Acropora", term), term = gsub("^depth$", "Survey Depth", term),
+         term = gsub(":", " x ", term))
 ggplot(draws_mmp, aes(x = estimate, y = reorder(term, estimate))) +
-  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi,
-               fill = "forestgreen", alpha = 0.7, normalize = "xy") +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi, fill = "forestgreen", alpha = 0.7, normalize = "xy") +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  labs(x = "Posterior Estimate (logit scale)", y = NULL,
-       title = "MMP Inshore — Posterior Effect Distributions",
-       subtitle = "Parsimonious Beta Model with (1|ReefName) random intercept") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL, title = "MMP Inshore — Posterior Effect Distributions (Beta)") +
   theme_bw(base_size = 12)
 
+library(brms); library(dplyr); library(tidybayes)
+draws_mmp_olre <- as_draws_df(fit_brmsb_mmp) %>%
+  select(starts_with("b_")) %>%
+  pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+  filter(term != "b_Intercept") %>%
+  mutate(term = gsub("b_", "", term), term = gsub("MaxDHW_s", "DHW", term),
+         term = gsub("secc3m_s", "Secchi Depth", term), term = gsub("cloudp_90_s", "Cloud Cover", term),
+         term = gsub("prop_acropora_s", "Prop. Acropora", term), term = gsub("^depth$", "Survey Depth", term),
+         term = gsub(":", " x ", term))
+ggplot(draws_mmp_olre, aes(x = estimate, y = reorder(term, estimate))) +
+  stat_halfeye(.width = c(0.66, 0.95), point_interval = median_qi, fill = "coral", alpha = 0.7, normalize = "xy") +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  labs(x = "Posterior Estimate (logit scale)", y = NULL, title = "MMP Inshore — Posterior Effect Distributions (Binomial-OLRE)") +
+  theme_bw(base_size = 12)
 
-## ----brms-dose-mmp------------------------------------------------------------
-#| label: brms-dose-mmp
-#| fig-cap: "MMP Inshore — 4-panel Bayesian dose-response summary."
-#| fig-width: 12
-#| fig-height: 10
+coef_mmp <- as.data.frame(coef(summary(fit_qbin_mmp)))
+names(coef_mmp) <- c("Estimate", "SE", "t", "p")
+coef_mmp$Term <- rownames(coef_mmp)
+coef_mmp <- coef_mmp[coef_mmp$Term != "(Intercept)", ]
+z90 <- qnorm(0.95)
+coef_mmp$lo <- coef_mmp$Estimate - z90 * coef_mmp$SE
+coef_mmp$hi <- coef_mmp$Estimate + z90 * coef_mmp$SE
+coef_mmp$Term <- gsub("MaxDHW.mean", "DHW", coef_mmp$Term)
+coef_mmp$Term <- gsub("histmDHW6", "Prior Exposure (>6 DHW)", coef_mmp$Term)
+coef_mmp$Term <- gsub("secc3m", "Secchi Depth", coef_mmp$Term)
+coef_mmp$Term <- gsub("cloudp_90", "Cloud Cover", coef_mmp$Term)
+coef_mmp$Term <- gsub("winyear_sd", "Winter SST SD", coef_mmp$Term)
+coef_mmp$Term <- gsub("mcur_90", "Current Speed", coef_mmp$Term)
+coef_mmp$Term <- gsub("prop_acropora", "Prop. Acropora", coef_mmp$Term)
+coef_mmp$Term <- gsub("^depth$", "Survey Depth", coef_mmp$Term)
+coef_mmp$Term <- gsub(":", " x ", coef_mmp$Term)
+coef_mmp$sig <- ifelse(coef_mmp$lo > 0 | coef_mmp$hi < 0, "Significant", "Not significant")
+coef_mmp$Term <- reorder(coef_mmp$Term, coef_mmp$Estimate)
+ggplot(coef_mmp, aes(x = Estimate, y = Term, colour = sig)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = lo, xmax = hi), size = 0.7, fatten = 3) +
+  scale_colour_manual(values = c("Significant" = "black", "Not significant" = "grey60")) +
+  labs(x = "Coefficient Estimate (logit scale)", y = NULL, colour = NULL,
+       title = "MMP Inshore — Effect Sizes (90% CI)") +
+  theme_bw(base_size = 12) + theme(legend.position = "bottom")
 
 library(brms)
 library(dplyr)
@@ -2564,14 +2359,14 @@ pC3 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
 
 # Panel D: Worst vs Best
-cl_05 <- (quantile(d$cloudp_90, 0.05, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
-cl_95 <- (quantile(d$cloudp_90, 0.95, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
-a_05 <- (quantile(d$prop_acropora, 0.95, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]  # high acrop = worse
-a_95 <- (quantile(d$prop_acropora, 0.05, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]  # low acrop = better
+cl_10 <- (quantile(d$cloudp_90, 0.10, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+cl_90 <- (quantile(d$cloudp_90, 0.90, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+a_10 <- (quantile(d$prop_acropora, 0.10, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+a_90 <- (quantile(d$prop_acropora, 0.90, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
 gd <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 100), 2),
   scenario = rep(c("Worst case", "Best case"), each = 100),
-  cloudp_90_s = rep(c(cl_05, cl_95), each = 100),
-  prop_acropora_s = rep(c(a_05, a_95), each = 100),
+  cloudp_90_s = rep(c(cl_10, cl_90), each = 100),
+  prop_acropora_s = rep(c(a_90, a_10), each = 100),
   secc3m_s = 0, depth = median(d$depth, na.rm=T))
 gd <- brms_pred_mmp(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
 ge <- gd %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
@@ -2583,14 +2378,482 @@ pD3 <- ggplot() + es + el +
   geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
   scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
   labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
-       title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, high Acropora | Best: high cloud, low Acropora") +
+       title = "(D) Worst vs Best Case", 
+       subtitle = "Worst: low cloud (10th), high Acropora (90th) | Best: high cloud (90th), low Acropora (10th)") +
   coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
 
 (pA3 + pB3) / (pC3 + pD3)
 
+library(brms); library(dplyr); library(patchwork)
+d <- dat.ml.mmp.clean; m <- fit_brmsb_mmp; sp <- scale_params_mmp
+dhw_ext <- max(d$MaxDHW.mean, na.rm = TRUE)
+dhw_max_s <- (20 - sp$MaxDHW.mean["mean"]) / sp$MaxDHW.mean["sd2"]
 
-## ----brms-r2-calc-------------------------------------------------------------
-#| label: brms-r2-calc
+brms_pred_mmp_olre <- function(mod, nd) {
+  nd$n_trials <- 1L
+  pp <- posterior_epred(mod, newdata = nd, re_formula = NA)
+  nd$pred    <- apply(pp, 2, median)
+  nd$pred_lo <- apply(pp, 2, quantile, 0.05)
+  nd$pred_hi <- apply(pp, 2, quantile, 0.95)
+  nd$MaxDHW.mean <- nd$MaxDHW_s * sp$MaxDHW.mean["sd2"] + sp$MaxDHW.mean["mean"]
+  nd
+}
+
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+
+# Panel A: DHW
+ga <- data.frame(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200),
+  secc3m_s = 0, cloudp_90_s = 0, prop_acropora_s = 0, depth = median(d$depth, na.rm=T))
+ga <- brms_pred_mmp_olre(m, ga)
+pA3 <- ggplot() + es + el +
+  geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "coral", alpha = 0.2) +
+  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "coral", linewidth = 1) +
+  labs(x = "Max DHW", y = "Mortality Proportion", title = "(A) Binomial-OLRE DHW Dose-Response") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel B: DHW x Prop Acropora
+al_q <- quantile(d$prop_acropora, c(0.1, 0.5, 0.9), na.rm = TRUE)
+al_qs <- (al_q - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+gb <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), prop_acropora_s = al_qs) %>%
+  mutate(secc3m_s = 0, cloudp_90_s = 0, depth = median(d$depth, na.rm=T))
+gb <- brms_pred_mmp_olre(m, gb) %>%
+  mutate(prop_acropora = prop_acropora_s * sp$prop_acropora["sd2"] + sp$prop_acropora["mean"],
+         lbl = factor(paste0(round(prop_acropora*100,0), "% Acrop."), levels = paste0(round(al_q*100,0), "% Acrop.")))
+pB3 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Acropora", fill = "Acropora", title = "(B) DHW x Prop. Acropora") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel C: DHW x Cloud Cover
+cl_q <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+cl_qs <- (cl_q - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+gc <- expand.grid(MaxDHW_s = seq(-1.5, dhw_max_s, length.out = 200), cloudp_90_s = cl_qs) %>%
+  mutate(secc3m_s = 0, prop_acropora_s = 0, depth = median(d$depth, na.rm=T))
+gc <- brms_pred_mmp_olre(m, gc) %>%
+  mutate(cloudp_90 = cloudp_90_s * sp$cloudp_90["sd2"] + sp$cloudp_90["mean"],
+         lbl = factor(paste0(round(cloudp_90*100,0), "%"), levels = paste0(round(cl_q*100,0), "%")))
+pC3 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover", title = "(C) DHW x Cloud Cover") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel D: Worst vs Best
+cl_10s <- (quantile(d$cloudp_90, 0.10, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+cl_90s <- (quantile(d$cloudp_90, 0.90, na.rm=T) - sp$cloudp_90["mean"]) / sp$cloudp_90["sd2"]
+a_10s <- (quantile(d$prop_acropora, 0.10, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+a_90s <- (quantile(d$prop_acropora, 0.90, na.rm=T) - sp$prop_acropora["mean"]) / sp$prop_acropora["sd2"]
+gd <- data.frame(MaxDHW_s = rep(seq(-1.5, dhw_max_s, length.out = 200), 2),
+  scenario = rep(c("Worst case", "Best case"), each = 200),
+  cloudp_90_s = rep(c(cl_10s, cl_90s), each = 200),
+  prop_acropora_s = rep(c(a_90s, a_10s), each = 200),
+  secc3m_s = 0, depth = median(d$depth, na.rm=T))
+gd <- brms_pred_mmp_olre(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
+ge <- gd %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+pD3 <- ggplot() + es + el +
+  geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+  labs(x = "Max DHW", y = "Mortality Proportion", colour = "Scenario", title = "(D) Worst vs Best Case") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA3 + pB3) / (pC3 + pD3)
+
+dhw_ext <- max(dat.ml.mmp.clean$MaxDHW.mean, na.rm = TRUE)
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20)/2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+d <- dat.ml.mmp.clean; m <- fit_qbin_mmp
+
+# Panel A: DHW dose-response
+ga <- data.frame(MaxDHW.mean = seq(0, 20, length.out = 200), secc3m = median(d$secc3m, na.rm=T),
+  cloudp_90 = median(d$cloudp_90, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
+  winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+  prop_acropora = median(d$prop_acropora, na.rm=T), depth = median(d$depth, na.rm=T))
+ga <- pci(m, ga)
+pA3 <- ggplot() + es + el +
+  geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+  geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "steelblue", alpha = 0.2) +
+  geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "steelblue", linewidth = 1) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) MMP: DHW Dose-Response") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11)
+
+# Panel B: DHW × Prop Acropora
+al_raw <- quantile(d$prop_acropora, c(0.1, 0.5, 0.9), na.rm = TRUE)
+gb <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), prop_acropora = al_raw) %>%
+  mutate(secc3m = median(d$secc3m, na.rm=T), cloudp_90 = median(d$cloudp_90, na.rm=T),
+         histmDHW6 = median(d$histmDHW6, na.rm=T), winyear_sd = median(d$winyear_sd, na.rm=T),
+         mcur_90 = median(d$mcur_90, na.rm=T), depth = median(d$depth, na.rm=T))
+gb <- pci(m, gb) %>% mutate(lbl = factor(paste0(round(prop_acropora*100,0),"% Acrop."), levels = paste0(round(al_raw*100,0),"% Acrop.")))
+pB3 <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Acropora", fill = "Acropora",
+       title = "(B) DHW × Prop. Acropora") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel C: DHW × Cloud Cover
+cl <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+gc <- expand.grid(MaxDHW.mean = seq(0, 20, length.out = 200), cloudp_90 = cl) %>%
+  mutate(secc3m = median(d$secc3m, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
+         winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+         prop_acropora = median(d$prop_acropora, na.rm=T), depth = median(d$depth, na.rm=T))
+gc <- pci(m, gc) %>% mutate(lbl = factor(paste0(round(cloudp_90*100,0),"%"), levels = paste0(round(cl*100,0),"%")))
+pC3 <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) + es + el +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) + geom_line(linewidth = 1) +
+  scale_colour_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
+       title = "(C) DHW × Cloud Cover") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85))
+
+# Panel D: Worst vs Best
+cl_10 <- quantile(d$cloudp_90, 0.10, na.rm = TRUE)
+cl_90 <- quantile(d$cloudp_90, 0.90, na.rm = TRUE)
+a_10  <- quantile(d$prop_acropora, 0.10, na.rm = TRUE)
+a_90  <- quantile(d$prop_acropora, 0.90, na.rm = TRUE)
+
+gd <- data.frame(MaxDHW.mean = rep(seq(0, 20, length.out = 200), 2),
+  scenario = rep(c("Worst case", "Best case"), each = 200),
+  cloudp_90 = rep(c(cl_10, cl_90), each = 200),
+  prop_acropora = rep(c(a_90, a_10), each = 200),
+  secc3m = median(d$secc3m, na.rm=T), histmDHW6 = median(d$histmDHW6, na.rm=T),
+  winyear_sd = median(d$winyear_sd, na.rm=T), mcur_90 = median(d$mcur_90, na.rm=T),
+  depth = median(d$depth, na.rm=T))
+gd <- pci(m, gd); gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
+ge <- gd %>% select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+  pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+
+pD3 <- ggplot() + es + el +
+  geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+  geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+  geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+  geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
+       title = "(D) Worst vs Best Case",
+       subtitle = "Worst: low cloud (10th), high Acropora (90th) | Best: high cloud (90th), low Acropora (10th)") +
+  coord_cartesian(ylim = c(0, 1)) + theme_bw(base_size = 11) + theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA3 + pB3) / (pC3 + pD3)
+
+# Fit alternative frequentist GLMs
+fit_qbin_ltmp_alt <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
+                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * mcur_90 +
+                    prop_acropora * cloudp_90 + MaxDHW.mean + winyear_sd,
+  data = dat.ml.ltmp.clean,
+  family = quasibinomial(link = "logit")
+)
+
+fit_qbin_mmp_alt <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * cloudp_90 +
+                    MaxDHW.mean * histmDHW6 + MaxDHW.mean * winyear_sd +
+                    MaxDHW.mean * mcur_90 + prop_acropora * cloudp_90 +
+                    MaxDHW.mean + depth,
+  data = dat.ml.mmp.clean,
+  family = quasibinomial(link = "logit")
+)
+
+# Fit 3-way frequentist GLMs
+fit_qbin_ltmp_3way <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * histmDHW6 +
+                    MaxDHW.mean * mcur_90 + winyear_sd + 
+                    MaxDHW.mean * cloudp_90 * prop_acropora,
+  data = dat.ml.ltmp.clean,
+  family = quasibinomial(link = "logit")
+)
+
+fit_qbin_mmp_3way <- glm(
+  Mort.prop.nudge ~ MaxDHW.mean * secc3m + MaxDHW.mean * histmDHW6 +
+                    MaxDHW.mean * winyear_sd + MaxDHW.mean * mcur_90 +
+                    depth + MaxDHW.mean * cloudp_90 * prop_acropora,
+  data = dat.ml.mmp.clean,
+  family = quasibinomial(link = "logit")
+)
+
+# Load/fit alternative Bayesian brms models
+cache_ltmp_beta_alt <- "output/models/brms_ltmp_beta_alt.rds"
+if (file.exists(cache_ltmp_beta_alt)) {
+  fit_brms_ltmp_alt <- readRDS(cache_ltmp_beta_alt)
+} else {
+  fit_brms_ltmp_alt <- brm(
+    Mort.prop.nudge ~ MaxDHW_s * cloudp_90_s + MaxDHW_s * histmDHW6_s +
+                      MaxDHW_s * mcur_90_s + prop_acropora_s * cloudp_90_s +
+                      secc3m_s + winyear_sd_s + MaxDHW_s + (1 | ReefName),
+    data = dat.ml.ltmp.clean, family = Beta(link = "logit"),
+    prior = c(prior(normal(-1, 1.5), class = "Intercept"),
+              prior(normal(0, 1), class = "b"),
+              prior(exponential(1), class = "sd")),
+    chains = 4, iter = 4000, warmup = 2000, cores = 4, seed = 42,
+    control = list(adapt_delta = 0.97)
+  )
+  saveRDS(fit_brms_ltmp_alt, cache_ltmp_beta_alt)
+}
+
+cache_mmp_beta_alt <- "output/models/brms_mmp_beta_alt.rds"
+if (file.exists(cache_mmp_beta_alt)) {
+  fit_brms_mmp_alt <- readRDS(cache_mmp_beta_alt)
+} else {
+  fit_brms_mmp_alt <- brm(
+    Mort.prop.nudge ~ MaxDHW_s * cloudp_90_s + prop_acropora_s * cloudp_90_s +
+                      secc3m_s + depth + MaxDHW_s + (1 | ReefName),
+    data = dat.ml.mmp.clean, family = Beta(link = "logit"),
+    prior = c(prior(normal(-1, 1.5), class = "Intercept"),
+              prior(normal(0, 1), class = "b"),
+              prior(exponential(2), class = "sd")),
+    chains = 4, iter = 4000, warmup = 2000, cores = 4, seed = 42,
+    control = list(adapt_delta = 0.98)
+  )
+  saveRDS(fit_brms_mmp_alt, cache_mmp_beta_alt)
+}
+
+# Load 3-way Bayesian models
+fit_brms_ltmp_3way   <- readRDS("output/models/brms_ltmp_beta_3way.rds")
+fit_brms_mmp_3way    <- readRDS("output/models/brms_mmp_beta_3way.rds")
+fit_brmsb_ltmp_3way  <- readRDS("output/models/brms_ltmp_binom_3way.rds")
+fit_brmsb_mmp_3way   <- readRDS("output/models/brms_mmp_binom_3way.rds")
+
+# Compare models in table
+library(knitr)
+alt_comp_df <- data.frame(
+  `Model / Specification` = c(
+    "LTMP Benthic (Original: Acropora x DHW)",
+    "LTMP Benthic (Alternative: Acropora x Cloud)",
+    "LTMP Benthic (New: 3-Way DHW x Cloud x Acrop. - Beta)",
+    "LTMP Benthic (New: 3-Way DHW x Cloud x Acrop. - Binom-OLRE)",
+    "MMP Inshore (Original: Acropora x DHW)",
+    "MMP Inshore (Alternative: Acropora x Cloud)",
+    "MMP Inshore (New: 3-Way DHW x Cloud x Acrop. - Beta)",
+    "MMP Inshore (New: 3-Way DHW x Cloud x Acrop. - Binom-OLRE)"
+  ),
+  `Frequentist McFadden R²` = c(
+    round(1 - fit_qbin_ltmp$deviance / fit_qbin_ltmp$null.deviance, 4),
+    round(1 - fit_qbin_ltmp_alt$deviance / fit_qbin_ltmp_alt$null.deviance, 4),
+    round(1 - fit_qbin_ltmp_3way$deviance / fit_qbin_ltmp_3way$null.deviance, 4),
+    "Bayesian Only",
+    round(1 - fit_qbin_mmp$deviance / fit_qbin_mmp$null.deviance, 4),
+    round(1 - fit_qbin_mmp_alt$deviance / fit_qbin_mmp_alt$null.deviance, 4),
+    round(1 - fit_qbin_mmp_3way$deviance / fit_qbin_mmp_3way$null.deviance, 4),
+    "Bayesian Only"
+  ),
+  `Bayesian R² (Beta / Binom-OLRE)` = c(
+    round(median(bayes_R2(fit_brms_ltmp)), 4),
+    round(median(bayes_R2(fit_brms_ltmp_alt)), 4),
+    round(median(bayes_R2(fit_brms_ltmp_3way)), 4),
+    round(median(bayes_R2(fit_brmsb_ltmp_3way)), 4),
+    round(median(bayes_R2(fit_brms_mmp)), 4),
+    round(median(bayes_R2(fit_brms_mmp_alt)), 4),
+    round(median(bayes_R2(fit_brms_mmp_3way)), 4),
+    round(median(bayes_R2(fit_brmsb_mmp_3way)), 4)
+  ),
+  `Interaction Estimate (SE)` = c(
+    "0.126 (SE: 0.281)",
+    "-0.636 (SE: 8.960)",
+    "-0.118 (SE: 3.806)",
+    "0.012 (SE: 0.950)",
+    "-1.104 (SE: 1.224)",
+    "-48.042 (SE: 53.003)",
+    "-1.509 (SE: 10.094)",
+    "-0.071 (SE: 0.980)"
+  ),
+  `Interaction Significance / Credible Interval` = c(
+    "p = 0.655",
+    "p = 0.944",
+    "p = 0.975 (3-way)",
+    "95% CrI: [-1.85, 1.89]",
+    "p = 0.379",
+    "p = 0.377",
+    "p = 0.883 (3-way)",
+    "95% CrI: [-1.97, 1.87]"
+  ),
+  check.names = FALSE
+)
+
+kable(alt_comp_df, caption = "Comparison of % Acropora Model Specifications (2-Way vs 3-Way Interactions, Beta vs Binomial-OLRE)")
+
+library(ggplot2)
+library(patchwork)
+
+# Predict grid for LTMP 3-way
+d_ltmp <- dat.ml.ltmp.clean
+cl_ltmp <- quantile(d_ltmp$cloudp_90, c(0.10, 0.90), na.rm = TRUE)
+al_ltmp <- quantile(d_ltmp$prop_acropora, c(0.10, 0.90), na.rm = TRUE)
+
+grid_ltmp_3way <- expand.grid(
+  MaxDHW.mean = seq(0, 20, length.out = 200),
+  cloudp_90 = cl_ltmp,
+  prop_acropora = al_ltmp
+) %>% mutate(
+  secc3m = median(d_ltmp$secc3m, na.rm=T),
+  histmDHW6 = median(d_ltmp$histmDHW6, na.rm=T),
+  winyear_sd = median(d_ltmp$winyear_sd, na.rm=T),
+  mcur_90 = median(d_ltmp$mcur_90, na.rm=T)
+)
+
+grid_ltmp_3way <- pci(fit_qbin_ltmp_3way, grid_ltmp_3way) %>%
+  mutate(
+    Cloud = factor(paste0(round(cloudp_90*100,0),"% Cloud"), levels = paste0(round(cl_ltmp*100,0),"% Cloud")),
+    Acropora = factor(ifelse(prop_acropora == al_ltmp[1], "Low Acropora Dominance (10th %ile)", "High Acropora Dominance (90th %ile)"))
+  )
+
+p_ltmp_3way <- ggplot(grid_ltmp_3way, aes(x = MaxDHW.mean, y = pred, colour = Cloud, fill = Cloud)) +
+  geom_rect(xmin = max(d_ltmp$MaxDHW.mean), xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.05, inherit.aes = FALSE) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~Acropora) +
+  scale_colour_manual(values = c("lightblue4", "deepskyblue")) +
+  scale_fill_manual(values = c("lightblue4", "deepskyblue")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Predicted Mortality Proportion",
+       title = "LTMP Benthic: 3-Way Interaction (DHW x Cloud Cover x % Acropora)",
+       subtitle = "Shaded area represents extrapolation beyond observed Max DHW") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+
+# Predict grid for MMP 3-way
+d_mmp <- dat.ml.mmp.clean
+cl_mmp <- quantile(d_mmp$cloudp_90, c(0.10, 0.90), na.rm = TRUE)
+al_mmp <- quantile(d_mmp$prop_acropora, c(0.10, 0.90), na.rm = TRUE)
+
+grid_mmp_3way <- expand.grid(
+  MaxDHW.mean = seq(0, 20, length.out = 200),
+  cloudp_90 = cl_mmp,
+  prop_acropora = al_mmp
+) %>% mutate(
+  secc3m = median(d_mmp$secc3m, na.rm=T),
+  histmDHW6 = median(d_mmp$histmDHW6, na.rm=T),
+  winyear_sd = median(d_mmp$winyear_sd, na.rm=T),
+  mcur_90 = median(d_mmp$mcur_90, na.rm=T),
+  depth = median(d_mmp$depth, na.rm=T)
+)
+
+grid_mmp_3way <- pci(fit_qbin_mmp_3way, grid_mmp_3way) %>%
+  mutate(
+    Cloud = factor(paste0(round(cloudp_90*100,0),"% Cloud"), levels = paste0(round(cl_mmp*100,0),"% Cloud")),
+    Acropora = factor(ifelse(prop_acropora == al_mmp[1], "Low Acropora Dominance (10th %ile)", "High Acropora Dominance (90th %ile)"))
+  )
+
+p_mmp_3way <- ggplot(grid_mmp_3way, aes(x = MaxDHW.mean, y = pred, colour = Cloud, fill = Cloud)) +
+  geom_rect(xmin = max(d_mmp$MaxDHW.mean), xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.05, inherit.aes = FALSE) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~Acropora) +
+  scale_colour_manual(values = c("lightblue4", "deepskyblue")) +
+  scale_fill_manual(values = c("lightblue4", "deepskyblue")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Predicted Mortality Proportion",
+       title = "MMP Inshore: 3-Way Interaction (DHW x Cloud Cover x % Acropora)",
+       subtitle = "Shaded area represents extrapolation beyond observed Max DHW") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+
+p_ltmp_3way / p_mmp_3way
+
+library(ggplot2)
+library(patchwork)
+library(brms)
+library(dplyr)
+
+# Predict grid for LTMP Binomial-OLRE 3-way
+d_ltmp <- dat.ml.ltmp.clean
+sp_ltmp <- scale_params_ltmp
+cl_ltmp_raw <- quantile(d_ltmp$cloudp_90, c(0.10, 0.90), na.rm = TRUE)
+cl_ltmp_s <- (cl_ltmp_raw - sp_ltmp$cloudp_90["mean"]) / sp_ltmp$cloudp_90["sd2"]
+
+al_ltmp_raw <- quantile(d_ltmp$prop_acropora, c(0.10, 0.90), na.rm = TRUE)
+al_ltmp_s <- (al_ltmp_raw - sp_ltmp$prop_acropora["mean"]) / sp_ltmp$prop_acropora["sd2"]
+
+dhw_max_ltmp_s <- (20 - sp_ltmp$MaxDHW.mean["mean"]) / sp_ltmp$MaxDHW.mean["sd2"]
+
+grid_ltmp_binom_3way <- expand.grid(
+  MaxDHW_s = seq(-1.5, dhw_max_ltmp_s, length.out = 100),
+  cloudp_90_s = cl_ltmp_s,
+  prop_acropora_s = al_ltmp_s
+) %>% mutate(
+  secc3m_s = 0,
+  histmDHW6_s = 0,
+  winyear_sd_s = 0,
+  mcur_90_s = 0,
+  n_trials = 1
+)
+
+pp_ltmp <- posterior_epred(fit_brmsb_ltmp_3way, newdata = grid_ltmp_binom_3way, re_formula = NA)
+grid_ltmp_binom_3way$pred <- apply(pp_ltmp, 2, median)
+grid_ltmp_binom_3way$pred_lo <- apply(pp_ltmp, 2, quantile, 0.05)
+grid_ltmp_binom_3way$pred_hi <- apply(pp_ltmp, 2, quantile, 0.95)
+
+grid_ltmp_binom_3way <- grid_ltmp_binom_3way %>% mutate(
+  MaxDHW.mean = MaxDHW_s * sp_ltmp$MaxDHW.mean["sd2"] + sp_ltmp$MaxDHW.mean["mean"],
+  cloudp_90 = cloudp_90_s * sp_ltmp$cloudp_90["sd2"] + sp_ltmp$cloudp_90["mean"],
+  prop_acropora = prop_acropora_s * sp_ltmp$prop_acropora["sd2"] + sp_ltmp$prop_acropora["mean"],
+  Cloud = factor(paste0(round(cloudp_90*100,0),"% Cloud"), levels = paste0(round(cl_ltmp_raw*100,0),"% Cloud")),
+  Acropora = factor(ifelse(prop_acropora_s == al_ltmp_s[1], "Low Acropora Dominance (10th %ile)", "High Acropora Dominance (90th %ile)"))
+)
+
+p_ltmp_binom_3way <- ggplot(grid_ltmp_binom_3way, aes(x = MaxDHW.mean, y = pred, colour = Cloud, fill = Cloud)) +
+  geom_rect(xmin = max(d_ltmp$MaxDHW.mean), xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.05, inherit.aes = FALSE) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~Acropora) +
+  scale_colour_manual(values = c("lightblue4", "deepskyblue")) +
+  scale_fill_manual(values = c("lightblue4", "deepskyblue")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Predicted Mortality Proportion",
+       title = "LTMP Benthic: Binomial-OLRE 3-Way Interaction (DHW x Cloud Cover x % Acropora)",
+       subtitle = "Shaded area represents extrapolation beyond observed Max DHW") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+
+# Predict grid for MMP Binomial-OLRE 3-way
+d_mmp <- dat.ml.mmp.clean
+sp_mmp <- scale_params_mmp
+cl_mmp_raw <- quantile(d_mmp$cloudp_90, c(0.10, 0.90), na.rm = TRUE)
+cl_mmp_s <- (cl_mmp_raw - sp_mmp$cloudp_90["mean"]) / sp_mmp$cloudp_90["sd2"]
+
+al_mmp_raw <- quantile(d_mmp$prop_acropora, c(0.10, 0.90), na.rm = TRUE)
+al_mmp_s <- (al_mmp_raw - sp_mmp$prop_acropora["mean"]) / sp_mmp$prop_acropora["sd2"]
+
+dhw_max_mmp_s <- (20 - sp_mmp$MaxDHW.mean["mean"]) / sp_mmp$MaxDHW.mean["sd2"]
+
+grid_mmp_binom_3way <- expand.grid(
+  MaxDHW_s = seq(-1.5, dhw_max_mmp_s, length.out = 100),
+  cloudp_90_s = cl_mmp_s,
+  prop_acropora_s = al_mmp_s
+) %>% mutate(
+  secc3m_s = 0,
+  depth = median(d_mmp$depth, na.rm=T),
+  n_trials = 1
+)
+
+pp_mmp <- posterior_epred(fit_brmsb_mmp_3way, newdata = grid_mmp_binom_3way, re_formula = NA)
+grid_mmp_binom_3way$pred <- apply(pp_mmp, 2, median)
+grid_mmp_binom_3way$pred_lo <- apply(pp_mmp, 2, quantile, 0.05)
+grid_mmp_binom_3way$pred_hi <- apply(pp_mmp, 2, quantile, 0.95)
+
+grid_mmp_binom_3way <- grid_mmp_binom_3way %>% mutate(
+  MaxDHW.mean = MaxDHW_s * sp_mmp$MaxDHW.mean["sd2"] + sp_mmp$MaxDHW.mean["mean"],
+  cloudp_90 = cloudp_90_s * sp_mmp$cloudp_90["sd2"] + sp_mmp$cloudp_90["mean"],
+  prop_acropora = prop_acropora_s * sp_mmp$prop_acropora["sd2"] + sp_mmp$prop_acropora["mean"],
+  Cloud = factor(paste0(round(cloudp_90*100,0),"% Cloud"), levels = paste0(round(cl_mmp_raw*100,0),"% Cloud")),
+  Acropora = factor(ifelse(prop_acropora_s == al_mmp_s[1], "Low Acropora Dominance (10th %ile)", "High Acropora Dominance (90th %ile)"))
+)
+
+p_mmp_binom_3way <- ggplot(grid_mmp_binom_3way, aes(x = MaxDHW.mean, y = pred, colour = Cloud, fill = Cloud)) +
+  geom_rect(xmin = max(d_mmp$MaxDHW.mean), xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.05, inherit.aes = FALSE) +
+  geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+  geom_line(linewidth = 1.2) +
+  facet_wrap(~Acropora) +
+  scale_colour_manual(values = c("lightblue4", "deepskyblue")) +
+  scale_fill_manual(values = c("lightblue4", "deepskyblue")) +
+  labs(x = "Max DHW (°C-weeks)", y = "Predicted Mortality Proportion",
+       title = "MMP Inshore: Binomial-OLRE 3-Way Interaction (DHW x Cloud Cover x % Acropora)",
+       subtitle = "Shaded area represents extrapolation beyond observed Max DHW") +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw(base_size = 11) + theme(legend.position = "bottom")
+
+p_ltmp_binom_3way / p_mmp_binom_3way
 
 library(brms)
 library(dplyr)
@@ -2623,4 +2886,3 @@ r2_df <- data.frame(
 )
 
 kable(r2_df, caption = "Variance Explained (R²) Comparison across Datasets and Model Families")
-

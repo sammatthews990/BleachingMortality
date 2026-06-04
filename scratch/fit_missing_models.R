@@ -32,11 +32,14 @@ dat.ml.mmp <- dat.mod.bent.hc %>%
 
 # 3. Recreate acrop_comp
 acrop_comp <- df.AIMS.full %>%
-  filter(data_type == "photo-transect", domain_category == "reef",
-         purpose == "COMPOSITION", variable == "HARD CORAL") %>%
+  filter(
+    data_type == "photo-transect", domain_category == "reef",
+    purpose == "COMPOSITION", variable == "HARD CORAL"
+  ) %>%
   mutate(Reef_Name_Clean = gsub(" REEF(S)?| ISLAND| IS", "", toupper(domain_name))) %>%
   left_join(dat.Ref.Clean %>% select(AIMS_REEF_NAME_Clean, ReefName),
-            by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")) %>%
+    by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")
+  ) %>%
   filter(!is.na(ReefName)) %>%
   group_by(ReefName, report_year, depth) %>%
   summarise(
@@ -50,7 +53,8 @@ acrop_comp <- df.AIMS.full %>%
 dat.ml.ltmp.clean <- dat.ml.ltmp %>%
   filter(!is.na(mcur_90), !is.na(Rel.Change)) %>%
   left_join(acrop_comp %>% select(ReefName, report_year, depth, prop_acropora),
-            by = c("ReefName", "report_year", "depth")) %>%
+    by = c("ReefName", "report_year", "depth")
+  ) %>%
   mutate(prop_acropora = replace_na(prop_acropora, median(prop_acropora, na.rm = TRUE)))
 
 N_ltmp <- nrow(dat.ml.ltmp.clean)
@@ -62,32 +66,36 @@ dat.ml.ltmp.clean <- dat.ml.ltmp.clean %>%
 
 # Scale LTMP
 scale_params_ltmp <- list(
-  MaxDHW.mean = c(mean = mean(dat.ml.ltmp.clean$MaxDHW.mean, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$MaxDHW.mean, na.rm=T)),
-  histmDHW6   = c(mean = mean(dat.ml.ltmp.clean$histmDHW6, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$histmDHW6, na.rm=T)),
-  secc3m      = c(mean = mean(dat.ml.ltmp.clean$secc3m, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$secc3m, na.rm=T)),
-  cloudp_90   = c(mean = mean(dat.ml.ltmp.clean$cloudp_90, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$cloudp_90, na.rm=T)),
-  winyear_sd  = c(mean = mean(dat.ml.ltmp.clean$winyear_sd, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$winyear_sd, na.rm=T)),
-  mcur_90     = c(mean = mean(dat.ml.ltmp.clean$mcur_90, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$mcur_90, na.rm=T)),
-  prop_acropora = c(mean = mean(dat.ml.ltmp.clean$prop_acropora, na.rm=T), sd2 = 2*sd(dat.ml.ltmp.clean$prop_acropora, na.rm=T))
+  MaxDHW.mean = c(mean = mean(dat.ml.ltmp.clean$MaxDHW.mean, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$MaxDHW.mean, na.rm = T)),
+  histmDHW6 = c(mean = mean(dat.ml.ltmp.clean$histmDHW6, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$histmDHW6, na.rm = T)),
+  secc3m = c(mean = mean(dat.ml.ltmp.clean$secc3m, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$secc3m, na.rm = T)),
+  cloudp_90 = c(mean = mean(dat.ml.ltmp.clean$cloudp_90, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$cloudp_90, na.rm = T)),
+  winyear_sd = c(mean = mean(dat.ml.ltmp.clean$winyear_sd, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$winyear_sd, na.rm = T)),
+  mcur_90 = c(mean = mean(dat.ml.ltmp.clean$mcur_90, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$mcur_90, na.rm = T)),
+  prop_acropora = c(mean = mean(dat.ml.ltmp.clean$prop_acropora, na.rm = T), sd2 = 2 * sd(dat.ml.ltmp.clean$prop_acropora, na.rm = T))
 )
 
-s2 <- function(x) (x - mean(x, na.rm=T)) / (2*sd(x, na.rm=T))
+s2 <- function(x) (x - mean(x, na.rm = T)) / (2 * sd(x, na.rm = T))
 dat.ml.ltmp.clean <- dat.ml.ltmp.clean %>%
-  mutate(MaxDHW_s = s2(MaxDHW.mean), histmDHW6_s = s2(histmDHW6), secc3m_s = s2(secc3m),
-         cloudp_90_s = s2(cloudp_90), winyear_sd_s = s2(winyear_sd), mcur_90_s = s2(mcur_90),
-         prop_acropora_s = s2(prop_acropora), obs_id = 1:n(),
-         n_trials = 100L, y_binom = as.integer(round(Mort.prop.nudge * 100)))
+  mutate(
+    MaxDHW_s = s2(MaxDHW.mean), histmDHW6_s = s2(histmDHW6), secc3m_s = s2(secc3m),
+    cloudp_90_s = s2(cloudp_90), winyear_sd_s = s2(winyear_sd), mcur_90_s = s2(mcur_90),
+    prop_acropora_s = s2(prop_acropora), obs_id = 1:n(),
+    n_trials = 100L, y_binom = as.integer(round(Mort.prop.nudge * 100))
+  )
 
 # Fit and save LTMP Binomial-OLRE model (replaces corrupted file)
 cat("Fitting LTMP Binomial-OLRE model...\n")
 fit_brmsb_ltmp <- brm(
   y_binom | trials(n_trials) ~ MaxDHW_s * cloudp_90_s + MaxDHW_s * histmDHW6_s +
-                    MaxDHW_s * mcur_90_s + MaxDHW_s * prop_acropora_s +
-                    secc3m_s + winyear_sd_s + (1 | ReefName) + (1 | obs_id),
+    MaxDHW_s * mcur_90_s + MaxDHW_s * prop_acropora_s +
+    secc3m_s + winyear_sd_s + (1 | ReefName) + (1 | obs_id),
   data = dat.ml.ltmp.clean, family = binomial(link = "logit"),
-  prior = c(prior(normal(-1, 1.5), class = "Intercept"),
-            prior(normal(0, 1), class = "b"),
-            prior(exponential(1), class = "sd")),
+  prior = c(
+    prior(normal(-1, 1.5), class = "Intercept"),
+    prior(normal(0, 1), class = "b"),
+    prior(exponential(1), class = "sd")
+  ),
   chains = 4, iter = 4000, warmup = 2000, cores = 4, seed = 42,
   control = list(adapt_delta = 0.97)
 )
@@ -98,7 +106,8 @@ cat("Saved LTMP Binomial-OLRE model successfully.\n")
 dat.ml.mmp.clean <- dat.ml.mmp %>%
   filter(!is.na(mcur_90), !is.na(Rel.Change)) %>%
   left_join(acrop_comp %>% select(ReefName, report_year, depth, prop_acropora),
-            by = c("ReefName", "report_year", "depth")) %>%
+    by = c("ReefName", "report_year", "depth")
+  ) %>%
   mutate(prop_acropora = replace_na(prop_acropora, median(prop_acropora, na.rm = TRUE)))
 
 N_mmp <- nrow(dat.ml.mmp.clean)
@@ -109,20 +118,24 @@ dat.ml.mmp.clean <- dat.ml.mmp.clean %>%
   )
 
 dat.ml.mmp.clean <- dat.ml.mmp.clean %>%
-  mutate(MaxDHW_s = s2(MaxDHW.mean), cloudp_90_s = s2(cloudp_90),
-         secc3m_s = s2(secc3m), prop_acropora_s = s2(prop_acropora),
-         obs_id = 1:n(),
-         n_trials = 100L, y_binom = as.integer(round(Mort.prop.nudge * 100)))
+  mutate(
+    MaxDHW_s = s2(MaxDHW.mean), cloudp_90_s = s2(cloudp_90),
+    secc3m_s = s2(secc3m), prop_acropora_s = s2(prop_acropora),
+    obs_id = 1:n(),
+    n_trials = 100L, y_binom = as.integer(round(Mort.prop.nudge * 100))
+  )
 
 # Fit and save MMP Beta model
 cat("Fitting MMP Beta model...\n")
 fit_brms_mmp <- brm(
   Mort.prop.nudge ~ MaxDHW_s * cloudp_90_s + MaxDHW_s * prop_acropora_s +
-                    secc3m_s + depth + (1 | ReefName),
+    secc3m_s + depth + (1 | ReefName),
   data = dat.ml.mmp.clean, family = Beta(link = "logit"),
-  prior = c(prior(normal(-1, 1.5), class = "Intercept"),
-            prior(normal(0, 1), class = "b"),
-            prior(exponential(2), class = "sd")),
+  prior = c(
+    prior(normal(-1, 1.5), class = "Intercept"),
+    prior(normal(0, 1), class = "b"),
+    prior(exponential(2), class = "sd")
+  ),
   chains = 4, iter = 4000, warmup = 2000, cores = 4, seed = 42,
   control = list(adapt_delta = 0.98)
 )
@@ -133,11 +146,13 @@ cat("Saved MMP Beta model successfully.\n")
 cat("Fitting MMP Binomial-OLRE model...\n")
 fit_brmsb_mmp <- brm(
   y_binom | trials(n_trials) ~ MaxDHW_s * cloudp_90_s + MaxDHW_s * prop_acropora_s +
-                    secc3m_s + depth + (1 | ReefName) + (1 | obs_id),
+    secc3m_s + depth + (1 | ReefName) + (1 | obs_id),
   data = dat.ml.mmp.clean, family = binomial(link = "logit"),
-  prior = c(prior(normal(-1, 1.5), class = "Intercept"),
-            prior(normal(0, 1), class = "b"),
-            prior(exponential(2), class = "sd")),
+  prior = c(
+    prior(normal(-1, 1.5), class = "Intercept"),
+    prior(normal(0, 1), class = "b"),
+    prior(exponential(2), class = "sd")
+  ),
   chains = 4, iter = 4000, warmup = 2000, cores = 4, seed = 42,
   control = list(adapt_delta = 0.98)
 )
