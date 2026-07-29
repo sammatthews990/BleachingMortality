@@ -2830,16 +2830,31 @@ ggplot() +
     coord_cartesian(ylim = c(0, 1)) +
     theme_bw(base_size = 12)
 ```
+:::
 
+## Boosted Regression Trees (BRTs) & Bootstrapped Partial Dependence
 
+To evaluate non-linear environmental thresholds, complex multi-way interaction structures, and predictor contributions without imposing parametric functional assumptions, we fit an expanded **Boosted Regression Tree (BRT)** model (`gbm`) using 8 environmental predictors (`MaxDHW.mean`, `secc3m`, `winyear_mean`, `histmDHW6`, `mcur_90`, `winyear_sd`, `cloudp_90`, `yrsince6`) on the clean dataset ($N=110$).
 
-### Boosted Regression Trees (BRTs) & Bootstrapped Partial Dependence
-
-To evaluate non-linear environmental thresholds, complex multi-way interaction structures, and predictor contributions without imposing parametric functional assumptions, we fit a **Boosted Regression Tree (BRT)** model (`gbm`) using the exact same set of 6 environmental predictors (`MaxDHW.mean`, `secc3m`, `cloudp_90`, `histmDHW6`, `mcur_90`, `winyear_sd`) on the clean dataset ($N=110$).
-
-The BRT model was optimized using 5-fold cross-validation, achieving an optimal boosting tree iteration of $T_{\text{opt}} = 579$. To quantify sampling and structural uncertainty around the non-linear marginal response curves, we performed **$B = 100$ bootstrap iterations** (resampling with replacement), refitting the BRT and generating 90% and 95% confidence intervals across evaluation grids for every environmental predictor.
+The expanded BRT model was optimized using 5-fold cross-validation, achieving an optimal boosting tree iteration of $T_{\text{opt}} = 516$. Incorporating `winyear_mean` (mean winter SST) and `yrsince6` (years since last >6 DHW exposure) increased total deviance explained to **88.4%** (up from 87.9%), reduced 5-fold cross-validation RMSE to **0.1267** (down from 0.1286), and boosted CV $R^2$ to **0.447** (up from 0.431). To quantify sampling and structural uncertainty around the non-linear marginal response curves, we performed **$B = 100$ bootstrap iterations** (resampling with replacement), refitting the BRT and generating **80% and 95% confidence intervals** across evaluation grids for all 8 environmental predictors.
 
 ::: {.panel-tabset}
+
+#### Model Diagnostics & Summary Statistics
+
+```{r brt-summary-table}
+#| label: brt-summary-table
+#| fig-cap: "Boosted Regression Trees (BRT) — Summary predictive metrics and goodness-of-fit statistics."
+
+metrics_df <- readRDS("output/models/brt_manta_metrics.rds")
+
+knitr::kable(
+    metrics_df,
+    col.names = c("Diagnostic / Performance Metric", "Value"),
+    caption = "BRT Model Diagnostics, Continuous Error Metrics, and Classification Performance",
+    align = c("l", "r")
+)
+```
 
 #### Variable Importance
 
@@ -2847,7 +2862,7 @@ The BRT model was optimized using 5-fold cross-validation, achieving an optimal 
 #| label: brt-var-importance
 #| fig-cap: "Boosted Regression Trees (BRT) — Relative variable importance of environmental predictors."
 #| fig-width: 9
-#| fig-height: 5
+#| fig-height: 5.5
 
 brt_fit <- readRDS("output/models/brt_manta_fit.rds")
 var_imp <- readRDS("output/models/brt_manta_var_imp.rds")
@@ -2859,35 +2874,73 @@ ggplot(var_imp, aes(x = reorder(Variable_Label, rel.inf), y = rel.inf)) +
     labs(
         x = NULL, y = "Relative Influence (%)",
         title = "Boosted Regression Trees (BRT) — Variable Importance",
-        subtitle = "Relative contribution of environmental predictors to coral bleaching mortality (Manta Tow, N=110)"
+        subtitle = "Relative contribution of 8 environmental predictors to coral bleaching mortality (Manta Tow, N=110)"
     ) +
     theme_bw(base_size = 12) +
     theme(panel.grid.minor = element_blank())
 ```
 
-#### Bootstrapped Partial Dependence Plots
+#### Bootstrapped Partial Dependence Plots (80% & 95% CIs)
 
 ```{r brt-pdp-boot}
 #| label: brt-pdp-boot
-#| fig-cap: "Boosted Regression Trees (BRT) — Partial dependence plots with 90% and 95% bootstrapped confidence intervals (B = 100)."
+#| fig-cap: "Boosted Regression Trees (BRT) — Partial dependence plots for 8 predictors with 80% and 95% bootstrapped confidence intervals (B = 100)."
 #| fig-width: 10
-#| fig-height: 7
+#| fig-height: 8.5
 
 pdp_summary <- readRDS("output/models/brt_manta_pdp_boot.rds")
 
 ggplot(pdp_summary, aes(x = x, y = median_yhat)) +
-    geom_ribbon(aes(ymin = lo_95, ymax = hi_95), fill = "#008080", alpha = 0.2) +
-    geom_ribbon(aes(ymin = lo_90, ymax = hi_90), fill = "#008080", alpha = 0.3) +
+    geom_ribbon(aes(ymin = lo_95, ymax = hi_95, fill = "95% Bootstrap CI"), alpha = 0.2) +
+    geom_ribbon(aes(ymin = lo_80, ymax = hi_80, fill = "80% Bootstrap CI"), alpha = 0.35) +
     geom_line(colour = "#004d4d", linewidth = 1.1) +
+    scale_fill_manual(name = "Confidence Interval", values = c("95% Bootstrap CI" = "#008080", "80% Bootstrap CI" = "#008080")) +
     facet_wrap(~pred_label, scales = "free_x", ncol = 3) +
     labs(
         x = "Predictor Value",
         y = "Partial Dependence (Mortality Proportion)",
-        title = "Boosted Regression Trees (BRT) — Bootstrapped Partial Dependence Plots",
-        subtitle = "Marginal effects with 90% and 95% bootstrapped confidence intervals (B = 100)"
+        title = "Boosted Regression Trees (BRT) — 1D Bootstrapped Partial Dependence Plots",
+        subtitle = "Marginal predictor effects across 8 variables with 80% (inner ribbon) and 95% (outer ribbon) bootstrapped CIs (B = 100)"
     ) +
     theme_bw(base_size = 11) +
-    theme(panel.grid.minor = element_blank(), strip.background = element_rect(fill = "grey92"))
+    theme(panel.grid.minor = element_blank(), strip.background = element_rect(fill = "grey92"), legend.position = "bottom")
+```
+
+#### 2-Way Environmental PDP Interactions
+
+```{r brt-pdp-2way}
+#| label: brt-pdp-2way
+#| fig-cap: "Boosted Regression Trees (BRT) — 2-Way Partial Dependence Interaction Surfaces."
+#| fig-width: 11
+#| fig-height: 5.5
+
+grid_dhw_sec <- readRDS("output/models/brt_manta_pdp_2way_sec.rds")
+grid_dhw_winm <- readRDS("output/models/brt_manta_pdp_2way_winm.rds")
+
+p_2way_sec <- ggplot(grid_dhw_sec, aes(x = MaxDHW.mean, y = secc3m, z = pred)) +
+    geom_tile(aes(fill = pred)) +
+    geom_contour(colour = "white", alpha = 0.4, linewidth = 0.3) +
+    scale_fill_viridis_c(option = "magma", name = "Predicted\nMortality") +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Secchi Depth (m)",
+        title = "(A) Thermal Stress × Water Clarity",
+        subtitle = "DHW × Secchi Depth Interaction Surface"
+    ) +
+    theme_bw(base_size = 11)
+
+p_2way_winm <- ggplot(grid_dhw_winm, aes(x = MaxDHW.mean, y = winyear_mean, z = pred)) +
+    geom_tile(aes(fill = pred)) +
+    geom_contour(colour = "white", alpha = 0.4, linewidth = 0.3) +
+    scale_fill_viridis_c(option = "magma", name = "Predicted\nMortality") +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Winter SST Mean (°C)",
+        title = "(B) Thermal Stress × Mean Winter SST",
+        subtitle = "DHW × Winter SST Mean Interaction Surface"
+    ) +
+    theme_bw(base_size = 11)
+
+p_2way_sec + p_2way_winm + plot_layout(guides = "collect")
+```
 ```
 
 #### BRT vs Bayesian Dose-Response Comparison
@@ -2916,8 +2969,8 @@ if (exists("fit3c_brms")) {
 
 p_comp <- ggplot() +
     geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop), alpha = 0.35, size = 1.6, colour = "grey30") +
-    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_95, ymax = hi_95), fill = "#008080", alpha = 0.2) +
-    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_90, ymax = hi_90), fill = "#008080", alpha = 0.3) +
+    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_95, ymax = hi_95, fill = "95% CI"), alpha = 0.2) +
+    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_80, ymax = hi_80, fill = "80% CI"), alpha = 0.3) +
     geom_line(data = pdp_dhw, aes(x = x, y = median_yhat, colour = "BRT Bootstrapped Median"), linewidth = 1.2)
 
 if (exists("fit3c_brms")) {
@@ -2926,6 +2979,7 @@ if (exists("fit3c_brms")) {
 }
 
 p_comp +
+    scale_fill_manual(name = "Bootstrap CI", values = c("95% CI" = "#008080", "80% CI" = "#008080")) +
     scale_colour_manual(name = "Model Specification", values = c("BRT Bootstrapped Median" = "#004d4d", "Bayesian Zero-Inflated Beta" = "firebrick")) +
     labs(
         x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
@@ -2934,7 +2988,7 @@ p_comp +
     ) +
     coord_cartesian(ylim = c(0, 1)) +
     theme_bw(base_size = 12) +
-    theme(legend.position = c(0.28, 0.85), panel.grid.minor = element_blank())
+    theme(legend.position = c(0.28, 0.82), panel.grid.minor = element_blank())
 ```
 
 :::
