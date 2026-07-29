@@ -2993,6 +2993,116 @@ p_comp +
 
 :::
 
+## Sparse Identification of Non-linear Dynamics (SINDy) Governing Laws
+
+To uncover explicit, parsimonious, and interpretable mathematical closed-form equations (governing laws) that underpin the mortality relationships without relying on black-box machine learning predictions, we applied **Sparse Identification of Non-linear Dynamics (SINDy)** via **Sequential Thresholded Least Squares (STLSQ)** on the exact same dataset ($N=110$).
+
+SINDy constructs an expressive candidate feature library $\mathbf{\Theta}(\mathbf{X})$ composed of linear terms, polynomial powers (e.g., $\text{DHW}^2$), 2-way cross-environmental interactions (e.g., $\text{DHW} \times \text{WinterSST}_{\text{mean}}$), and non-linear threshold functions (e.g., $\max(0, \text{DHW} - 4)$). By enforcing sparsity via sequential thresholding ($\lambda = 0.10$), SINDy isolates the minimal subset of active terms required to govern the system:
+
+$$\text{Mortality} = 0.4579 - 0.2003 \cdot \text{DHW} + 0.0054 \cdot \text{DHW}^2 + 0.0011 \cdot \text{Secchi}^2 + 0.0063 \cdot (\text{DHW} \times \text{WinterSST}_{\text{mean}}) - 0.0016 \cdot (\text{Secchi} \times \text{WinterSST}_{\text{mean}})$$
+
+::: {.panel-tabset}
+
+#### Discovered Equation & Term Interpretations
+
+```{r sindy-law-discovery}
+#| label: sindy-law-discovery
+#| fig-cap: "SINDy Discovered Closed-Form Sparse Polynomial Law Terms."
+
+sindy_coefs <- readRDS("output/models/sindy_manta_coefs.rds")
+
+knitr::kable(
+    sindy_coefs,
+    col.names = c("Term Key", "Feature Name", "Discovered Coefficient", "Physical & Ecological Interpretation"),
+    caption = "SINDy Discovered Closed-Form Sparse Polynomial Law Terms and Ecological Meanings",
+    digits = 5,
+    align = c("l", "l", "r", "l")
+)
+```
+
+#### SINDy vs BRT vs Bayesian Curve Comparison
+
+```{r sindy-curve-plot}
+#| label: sindy-curve-plot
+#| fig-cap: "SINDy Analytical Law vs Non-Parametric BRT & Parametric Bayesian Dose-Response Curves."
+#| fig-width: 9.5
+#| fig-height: 6.2
+
+d <- dat.ml.mant.clean
+sindy_coefs <- readRDS("output/models/sindy_manta_coefs.rds")
+grid_sindy <- readRDS("output/models/sindy_manta_dhw_grid.rds")
+pdp_summary <- readRDS("output/models/brt_manta_pdp_boot.rds")
+pdp_dhw <- pdp_summary %>% filter(predictor == "MaxDHW.mean")
+
+p_sindy <- ggplot() +
+    geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop), alpha = 0.35, size = 1.6, colour = "grey30") +
+    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_95, ymax = hi_95, fill = "95% BRT Bootstrap CI"), alpha = 0.2) +
+    geom_line(data = pdp_dhw, aes(x = x, y = median_yhat, colour = "BRT Non-Parametric PDP"), linewidth = 1.2) +
+    geom_line(data = grid_sindy, aes(x = DHW, y = pred, colour = "SINDy Sparse Parsimonious Law"), linewidth = 1.2, linetype = "dotdash")
+
+if (exists("fit3c_brms") && exists("grid_zi")) {
+    p_sindy <- p_sindy +
+        geom_line(data = grid_zi, aes(x = MaxDHW.mean, y = pred, colour = "Bayesian Zero-Inflated Beta"), linewidth = 1.1, linetype = "dashed")
+}
+
+p_sindy +
+    scale_fill_manual(name = "Uncertainty", values = c("95% BRT Bootstrap CI" = "#008080")) +
+    scale_colour_manual(
+        name = "Model Framework",
+        values = c(
+            "BRT Non-Parametric PDP" = "#004d4d",
+            "SINDy Sparse Parsimonious Law" = "#e66101",
+            "Bayesian Zero-Inflated Beta" = "firebrick"
+        )
+    ) +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
+        title = "SINDy Analytical Law vs BRT & Bayesian Dose-Response Curves",
+        subtitle = "Explicit sparse polynomial equation vs non-parametric machine learning & parametric Bayesian models"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 12) +
+    theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+#### 5-Way Methodology & Variance Comparison
+
+```{r framework-comparison-table}
+#| label: framework-comparison-table
+#| fig-cap: "Comparative Summary — Explanatory power, continuous R², deviance explained, and cross-validation errors across all 5 model specifications."
+
+comp_summary_df <- data.frame(
+    Framework = c(
+        "Univariate Binomial GLM (DHW Only)",
+        "Full 8-Predictor Binomial GLM",
+        "Bayesian Zero-Inflated Beta (brms)",
+        "Sparse Identification of Non-linear Dynamics (SINDy)",
+        "Boosted Regression Trees (BRT)"
+    ),
+    Specification = c(
+        "1 Predictor (Max DHW)",
+        "8 Environmental Predictors",
+        "8 Environmental Predictors + RE",
+        "5 Sparse Closed-form Terms",
+        "8 Environmental Predictors (T=516)"
+    ),
+    Deviance_Explained = c("19.0%", "44.6%", "42.3%", "49.4%", "88.4%"),
+    Train_R2 = c("0.282", "0.565", "0.423", "0.494", "0.891"),
+    CV_R2 = c("0.250", "0.422", "0.412 (LOO)", "0.296", "0.447"),
+    Train_RMSE = c("0.1449", "0.1124", "0.1198", "0.1211", "0.0581"),
+    CV_RMSE = c("0.1476", "0.1314", "0.1310 (LOO)", "0.1443", "0.1267")
+)
+
+knitr::kable(
+    comp_summary_df,
+    col.names = c("Analytical Framework", "Model Specification", "Deviance Explained (%)", "Training R²", "Cross-Validation R²", "Training RMSE", "CV RMSE"),
+    caption = "Performance & Variance Explained Comparison across 5 Modeling Specifications (Evaluated on N=110)",
+    align = c("l", "l", "r", "r", "r", "r", "r")
+)
+```
+
+:::
+
 
 
 
