@@ -387,7 +387,7 @@ dat.mod.mant <- df.MANT %>%
         by = c("ReefName", "report_year")
     ) %>%
     filter(
-        !DISTURBANCE_TYPE %in% c("c", "d", "s", "f"),
+        is.na(DISTURBANCE_TYPE) | DISTURBANCE_TYPE %in% c("b", "m", "n"),
         report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024, 2025)
     ) %>%
     mutate(
@@ -868,7 +868,7 @@ dat.mod.bent.hc <- df.BENT.HC %>%
         by = c("ReefName", "report_year")
     ) %>%
     filter(
-        is.na(DISTURBANCE_TYPE) | !DISTURBANCE_TYPE %in% c("c", "d", "s", "f"),
+        is.na(DISTURBANCE_TYPE) | DISTURBANCE_TYPE %in% c("b", "m", "n"),
         report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024, 2025)
     ) %>%
     mutate(
@@ -1864,11 +1864,38 @@ if (file.exists(cache_fit3b)) {
     saveRDS(fit3b_brms, cache_fit3b)
 }
 
+# 5. Zero-Inflated Beta Model (fit3c_brms)
+cache_fit3c <- "output/models/brms_fit3c_zero_inflated_beta.rds"
+if (file.exists(cache_fit3c)) {
+    fit3c_brms <- readRDS(cache_fit3c)
+    cat("Loaded cached Zero-Inflated Beta Model.\n")
+}
+
+# 6. Standard Binomial Model (No OLRE) (fit3d_brms)
+cache_fit3d <- "output/models/brms_fit3d_binomial_standard.rds"
+if (file.exists(cache_fit3d)) {
+    fit3d_brms <- readRDS(cache_fit3d)
+    cat("Loaded cached Standard Binomial Model.\n")
+}
+
+# 7. Full-Dataset Zero-Inflated Beta (N=465, 1998-2024) (fit_full_brms)
+cache_fit_full <- "output/models/brms_fit_full_manta_n465.rds"
+if (file.exists(cache_fit_full)) {
+    fit_full_brms <- readRDS(cache_fit_full)
+    cat("Loaded cached Full Dataset (N=465) Zero-Inflated Beta Model.\n")
+}
+
 # Print summaries
 cat("\n=== Model 3: Full Interactive Beta ===\n")
 print(summary(fit3_brms))
 cat("\n=== Model 3b: Binomial-OLRE (Bayesian Quasibinomial) ===\n")
 print(summary(fit3b_brms))
+cat("\n=== Model 3c: Zero-Inflated Beta ===\n")
+print(summary(fit3c_brms))
+cat("\n=== Model 3d: Standard Binomial (No OLRE) ===\n")
+print(summary(fit3d_brms))
+cat("\n=== Model Full: N=465 Multi-Event Zero-Inflated Beta ===\n")
+print(summary(fit_full_brms))
 ```
 
 ### Model Comparison (LOO-CV)
@@ -1923,9 +1950,22 @@ pp_check(fit2_brms, ndraws = 50) +
     )
 ```
 
-## LTMP Manta Tow (N=110, Offshore)
+## LTMP Manta Tow (Offshore Reefs)
 
-This section presents the modelling results for the LTMP Manta Tow dataset — the broadest spatial coverage of GBR offshore reefs (73 unique reefs). Three model families are compared via interactive tabsets: the **Bayesian Beta regression**, the **Bayesian Binomial-OLRE** (observation-level random effect acting as a Bayesian quasibinomial), and the **Frequentist Quasibinomial GLM**.
+This section presents the modelling results for the LTMP Manta Tow dataset — the broadest spatial coverage of GBR offshore reefs (73 unique reefs). 
+
+::: {.callout-note}
+### Key Analytical Considerations: Disturbance Filtering, Observation Subsetting & Zero-Drag
+1. **Strict Disturbance Filtering:** To prevent non-thermal disturbances from artificially dragging up mortality at low DHW thresholds, we strictly filter the dataset. We retain reefs recorded with bleaching (`b`), multiple disturbances including bleaching (`m`), explicitly un-impacted reefs (`n`), and reefs with no entry in the disturbance database (`NA`). We explicitly exclude non-bleaching disturbances (COTS `c`, storms `s`, disease `d`, floods `f`) as well as unassigned/unknown disturbances (`u`).
+2. **Observation Subsetting ($N=388$ vs $N=110$):** In Section 6, the multi-event dataset contains $N=388$ clean observations across 8 mass bleaching events (1998–2024). When incorporating environmental predictors from Cheung et al. (2025) — such as 90-day currents, cloud fraction, and Secchi depth — the sample size is restricted to **$N=110$ observations** because the Cheung predictor dataset is only available for 2016, 2017, and 2020.
+3. **Zero-Mortality Drag:** Because growth-adjusted mortality clamps net coral cover gains ($\text{Rel.Change} > 0$) to `0`, standard Beta regression (which nudges zeros to $0.0045$) fits a single conditional mean $\mu$ that is heavily pulled downward by the bulk of zero-mortality points at 0–8 DHW.
+4. **Model Solutions:** We compare five model specifications via interactive tabsets below:
+   - **Bayesian Beta**: Standard Beta regression with nudged zeros.
+   - **Bayesian Zero-Inflated Beta**: Two-part mixture model separating $p(\text{Mortality}=0)$ from conditional mortality severity $\mu(y>0)$.
+   - **Bayesian Binomial-OLRE**: Observation-level random effect acting as a Bayesian quasibinomial.
+   - **Bayesian Standard Binomial**: Pure binomial logit curve without observation-level random effects.
+   - **Frequentist Quasibinomial GLM**: Standard bounded logit GLM with empirical overdispersion scaling.
+:::
 
 ```{r qbin-full-model}
 #| label: qbin-full-model
@@ -1978,8 +2018,44 @@ ggplot(draws_manta, aes(x = estimate, y = reorder(term, estimate))) +
     geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
     labs(
         x = "Posterior Estimate (logit scale)", y = NULL,
-        title = "Manta Tow — Posterior Effect Distributions",
+        title = "Manta Tow — Posterior Effect Distributions (Beta)",
         subtitle = "Full Interactive Beta Model with (1|ReefName) random intercept"
+    ) +
+    theme_bw(base_size = 12)
+```
+
+#### Bayesian Zero-Inflated Beta
+
+```{r brms-halfeye-manta-zibeta}
+#| label: brms-halfeye-manta-zibeta
+#| fig-cap: "Manta Tow — Posterior coefficient distributions (Zero-Inflated Beta Model)."
+#| fig-width: 10
+#| fig-height: 6
+draws_manta_zi <- as_draws_df(fit3c_brms) %>%
+    select(starts_with("b_")) %>%
+    pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+    filter(!term %in% c("b_Intercept", "b_zi_Intercept")) %>%
+    mutate(
+        term = gsub("b_", "", term),
+        term = gsub("MaxDHW_s", "DHW", term),
+        term = gsub("histmDHW6_s", "Prior Exposure", term),
+        term = gsub("secc3m_s", "Secchi Depth", term),
+        term = gsub("cloudp_90_s", "Cloud Cover", term),
+        term = gsub("winyear_sd_s", "Winter SST SD", term),
+        term = gsub("mcur_90_s", "Current Speed", term),
+        term = gsub(":", " × ", term)
+    )
+
+ggplot(draws_manta_zi, aes(x = estimate, y = reorder(term, estimate))) +
+    stat_halfeye(
+        .width = c(0.66, 0.95), point_interval = median_qi,
+        fill = "mediumpurple", alpha = 0.7, normalize = "xy"
+    ) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+    labs(
+        x = "Posterior Estimate (logit scale)", y = NULL,
+        title = "Manta Tow — Posterior Effect Distributions (Zero-Inflated Beta)",
+        subtitle = "Zero-Inflated Beta Model separating zero-mortality probability from severity"
     ) +
     theme_bw(base_size = 12)
 ```
@@ -1991,10 +2067,6 @@ ggplot(draws_manta, aes(x = estimate, y = reorder(term, estimate))) +
 #| fig-cap: "Manta Tow — Posterior coefficient distributions (Binomial-OLRE Model)."
 #| fig-width: 10
 #| fig-height: 6
-library(brms)
-library(dplyr)
-library(tidybayes)
-
 draws_manta_olre <- as_draws_df(fit3b_brms) %>%
     select(starts_with("b_")) %>%
     pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
@@ -2018,8 +2090,44 @@ ggplot(draws_manta_olre, aes(x = estimate, y = reorder(term, estimate))) +
     geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
     labs(
         x = "Posterior Estimate (logit scale)", y = NULL,
-        title = "Manta Tow — Posterior Effect Distributions",
+        title = "Manta Tow — Posterior Effect Distributions (Binomial-OLRE)",
         subtitle = "Binomial-OLRE Model with (1|ReefName) + (1|obs_id) random intercepts"
+    ) +
+    theme_bw(base_size = 12)
+```
+
+#### Bayesian Standard Binomial
+
+```{r brms-halfeye-manta-binom}
+#| label: brms-halfeye-manta-binom
+#| fig-cap: "Manta Tow — Posterior coefficient distributions (Standard Binomial Model without OLRE)."
+#| fig-width: 10
+#| fig-height: 6
+draws_manta_binom <- as_draws_df(fit3d_brms) %>%
+    select(starts_with("b_")) %>%
+    pivot_longer(everything(), names_to = "term", values_to = "estimate") %>%
+    filter(term != "b_Intercept") %>%
+    mutate(
+        term = gsub("b_", "", term),
+        term = gsub("MaxDHW_s", "DHW", term),
+        term = gsub("histmDHW6_s", "Prior Exposure", term),
+        term = gsub("secc3m_s", "Secchi Depth", term),
+        term = gsub("cloudp_90_s", "Cloud Cover", term),
+        term = gsub("winyear_sd_s", "Winter SST SD", term),
+        term = gsub("mcur_90_s", "Current Speed", term),
+        term = gsub(":", " × ", term)
+    )
+
+ggplot(draws_manta_binom, aes(x = estimate, y = reorder(term, estimate))) +
+    stat_halfeye(
+        .width = c(0.66, 0.95), point_interval = median_qi,
+        fill = "seagreen", alpha = 0.7, normalize = "xy"
+    ) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+    labs(
+        x = "Posterior Estimate (logit scale)", y = NULL,
+        title = "Manta Tow — Posterior Effect Distributions (Standard Binomial)",
+        subtitle = "Standard Binomial Model with (1|ReefName) random intercept (No OLRE)"
     ) +
     theme_bw(base_size = 12)
 ```
@@ -2108,6 +2216,126 @@ pA <- ggplot() +
     geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "steelblue", alpha = 0.2) +
     geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "steelblue", linewidth = 1) +
     labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) Bayesian DHW Dose-Response") +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11)
+
+# Panel B: DHW × Prior Exposure
+hl_raw <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+hl_s <- (hl_raw - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+gb <- expand.grid(MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 200), histmDHW6_s = hl_s) %>%
+    mutate(secc3m_s = 0, cloudp_90_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gb <- brms_pred(m, gb) %>%
+    mutate(
+        histmDHW6 = histmDHW6_s * scale_params$histmDHW6["sd2"] + scale_params$histmDHW6["mean"],
+        lbl = factor(paste0(round(histmDHW6, 1), " prior"), levels = paste0(round(hl_raw, 1), " prior"))
+    )
+pB <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) +
+    es +
+    el +
+    geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+    geom_line(linewidth = 1) +
+    scale_colour_brewer(palette = "Set1") +
+    scale_fill_brewer(palette = "Set1") +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Prior Exposure", fill = "Prior Exposure",
+        title = "(B) DHW × Prior Exposure"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = c(0.35, 0.85))
+
+# Panel C: DHW × Cloud Cover
+cl_raw <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+cl_s <- (cl_raw - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+gc <- expand.grid(MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 200), cloudp_90_s = cl_s) %>%
+    mutate(secc3m_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gc <- brms_pred(m, gc) %>%
+    mutate(
+        cloudp_90 = cloudp_90_s * scale_params$cloudp_90["sd2"] + scale_params$cloudp_90["mean"],
+        lbl = factor(paste0(round(cloudp_90 * 100, 0), "%"), levels = paste0(round(cl_raw * 100, 0), "%"))
+    )
+pC <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) +
+    es +
+    el +
+    geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+    geom_line(linewidth = 1) +
+    scale_colour_brewer(palette = "Dark2") +
+    scale_fill_brewer(palette = "Dark2") +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
+        title = "(C) DHW × Cloud Cover"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = c(0.35, 0.85))
+
+# Panel D: Worst vs Best
+cl_05 <- (quantile(d$cloudp_90, 0.05, na.rm = T) - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+cl_95 <- (quantile(d$cloudp_90, 0.95, na.rm = T) - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+h_95 <- (quantile(d$histmDHW6, 0.95, na.rm = T) - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+h_00 <- (0 - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+gd <- data.frame(
+    MaxDHW_s = rep(seq(dhw_min_s, dhw_max_s, length.out = 200), 2),
+    scenario = rep(c("Worst case", "Best case"), each = 200),
+    cloudp_90_s = rep(c(cl_05, cl_95), each = 200),
+    histmDHW6_s = rep(c(h_00, h_95), each = 200),
+    secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0
+)
+gd <- brms_pred(m, gd)
+gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
+ge <- gd %>%
+    select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+    pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+pD <- ggplot() +
+    es +
+    el +
+    geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+    geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+    geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+    geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+    scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
+        title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA + pB) / (pC + pD)
+```
+
+#### Bayesian Zero-Inflated Beta
+
+```{r brms-dose-manta-zibeta}
+#| label: brms-dose-manta-zibeta
+#| fig-cap: "Manta Tow — 4-panel Zero-Inflated Beta dose-response."
+#| fig-width: 12
+#| fig-height: 10
+library(brms)
+library(dplyr)
+d <- dat.ml.mant.clean
+m <- fit3c_brms
+dhw_ext <- max(d$MaxDHW.mean, na.rm = TRUE)
+dhw_min_s <- (0 - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
+dhw_max_s <- (20 - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
+
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20) / 2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+
+# Panel A: DHW dose-response
+ga <- data.frame(
+    MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 200),
+    secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0
+)
+ga <- brms_pred(m, ga)
+pA <- ggplot() +
+    es +
+    el +
+    geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop), alpha = 0.35, size = 1.2) +
+    geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "mediumpurple", alpha = 0.2) +
+    geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "purple", linewidth = 1) +
+    labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) Zero-Inflated Beta DHW Dose-Response") +
     coord_cartesian(ylim = c(0, 1)) +
     theme_bw(base_size = 11)
 
@@ -2446,7 +2674,271 @@ pD <- ggplot() +
 
 (pA + pB) / (pC + pD)
 ```
+
+#### Bayesian Standard Binomial
+
+```{r brms-dose-manta-binom}
+#| label: brms-dose-manta-binom
+#| fig-cap: "Manta Tow — 4-panel Standard Binomial dose-response."
+#| fig-width: 12
+#| fig-height: 10
+d <- dat.ml.mant.clean
+m <- fit3d_brms
+dhw_ext <- max(d$MaxDHW.mean, na.rm = TRUE)
+dhw_min_s <- (0 - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
+dhw_max_s <- (20 - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
+
+es <- annotate("rect", xmin = dhw_ext, xmax = 20, ymin = -Inf, ymax = Inf, fill = "grey80", alpha = 0.35)
+el <- annotate("text", x = (dhw_ext + 20) / 2, y = 0.05, label = "Extrapolation", fontface = "italic", colour = "grey40", size = 3)
+
+# Panel A: DHW dose-response
+ga <- data.frame(
+    MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 200),
+    secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0
+)
+ga <- brms_pred_olre(m, ga)
+pA <- ggplot() +
+    es +
+    el +
+    geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop.nudge), alpha = 0.35, size = 1.2) +
+    geom_ribbon(data = ga, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "seagreen", alpha = 0.2) +
+    geom_line(data = ga, aes(x = MaxDHW.mean, y = pred), colour = "darkgreen", linewidth = 1) +
+    labs(x = "Max DHW (°C-weeks)", y = "Mortality Proportion", title = "(A) Standard Binomial DHW Dose-Response") +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11)
+
+# Panel B: DHW × Prior Exposure
+hl_raw <- quantile(d$histmDHW6, c(0.1, 0.5, 0.9), na.rm = TRUE)
+hl_s <- (hl_raw - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+gb <- expand.grid(MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 200), histmDHW6_s = hl_s) %>%
+    mutate(secc3m_s = 0, cloudp_90_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gb <- brms_pred_olre(m, gb) %>%
+    mutate(
+        histmDHW6 = histmDHW6_s * scale_params$histmDHW6["sd2"] + scale_params$histmDHW6["mean"],
+        lbl = factor(paste0(round(histmDHW6, 1), " prior"), levels = paste0(round(hl_raw, 1), " prior"))
+    )
+pB <- ggplot(gb, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) +
+    es +
+    el +
+    geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+    geom_line(linewidth = 1) +
+    scale_colour_brewer(palette = "Set1") +
+    scale_fill_brewer(palette = "Set1") +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Prior Exposure", fill = "Prior Exposure",
+        title = "(B) DHW × Prior Exposure"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = c(0.35, 0.85))
+
+# Panel C: DHW × Cloud Cover
+cl_raw <- quantile(d$cloudp_90, c(0.1, 0.5, 0.9), na.rm = TRUE)
+cl_s <- (cl_raw - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+gc <- expand.grid(MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 200), cloudp_90_s = cl_s) %>%
+    mutate(secc3m_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0)
+gc <- brms_pred_olre(m, gc) %>%
+    mutate(
+        cloudp_90 = cloudp_90_s * scale_params$cloudp_90["sd2"] + scale_params$cloudp_90["mean"],
+        lbl = factor(paste0(round(cloudp_90 * 100, 0), "%"), levels = paste0(round(cl_raw * 100, 0), "%"))
+    )
+pC <- ggplot(gc, aes(x = MaxDHW.mean, y = pred, colour = lbl, fill = lbl)) +
+    es +
+    el +
+    geom_ribbon(aes(ymin = pred_lo, ymax = pred_hi), alpha = 0.12, colour = NA) +
+    geom_line(linewidth = 1) +
+    scale_colour_brewer(palette = "Dark2") +
+    scale_fill_brewer(palette = "Dark2") +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Cloud Cover", fill = "Cloud Cover",
+        title = "(C) DHW × Cloud Cover"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = c(0.35, 0.85))
+
+# Panel D: Worst vs Best
+cl_05 <- (quantile(d$cloudp_90, 0.05, na.rm = T) - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+cl_95 <- (quantile(d$cloudp_90, 0.95, na.rm = T) - scale_params$cloudp_90["mean"]) / scale_params$cloudp_90["sd2"]
+h_00 <- (0 - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+h_95 <- (quantile(d$histmDHW6, 0.95, na.rm = T) - scale_params$histmDHW6["mean"]) / scale_params$histmDHW6["sd2"]
+gd <- data.frame(
+    MaxDHW_s = rep(seq(dhw_min_s, dhw_max_s, length.out = 200), 2),
+    scenario = rep(c("Worst case", "Best case"), each = 200),
+    cloudp_90_s = rep(c(cl_05, cl_95), each = 200),
+    histmDHW6_s = rep(c(h_00, h_95), each = 200),
+    secc3m_s = 0, winyear_sd_s = 0, mcur_90_s = 0
+)
+gd <- brms_pred_olre(m, gd)
+gd$scenario <- factor(gd$scenario, levels = c("Worst case", "Best case"))
+ge <- gd %>%
+    select(MaxDHW.mean, scenario, pred, pred_lo, pred_hi) %>%
+    pivot_wider(id_cols = MaxDHW.mean, names_from = scenario, values_from = c(pred, pred_lo, pred_hi))
+pD <- ggplot() +
+    es +
+    el +
+    geom_ribbon(data = ge, aes(x = MaxDHW.mean, ymin = `pred_Best case`, ymax = `pred_Worst case`), fill = "grey70", alpha = 0.25) +
+    geom_ribbon(data = gd %>% filter(scenario == "Worst case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "firebrick", alpha = 0.12) +
+    geom_ribbon(data = gd %>% filter(scenario == "Best case"), aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "forestgreen", alpha = 0.12) +
+    geom_line(data = gd, aes(x = MaxDHW.mean, y = pred, colour = scenario), linewidth = 1.2) +
+    scale_colour_manual(values = c("Worst case" = "firebrick", "Best case" = "forestgreen")) +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion", colour = "Scenario",
+        title = "(D) Worst vs Best Case", subtitle = "Worst: low cloud, no prior exposure | Best: high cloud, high prior exposure"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = c(0.35, 0.85), plot.subtitle = element_text(size = 8))
+
+(pA + pB) / (pC + pD)
+```
+
+#### Full Multi-Event Dataset (N=465)
+
+```{r brms-dose-manta-full}
+#| label: brms-dose-manta-full
+#| fig-cap: "Manta Tow — Full multi-event Bayesian Zero-Inflated Beta dose-response across all 8 bleaching events (1998–2024, N=465)."
+#| fig-width: 10
+#| fig-height: 6
+dat.mod.mant.prep <- dat.mod.mant %>%
+    ungroup() %>%
+    filter(is.finite(MaxDHW.mean), is.finite(Rel.Change)) %>%
+    mutate(
+        Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
+        MaxDHW_s = (MaxDHW.mean - mean(MaxDHW.mean, na.rm = TRUE)) / (2 * sd(MaxDHW.mean, na.rm = TRUE))
+    )
+
+dhw_grid_full <- data.frame(
+    MaxDHW_s = seq(min(dat.mod.mant.prep$MaxDHW_s, na.rm=T), max(dat.mod.mant.prep$MaxDHW_s, na.rm=T), length.out = 200),
+    Era = "2020/2022"
+)
+pp_full <- posterior_epred(fit_full_brms, newdata = dhw_grid_full, re_formula = NA)
+dhw_grid_full$pred <- apply(pp_full, 2, median)
+dhw_grid_full$pred_lo <- apply(pp_full, 2, quantile, 0.05)
+dhw_grid_full$pred_hi <- apply(pp_full, 2, quantile, 0.95)
+dhw_grid_full$MaxDHW.mean <- dhw_grid_full$MaxDHW_s * (2 * sd(dat.mod.mant.prep$MaxDHW.mean, na.rm=T)) + mean(dat.mod.mant.prep$MaxDHW.mean, na.rm=T)
+
+ggplot() +
+    geom_point(data = dat.mod.mant.prep, aes(x = MaxDHW.mean, y = Mort.prop), alpha = 0.4, size = 1.4, colour = "grey30") +
+    geom_ribbon(data = dhw_grid_full, aes(x = MaxDHW.mean, ymin = pred_lo, ymax = pred_hi), fill = "purple", alpha = 0.2) +
+    geom_line(data = dhw_grid_full, aes(x = MaxDHW.mean, y = pred), colour = "purple", linewidth = 1.2) +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
+        title = "Full Multi-Event Bayesian Dose-Response (1998–2024, N=465)",
+        subtitle = "Zero-Inflated Beta model incorporating all 8 mass bleaching events without observation filtering"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 12)
+```
+
+
+
+### Boosted Regression Trees (BRTs) & Bootstrapped Partial Dependence
+
+To evaluate non-linear environmental thresholds, complex multi-way interaction structures, and predictor contributions without imposing parametric functional assumptions, we fit a **Boosted Regression Tree (BRT)** model (`gbm`) using the exact same set of 6 environmental predictors (`MaxDHW.mean`, `secc3m`, `cloudp_90`, `histmDHW6`, `mcur_90`, `winyear_sd`) on the clean dataset ($N=110$).
+
+The BRT model was optimized using 5-fold cross-validation, achieving an optimal boosting tree iteration of $T_{\text{opt}} = 579$. To quantify sampling and structural uncertainty around the non-linear marginal response curves, we performed **$B = 100$ bootstrap iterations** (resampling with replacement), refitting the BRT and generating 90% and 95% confidence intervals across evaluation grids for every environmental predictor.
+
+::: {.panel-tabset}
+
+#### Variable Importance
+
+```{r brt-var-importance}
+#| label: brt-var-importance
+#| fig-cap: "Boosted Regression Trees (BRT) — Relative variable importance of environmental predictors."
+#| fig-width: 9
+#| fig-height: 5
+
+brt_fit <- readRDS("output/models/brt_manta_fit.rds")
+var_imp <- readRDS("output/models/brt_manta_var_imp.rds")
+
+ggplot(var_imp, aes(x = reorder(Variable_Label, rel.inf), y = rel.inf)) +
+    geom_col(fill = "#1f77b4", alpha = 0.85, width = 0.65) +
+    geom_text(aes(label = sprintf("%.1f%%", rel.inf)), hjust = -0.15, size = 3.8, fontface = "bold") +
+    coord_flip(ylim = c(0, max(var_imp$rel.inf) * 1.15)) +
+    labs(
+        x = NULL, y = "Relative Influence (%)",
+        title = "Boosted Regression Trees (BRT) — Variable Importance",
+        subtitle = "Relative contribution of environmental predictors to coral bleaching mortality (Manta Tow, N=110)"
+    ) +
+    theme_bw(base_size = 12) +
+    theme(panel.grid.minor = element_blank())
+```
+
+#### Bootstrapped Partial Dependence Plots
+
+```{r brt-pdp-boot}
+#| label: brt-pdp-boot
+#| fig-cap: "Boosted Regression Trees (BRT) — Partial dependence plots with 90% and 95% bootstrapped confidence intervals (B = 100)."
+#| fig-width: 10
+#| fig-height: 7
+
+pdp_summary <- readRDS("output/models/brt_manta_pdp_boot.rds")
+
+ggplot(pdp_summary, aes(x = x, y = median_yhat)) +
+    geom_ribbon(aes(ymin = lo_95, ymax = hi_95), fill = "#008080", alpha = 0.2) +
+    geom_ribbon(aes(ymin = lo_90, ymax = hi_90), fill = "#008080", alpha = 0.3) +
+    geom_line(colour = "#004d4d", linewidth = 1.1) +
+    facet_wrap(~pred_label, scales = "free_x", ncol = 3) +
+    labs(
+        x = "Predictor Value",
+        y = "Partial Dependence (Mortality Proportion)",
+        title = "Boosted Regression Trees (BRT) — Bootstrapped Partial Dependence Plots",
+        subtitle = "Marginal effects with 90% and 95% bootstrapped confidence intervals (B = 100)"
+    ) +
+    theme_bw(base_size = 11) +
+    theme(panel.grid.minor = element_blank(), strip.background = element_rect(fill = "grey92"))
+```
+
+#### BRT vs Bayesian Dose-Response Comparison
+
+```{r brt-dose-response-comp}
+#| label: brt-dose-response-comp
+#| fig-cap: "Comparison of non-linear BRT marginal DHW response curve with Bayesian Zero-Inflated Beta and raw observations."
+#| fig-width: 9
+#| fig-height: 6
+
+d <- dat.ml.mant.clean
+pdp_dhw <- pdp_summary %>% filter(predictor == "MaxDHW.mean")
+
+# Generate Bayesian Zero-Inflated Beta dose-response curve for comparison
+dhw_min_s <- (0 - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
+dhw_max_s <- (max(d$MaxDHW.mean, na.rm = TRUE) - scale_params$MaxDHW.mean["mean"]) / scale_params$MaxDHW.mean["sd2"]
+grid_zi <- data.frame(
+    MaxDHW_s = seq(dhw_min_s, dhw_max_s, length.out = 100),
+    secc3m_s = 0, cloudp_90_s = 0, histmDHW6_s = 0, winyear_sd_s = 0, mcur_90_s = 0
+)
+if (exists("fit3c_brms")) {
+    pp_zi <- posterior_epred(fit3c_brms, newdata = grid_zi, re_formula = NA)
+    grid_zi$pred <- apply(pp_zi, 2, median)
+    grid_zi$MaxDHW.mean <- grid_zi$MaxDHW_s * scale_params$MaxDHW.mean["sd2"] + scale_params$MaxDHW.mean["mean"]
+}
+
+p_comp <- ggplot() +
+    geom_point(data = d, aes(x = MaxDHW.mean, y = Mort.prop), alpha = 0.35, size = 1.6, colour = "grey30") +
+    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_95, ymax = hi_95), fill = "#008080", alpha = 0.2) +
+    geom_ribbon(data = pdp_dhw, aes(x = x, ymin = lo_90, ymax = hi_90), fill = "#008080", alpha = 0.3) +
+    geom_line(data = pdp_dhw, aes(x = x, y = median_yhat, colour = "BRT Bootstrapped Median"), linewidth = 1.2)
+
+if (exists("fit3c_brms")) {
+    p_comp <- p_comp +
+        geom_line(data = grid_zi, aes(x = MaxDHW.mean, y = pred, colour = "Bayesian Zero-Inflated Beta"), linewidth = 1.1, linetype = "dashed")
+}
+
+p_comp +
+    scale_colour_manual(name = "Model Specification", values = c("BRT Bootstrapped Median" = "#004d4d", "Bayesian Zero-Inflated Beta" = "firebrick")) +
+    labs(
+        x = "Max DHW (°C-weeks)", y = "Mortality Proportion",
+        title = "BRT vs Bayesian Zero-Inflated Beta Dose-Response Comparison",
+        subtitle = "Non-linear machine learning partial dependence vs parametric Bayesian mixture model"
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    theme_bw(base_size = 12) +
+    theme(legend.position = c(0.28, 0.85), panel.grid.minor = element_blank())
+```
+
 :::
+
 
 
 
