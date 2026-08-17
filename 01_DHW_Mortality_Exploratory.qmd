@@ -1,0 +1,2100 @@
+---
+title: "DHW–Mortality Attribution on the Great Barrier Reef"
+author: "Samuel Matthews"
+date: "2024-05-29"
+date-modified: today
+# bibliography: references.bib
+# link-citations: true
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    self-contained: true
+    theme: cosmo
+    fig-width: 8
+    fig-height: 5
+    fig-dpi: 150
+execute:
+  warning: false
+  message: false
+  echo: true
+---
+
+# Introduction
+
+This document quantifies the relationship between accumulated thermal stress (Degree Heating Weeks; DHW) and coral mortality on the Great Barrier Reef (GBR). The analysis extends existing DHW–mortality frameworks (e.g., Hughes et al. 2018, ReefMod) by:
+
+1. **Growth-adjusting** mortality estimates using reef-specific Gompertz coral growth parameters from @macneil2019, so that expected background growth is accounted for when estimating bleaching-attributable loss.
+2. **Comparing data sources**: manta tow (broad spatial coverage, ~6–9 m depth), benthic photo-transects (precise, multiple depths), and MMP inshore monitoring.
+3. **Stratifying by era and region** to examine whether the DHW–mortality relationship has changed across successive mass bleaching events (1998/2002, 2016/2017, 2020/2022, 2024).
+4. **Assessing repeat exposure effects** — do reefs that have experienced prior bleaching show different mortality responses?
+5. **Building a machine-learning mortality model** by integrating environmental predictors from Cheung et al. (2025) — SST trajectory clusters, thermal history, water clarity, currents, and cloud cover.
+
+## Key Assumptions & Caveats
+
+- Gompertz growth parameters are averaged at reef level from 1 km grid cells; future work should propagate parameter uncertainty.
+- Mortality attribution assumes bleaching is the primary driver in filtered bleaching years; co-occurring disturbances (COTS, cyclones) are excluded via LTMP disturbance records but residual confounding is possible.
+- The Cheung et al. predictor dataset covers 2016, 2017, 2020 only; the ML model is restricted to these years as a proof-of-concept.
+
+```{r setup}
+#| label: setup
+# ── Core libraries ──
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(arrow)
+library(stringr)
+library(janitor)
+library(lubridate)
+library(readr)
+library(sf)
+library(lwgeom)
+library(scales)
+library(patchwork)
+
+# ── Modelling libraries ──
+library(mgcv)
+library(betareg)
+library(MASS)
+library(lme4)
+library(sandwich)
+library(lmtest)
+
+# ── Shared colour palettes ──
+dist_colours <- c(
+    "b" = "darkorange", "B" = "darkorange",
+    "c" = "maroon4", "C" = "maroon4",
+    "d" = "darkolivegreen3", "D" = "darkolivegreen3",
+    "f" = "burlywood4", "F" = "burlywood4",
+    "s" = "dodgerblue2", "S" = "dodgerblue2",
+    "u" = "grey", "U" = "grey"
+)
+
+cols_exposure <- c("First" = "#E69F00", "Repeat" = "#0072B2")
+cols_outbreak <- c("COTS Outbreak" = "#D55E00", "No Outbreak" = "#009E73")
+
+secorder <- c("CG", "PC", "CL", "CA", "IN", "TO", "CU", "WH", "PO", "SW", "CB")
+secorderlabs <- c(
+    "Cape Grenville", "Princess Charlotte Bay", "Cooktown / Lizard Island",
+    "Cairns", "Innisfail", "Townsville", "Cape Upstart", "Whitsunday",
+    "Pompey", "Swain", "Capricorn Bunker"
+)
+
+# Force dplyr functions over MASS/stats
+select <- dplyr::select
+filter <- dplyr::filter
+```
+
+```{r helper-functions}
+#| label: helper-functions
+# ── Gompertz coral growth function (simplified, single time-step) ──
+# Returns c(current_cover, next_cover, change)
+doCoralGrowth.Simp <- function(CoralCover, B0, HC.asym, WQ) {
+    WQ.mn.sd <- c(-0.68, 0.03)
+    b0.wq <- B0 + WQ * WQ.mn.sd[1]
+    b1.wq <- b0.wq / log(HC.asym)
+    CoralCover <- log(CoralCover)
+    b0.wq <- as.numeric(b0.wq)
+    b1.wq <- as.numeric(b1.wq)
+    CoralCover <- as.numeric(CoralCover)
+    CoralCover.t1 <- (b0.wq + (1 - b1.wq) * CoralCover)
+    CoralCover.t1 <- exp(CoralCover.t1)
+    Change.t1 <- CoralCover.t1 - exp(CoralCover)
+    return(c(exp(CoralCover), CoralCover.t1, Change.t1))
+}
+
+# ── Multi-step growth function (n years from starting cover) ──
+doCoralGrowth <- function(n, CoralCover, B0, HC.asym, WQ) {
+    WQ.mn.sd <- c(-0.68, 0.03)
+    b0.wq <- B0 + WQ * WQ.mn.sd[1]
+    b1.wq <- b0.wq / log(HC.asym)
+    CoralCover <- log(CoralCover)
+    b0.wq <- as.numeric(b0.wq)
+    b1.wq <- as.numeric(b1.wq)
+    CoralCover <- as.numeric(CoralCover)
+    df <- matrix(nrow = n + 1, ncol = 3)
+    df[1, 1] <- 0
+    df[1, 2] <- exp(CoralCover)
+    for (i in 1:n) {
+        CoralCover.t1 <- (b0.wq + (1 - b1.wq) * CoralCover)
+        df[i + 1, 1] <- i
+        df[i + 1, 2] <- exp(CoralCover.t1)
+        df[i + 1, 3] <- exp(CoralCover.t1) - exp(CoralCover)
+        CoralCover <- CoralCover.t1
+    }
+    colnames(df) <- c("Year", "CoralCover", "CoralGrowth")
+    return(df)
+}
+
+# ── Inverse logit ──
+inv_logit <- function(x) 1 / (1 + exp(-x))
+```
+
+# Growth Curves & Recovery Times
+
+Reef-specific Gompertz growth parameters from @macneil2019 are used to model coral cover trajectories. The parameters (`B0` = intrinsic growth rate, `HC.asym` = asymptotic carrying capacity) are modified by local water quality (`WQ`) to produce site-specific recovery curves.
+
+The growth function follows the discrete Gompertz form:
+$$\log(C_{t+1}) = b_0^{WQ} + (1 - b_1^{WQ}) \cdot \log(C_t)$$
+
+where $b_0^{WQ} = B_0 + WQ \times \beta_{WQ}$ and $b_1^{WQ} = b_0^{WQ} / \log(HC_{asym})$.
+
+```{r growth-params}
+#| label: growth-params
+#| cache: true
+dat.grid <- read.csv("Data/COTSModParams.csv")
+
+dat.gridSum_base <- dat.grid %>%
+    mutate(
+        REEF_ID = ifelse(grepl("14-116", REEF_ID, fixed = TRUE), "14-116", REEF_ID),
+        REEF_NAME = ifelse(grepl("14-116", REEF_NAME, fixed = TRUE),
+            "Lizard Island Reef (14-116)", REEF_NAME
+        )
+    ) %>%
+    group_by(REEF_NAME, REEF_ID, SECTOR) %>%
+    summarise(
+        B0 = mean(pred.b0.mean, na.rm = TRUE),
+        HC.asym = mean(pred.HCmax.mean, na.rm = TRUE),
+        WQ1 = mean(Primary, na.rm = TRUE),
+        WQ2 = mean(Secondary, na.rm = TRUE),
+        WQ3 = mean(Tertiary, na.rm = TRUE),
+        .groups = "drop"
+    ) %>%
+    mutate(
+        WQ = WQ1 + WQ2 + WQ3,
+        HC90 = 0.8 * HC.asym
+    )
+
+# Sector averages for fallback on ungridded inshore reefs
+sector_params <- dat.gridSum_base %>%
+    group_by(SECTOR) %>%
+    summarise(
+        B0 = mean(B0, na.rm = TRUE),
+        HC.asym = mean(HC.asym, na.rm = TRUE),
+        WQ = mean(WQ, na.rm = TRUE),
+        .groups = "drop"
+    )
+
+# Sister reef expansions:
+# 1. Normanby-Mabel Reef (17-012) uses Round-Russell Reef (17-013) parameters
+nm_row <- dat.gridSum_base %>%
+    filter(grepl("17-013", REEF_ID)) %>%
+    head(1) %>%
+    mutate(REEF_NAME = "Normanby-Mabel Reef (17-012)", REEF_ID = "17-012")
+
+# 2. Lizard Island Reef (North West) (14-116a) from Lizard Island (14-116)
+liz_params <- dat.gridSum_base %>%
+    filter(grepl("14-116", REEF_ID)) %>%
+    summarise(B0 = mean(B0), HC.asym = mean(HC.asym), WQ1 = mean(WQ1), WQ2 = mean(WQ2), WQ3 = mean(WQ3), WQ = mean(WQ), HC90 = mean(HC90)) %>%
+    mutate(REEF_NAME = "Lizard Island Reef (North West) (14-116a)", REEF_ID = "14-116a", SECTOR = "CL")
+
+# 3. Hook Island Reef (No 4) (20-028d) from Hook Island (20-028)
+hook_params <- dat.gridSum_base %>%
+    filter(grepl("20-028", REEF_ID)) %>%
+    summarise(B0 = mean(B0), HC.asym = mean(HC.asym), WQ1 = mean(WQ1), WQ2 = mean(WQ2), WQ3 = mean(WQ3), WQ = mean(WQ), HC90 = mean(HC90)) %>%
+    mutate(REEF_NAME = "Hook Island Reef (No 4) (20-028d)", REEF_ID = "20-028d", SECTOR = "WH")
+
+# 4. Magnetic Island Reef (No 2) (19-009c) from Cockle Bay (19-009a)
+mag_params <- dat.gridSum_base %>%
+    filter(grepl("19-009", REEF_ID)) %>%
+    summarise(B0 = mean(B0), HC.asym = mean(HC.asym), WQ1 = mean(WQ1), WQ2 = mean(WQ2), WQ3 = mean(WQ3), WQ = mean(WQ), HC90 = mean(HC90)) %>%
+    mutate(REEF_NAME = "Magnetic Island Reef (No 2) (19-009c)", REEF_ID = "19-009c", SECTOR = "TO")
+
+dat.gridSum <- bind_rows(dat.gridSum_base, nm_row, liz_params, hook_params, mag_params)
+```
+
+```{r growth-curves}
+#| label: growth-curves
+#| cache: true
+#| fig-cap: "Modelled coral recovery trajectories from 0.1% cover, by sector. Ribbons show inter-reef variability."
+# Simulate 30-year recovery from 0.1% cover for all reefs
+CC.tmp <- data.frame()
+for (i in seq_len(nrow(dat.gridSum))) {
+    CCtmp2 <- as.data.frame(
+        doCoralGrowth(30, 0.1, dat.gridSum$B0[i], dat.gridSum$HC.asym[i], dat.gridSum$WQ[i])
+    )
+    CCtmp2$ReefName <- dat.gridSum$REEF_NAME[i]
+    CCtmp2$REEF_NAME <- dat.gridSum$REEF_NAME[i]
+    CCtmp2$ReefID <- dat.gridSum$REEF_ID[i]
+    CCtmp2$Sector <- dat.gridSum$SECTOR[i]
+    CC.tmp <- bind_rows(CC.tmp, CCtmp2)
+}
+
+CC.tmp <- CC.tmp %>% left_join(select(dat.gridSum, REEF_NAME, HC90), by = "REEF_NAME")
+
+library(ggdist)
+ggplot(CC.tmp, aes(x = Year, y = CoralCover)) +
+    stat_lineribbon(alpha = 0.3) +
+    facet_wrap(~Sector) +
+    theme_classic() +
+    theme(legend.position = "none") +
+    labs(x = "Years since disturbance", y = "Coral cover (%)")
+```
+
+
+
+# DHW–Mortality Relationship
+
+This section examines the existing DHW–mortality relationship using the Hughes et al. (2018) dataset, comparing beta regression versus binomial/quasi-binomial GLM approaches. The key question is whether the sigmoidal binomial curve overpredicts mortality at high DHW values.
+
+## Hughes et al. Data: Beta vs Binomial Regression
+
+```{r dhw-mortality-comparison}
+#| label: dhw-mortality-comparison
+dat.bleach <- read.csv("Data/DHW_vs_Coral_Cover_Dataset.csv") %>%
+    mutate(Mort.bin = ifelse(Change >= 0, 0.001, -Change / 100))
+
+mod.beta <- betareg(Mort.bin ~ DHW, data = dat.bleach)
+mod.bin <- glm(Mort.bin ~ DHW, data = dat.bleach, family = binomial(link = "logit"))
+
+# Predictions
+newdata <- with(dat.bleach, data.frame(DHW = seq(0, 16, len = 100)))
+fit_bin <- predict(mod.bin, newdata = newdata, type = "link", se = TRUE)
+q <- qt(0.975, df = df.residual(mod.bin))
+newdata <- cbind(newdata,
+    fit = binomial()$linkinv(fit_bin$fit),
+    lower = binomial()$linkinv(fit_bin$fit - q * fit_bin$se.fit),
+    upper = binomial()$linkinv(fit_bin$fit + q * fit_bin$se.fit)
+)
+
+newdata2 <- with(dat.bleach, data.frame(DHW = seq(0, 16, len = 100)))
+fit_beta <- predict(mod.beta, newdata = newdata2, type = "link")
+newdata2 <- cbind(newdata2, fit = binomial()$linkinv(fit_beta))
+```
+
+```{r dhw-mortality-plot}
+#| label: dhw-mortality-plot
+#| fig-cap: "Comparison of binomial (black) and beta regression (red) fits to the DHW–mortality relationship from Hughes et al. (2018) data."
+ggplot(data = newdata, aes(y = fit, x = DHW)) +
+    geom_point(data = dat.bleach, aes(y = Mort.bin)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), fill = "blue", alpha = 0.3) +
+    geom_line() +
+    geom_line(data = newdata2, aes(y = fit, x = DHW), colour = "red") +
+    theme_classic() +
+    labs(
+        x = "DHW (°C-weeks)", y = "Mortality proportion",
+        caption = "Black = binomial GLM, Red = beta regression"
+    )
+```
+
+
+# Manta Tow Analysis (Updated AIMS API)
+
+This section uses the locally cached AIMS LTMP manta tow data to construct a comprehensive DHW–mortality dataset. Growth correction is applied using reef-specific Gompertz parameters.
+
+```{r manta-tow-data}
+#| label: manta-tow-data
+#| cache: true
+load("Data/aims_ltmp/aims_ltmp.RData")
+
+dat.AIMSRef <- read.csv("Data/AIMS-Reef_Reference.csv") %>%
+    rename(Reef_Name = AIMS_REEF_NAME)
+
+dat.Ref.Clean <- dat.AIMSRef %>%
+    mutate(AIMS_REEF_NAME_Clean = gsub(" REEF(S)?| ISLAND(S)?| IS", "", toupper(Reef_Name))) %>%
+    group_by(AIMS_REEF_NAME_Clean) %>%
+    slice(1) %>%
+    ungroup()
+
+# Load complete unified disturbance dataset (from AIMS API)
+Disturbances_raw <- read.csv("data/aims_ltmp/reef_disturbance.csv")
+
+Disturbances_clean <- Disturbances_raw %>%
+    mutate(
+        Reef_Clean = gsub(" REEF(S)?| ISLAND(S)?| IS", "", toupper(aims_reef_name))
+    ) %>%
+    left_join(select(dat.Ref.Clean, AIMS_REEF_NAME_Clean, ReefName, ReefID),
+        by = c("Reef_Clean" = "AIMS_REEF_NAME_Clean")
+    ) %>%
+    mutate(
+        ReefName = case_when(
+            toupper(aims_reef_name) == "FRANKLAND ISLANDS" & reef_zone == "East" ~ "Normanby-Mabel Reef (17-012)",
+            toupper(aims_reef_name) == "FRANKLAND ISLANDS" & reef_zone == "West" ~ "Round-Russell Reef (17-013)",
+            TRUE ~ ReefName
+        )
+    ) %>%
+    rename(report_year = year, DISTURBANCE_TYPE = disturbance)
+
+# Prioritize PPOINT for benthic photo transects, MANTA for manta tow
+Disturbances_bent <- Disturbances_clean %>%
+    arrange(ReefName, report_year, desc(sample_type == "PPOINT")) %>%
+    distinct(ReefName, report_year, .keep_all = TRUE)
+
+Disturbances_mant <- Disturbances_clean %>%
+    arrange(ReefName, report_year, desc(sample_type == "MANTA")) %>%
+    distinct(ReefName, report_year, .keep_all = TRUE)
+
+
+# DHW data
+dat.DHW <- read.csv("Data/DHW_1985_2024_GBRReefs.csv") %>%
+    rename("ReefName" = "LOC_NAME_S") %>%
+    mutate(
+        ReefName = case_when(
+            grepl("15-070", ReefName) ~ "Vicki Harriott Reef (15-070)",
+            grepl("18-022", ReefName) ~ "Felicity Wishart Reef (18-022)",
+            grepl("22-101", ReefName) ~ "Don Kinsey Reef (22-101)",
+            grepl("23-004b", ReefName) ~ "North Keppel (Ko-no-mie) Island Reef (No 2) (23-004b)",
+            grepl("15-027", ReefName) ~ "Marx Reef (15-027)",
+            TRUE ~ ReefName
+        )
+    )
+
+# Fill Agincourt reefs (missing individual DHW)
+dat.agin <- dat.DHW |>
+    filter(grepl("Agincourt", ReefName)) |>
+    group_by(Year) |>
+    summarise(MaxDHW.mean = mean(MaxDHW.mean, na.rm = TRUE), .groups = "drop")
+
+dat.DHW <- dat.DHW |>
+    left_join(dat.agin, by = "Year") |>
+    mutate(MaxDHW.mean = ifelse(grepl("Agincourt", ReefName) & is.na(MaxDHW.mean.x),
+        MaxDHW.mean.y, MaxDHW.mean.x
+    )) |>
+    select(-MaxDHW.mean.x, -MaxDHW.mean.y)
+
+df.AIMS.Mant <- reef_manta_df |>
+    select(
+        domain_name, project_code, report_year, date, depth,
+        lower:median, mean, reef_zone, id, shelf, reefpage_category
+    ) |>
+    mutate(Reef_Name = toupper(domain_name))
+
+library(fuzzyjoin)
+
+dat.AIMSRef_key <- dat.AIMSRef %>%
+    filter(!ReefName %in% c("Round-Russell Reef (17-013)", "Snake Reef (14-087)")) %>%
+    mutate(AIMS_REEF_NAME_case = str_to_title(AIMS_REEF_NAME_cap))
+
+df.MANT <- df.AIMS.Mant |>
+    left_join(select(dat.AIMSRef_key, AIMS_REEF_NAME_cap, ReefID, ReefName, SECT_NAME, SECTOR),
+        by = join_by("Reef_Name" == "AIMS_REEF_NAME_cap")
+    ) %>%
+    mutate(
+        year = floor(as.numeric(date)),
+        frac = as.numeric(date) - year,
+        date_approx = ymd(paste0(year, "-01-01")) +
+            round(frac * as.numeric(ymd(paste0(year + 1, "-01-01")) - ymd(paste0(year, "-01-01"))))
+    ) %>%
+    select(-year, -frac)
+
+# DHW year assignment
+dat.yrs.mant <- df.MANT |>
+    ungroup() |>
+    filter(!is.na(ReefName)) |>
+    mutate(
+        Date = date_approx, Prev = report_year - 1,
+        Year = year(Date), Month = month(Date),
+        DHWYear = ifelse(Month >= 5, Year, Year - 1)
+    ) |>
+    left_join(dplyr::select(dat.DHW, ReefName, Year, MaxDHW.mean),
+        by = c("ReefName", "DHWYear" = "Year")
+    )
+
+# Calculate change per reef
+df.MANT <- df.MANT %>%
+    arrange(ReefName, Reef_Name, reefpage_category, depth, report_year) |>
+    group_by(ReefName, Reef_Name, depth, reefpage_category) |>
+    mutate(
+        Change = mean - lag(mean, n = 1),
+        Rel.Change = Change / lag(mean, n = 1),
+        Lag = report_year - lag(report_year, n = 1)
+    ) |>
+    relocate(c("Change", "Lag", "Rel.Change"), .before = median) |>
+    left_join(dat.yrs.mant)
+
+# Growth correction
+df.MANT <- df.MANT |>
+    mutate(Change.Cor = Change, Prev.HC = mean - Change.Cor) |>
+    filter(
+        ReefName %in% dat.gridSum$REEF_NAME, !is.na(Lag),
+        Reef_Name != "MILLN REEF"
+    ) |>
+    rowwise() |>
+    mutate(
+        Pred.Grth = doCoralGrowth.Simp(
+            CoralCover = Prev.HC * 100,
+            B0 = dat.gridSum[which(dat.gridSum$REEF_NAME == ReefName), "B0"],
+            WQ = dat.gridSum[which(dat.gridSum$REEF_NAME == ReefName), "WQ"],
+            HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME == ReefName), "HC.asym"]
+        )[3] / 100
+    ) |>
+    mutate(
+        Pred.Grth2 = ifelse(Lag == 2,
+            Pred.Grth + doCoralGrowth.Simp(
+                CoralCover = (Prev.HC + Pred.Grth) * 100,
+                B0 = dat.gridSum[which(dat.gridSum$REEF_NAME == ReefName), "B0"],
+                WQ = dat.gridSum[which(dat.gridSum$REEF_NAME == ReefName), "WQ"],
+                HC.asym = dat.gridSum[which(dat.gridSum$REEF_NAME == ReefName), "HC.asym"]
+            )[3] / 100,
+            Pred.Grth
+        ),
+        Abs.Change = Change.Cor - Pred.Grth2,
+        Rel.Change = Abs.Change / (Prev.HC + Pred.Grth2)
+    )
+```
+
+## Disturbance Attribution (100% Stacked Bar & Composite Plots)
+
+This section calculates total coral loss attributable to each disturbance type in the AIMS LTMP Manta Tow survey dataset. 
+For survey observations where multiple disturbances (`m`) were recorded, we parse detailed `description` and `tooltip` fields from `reef_disturbance.csv` to identify constituent drivers (Bleaching, COTS, Cyclones/Storms, Disease) and evenly partition the coral loss across those drivers.
+
+We present academic composite visualizations linking long-term temporal loss trends (Mean % cover loss per affected reef $\pm$ Standard Error) with 100% stacked disturbance attribution across both four broad decadal epochs (1986–1995, 1996–2005, 2006–2015, 2016–2025) and individual survey years.
+
+```{r disturbance-attribution-stacked-bars}
+#| label: disturbance-attribution-stacked-bars
+#| fig.width: 11
+#| fig.height: 8.5
+#| dpi: 300
+#| warning: false
+#| message: false
+
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(patchwork)
+library(scales)
+
+# Load AIMS LTMP disturbance metadata
+reef_dist <- read.csv("data/aims_ltmp/reef_disturbance.csv") %>%
+  filter(sample_type == "MANTA") %>%
+  distinct(aims_reef_name, year, .keep_all = TRUE)
+
+# Filter manta dataset to all surveyed reefs (raw_loss = 0 if Change >= 0) & assign decadal/regional groups
+df_surveyed <- df.MANT %>%
+  filter(!is.na(Lag), Lag <= 3) %>%
+  left_join(reef_dist, by = c("domain_name" = "aims_reef_name", "report_year" = "year")) %>%
+  mutate(
+    disturbance_cat = case_when(
+      is.na(disturbance) | disturbance == "" ~ "u",
+      TRUE ~ disturbance
+    ),
+    net_change = Change * 100,
+    raw_loss = ifelse(Change < 0, -Change, 0),
+    Decade = case_when(
+      report_year >= 1986 & report_year <= 1995 ~ "1986–1995",
+      report_year >= 1996 & report_year <= 2005 ~ "1996–2005",
+      report_year >= 2006 & report_year <= 2015 ~ "2006–2015",
+      report_year >= 2016 & report_year <= 2025 ~ "2016–2025",
+      TRUE ~ "Other"
+    ),
+    Region = case_when(
+      SECTOR %in% c("PB", "CG", "CL", "CA") ~ "Northern GBR",
+      SECTOR %in% c("IN", "TO", "CU", "WH") ~ "Central GBR",
+      SECTOR %in% c("PO", "SW", "CB")       ~ "Southern GBR",
+      TRUE ~ "Other"
+    )
+  ) %>%
+  filter(Decade != "Other")
+
+# Filtered to positive loss for disturbance attribution stacked bar partitioning
+df_loss <- df_surveyed %>% filter(raw_loss > 0)
+
+# Function to parse text description for 'm' records
+parse_m_record <- function(desc, tooltip, storm_name) {
+  text <- paste(coalesce(desc, ""), coalesce(tooltip, ""), coalesce(storm_name, ""), sep = " ")
+  
+  has_b <- grepl("bleach|bl |dhw", text, ignore.case = TRUE)
+  has_c <- grepl("cots|crown-of-thorns", text, ignore.case = TRUE)
+  has_s <- grepl("cyclone|storm|tc |jasper|steve|nathan|ita|yasi|kirrily|alfred|larry|hamish|felicity|marcia|debbie|rona|grace|tessi|joy|charlie", text, ignore.case = TRUE)
+  has_d <- grepl("disease|ws", text, ignore.case = TRUE)
+  
+  types <- c()
+  if (has_b) types <- c(types, "b")
+  if (has_c) types <- c(types, "c")
+  if (has_s) types <- c(types, "s")
+  if (has_d) types <- c(types, "d")
+  
+  if (length(types) == 0) types <- "u"
+  return(types)
+}
+
+# --- Plot 1 Dataset: 'm' as its own category ---
+df_plot1 <- df_loss %>%
+  mutate(
+    Disturbance = case_when(
+      disturbance_cat == "b" ~ "Bleaching",
+      disturbance_cat == "c" ~ "COTS",
+      disturbance_cat == "s" ~ "Cyclone/Storm",
+      disturbance_cat == "d" ~ "Disease",
+      disturbance_cat == "m" ~ "Multiple (m)",
+      TRUE ~ "Unknown/Other"
+    )
+  )
+
+# --- Plot 2 Dataset: 'm' partitioned evenly ---
+partitioned_rows <- list()
+for(i in 1:nrow(df_loss)) {
+  row_i <- df_loss[i, ]
+  if (row_i$disturbance_cat == "m") {
+    matched <- parse_m_record(row_i$description, row_i$tooltip, row_i$storm_name)
+    n_match <- length(matched)
+    split_loss <- row_i$raw_loss / n_match
+    for(m_type in matched) {
+      new_row <- row_i
+      new_row$disturbance_cat <- m_type
+      new_row$raw_loss <- split_loss
+      partitioned_rows[[length(partitioned_rows) + 1]] <- new_row
+    }
+  } else {
+    partitioned_rows[[length(partitioned_rows) + 1]] <- row_i
+  }
+}
+df_partitioned <- bind_rows(partitioned_rows)
+
+df_plot2 <- df_partitioned %>%
+  mutate(
+    Disturbance = case_when(
+      disturbance_cat == "b" ~ "Bleaching",
+      disturbance_cat == "c" ~ "COTS",
+      disturbance_cat == "s" ~ "Cyclone/Storm",
+      disturbance_cat == "d" ~ "Disease",
+      TRUE ~ "Unknown/Other"
+    )
+  )
+
+# Academic Color Palette (COTS = Vibrant Academic Purple #7B1FA2)
+dist_colors_p1 <- c(
+  "Bleaching"      = "#D95F02", # Red-Orange
+  "COTS"           = "#7B1FA2", # Purple
+  "Cyclone/Storm"  = "#2B5C8F", # Navy
+  "Disease"        = "#8C510A", # Dark Ochre
+  "Multiple (m)"   = "#1B9E77", # Teal
+  "Unknown/Other"  = "#7F7F7F"  # Grey
+)
+
+dist_colors_p2 <- c(
+  "Bleaching"      = "#D95F02",
+  "COTS"           = "#7B1FA2",
+  "Cyclone/Storm"  = "#2B5C8F",
+  "Disease"        = "#8C510A",
+  "Unknown/Other"  = "#7F7F7F"
+)
+
+# Custom Academic Theme
+theme_academic <- function(base_size = 12) {
+  theme_bw(base_size = base_size) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.grid.major.y = element_line(color = "#E5E7EB", linewidth = 0.4),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      axis.title = element_text(face = "bold", size = 12, color = "black"),
+      axis.text = element_text(color = "black", size = 10),
+      axis.ticks = element_line(color = "black", linewidth = 0.5),
+      legend.title = element_text(face = "bold", size = 11),
+      legend.text = element_text(size = 10),
+      plot.title = element_text(face = "bold", size = 14, hjust = 0),
+      plot.subtitle = element_text(size = 11, color = "#333333", hjust = 0),
+      strip.background = element_rect(fill = "#F3F4F6", color = "black", linewidth = 0.8),
+      strip.text = element_text(face = "bold", size = 11)
+    )
+}
+
+# --- DECADAL COMPOSITE VISUALIZATION ---
+decadal_loss_stats <- df_surveyed %>%
+  group_by(Decade) %>%
+  summarise(
+    N = n(),
+    Mean_Loss = mean(raw_loss * 100),
+    SD_Loss = sd(raw_loss * 100),
+    SE_Loss = SD_Loss / sqrt(N),
+    .groups = "drop"
+  )
+
+p_top_decadal <- ggplot(decadal_loss_stats, aes(x = Decade, y = Mean_Loss)) +
+  geom_bar(stat = "identity", fill = "#374151", width = 0.45, alpha = 0.85, color = "black") +
+  geom_errorbar(aes(ymin = Mean_Loss - SE_Loss, ymax = Mean_Loss + SE_Loss),
+                width = 0.15, linewidth = 0.8, color = "black") +
+  geom_text(aes(label = sprintf("%.1f%% ± %.2f", Mean_Loss, SE_Loss)),
+            vjust = -1.2, size = 3.8, fontface = "bold") +
+  scale_y_continuous(limits = c(0, 6), breaks = seq(0, 6, 2), expand = c(0, 0)) +
+  labs(
+    title = "Coral Disturbance Attribution Across Four Decades (1986–2025)",
+    subtitle = "A: Mean Coral Cover Loss per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Mean Loss (% cover)"
+  ) +
+  theme_academic(base_size = 11) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Decadal Plot 1: Unpartitioned
+p1_dec_summary <- df_plot1 %>%
+  group_by(Decade, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop_last") %>%
+  mutate(
+    Decade_Total = sum(Total_Loss),
+    Prop = Total_Loss / Decade_Total,
+    Label = ifelse(Prop >= 0.03, sprintf("%.1f%%", Prop * 100), "")
+  )
+
+p_bot_decadal_p1 <- ggplot(p1_dec_summary, aes(x = Decade, y = Prop, fill = factor(Disturbance, levels = names(dist_colors_p1)))) +
+  geom_bar(stat = "identity", width = 0.55, color = "black", linewidth = 0.3) +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5),
+            color = "white", fontface = "bold", size = 3.6) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p1, name = "Disturbance Type") +
+  labs(
+    subtitle = "B: 100% Stacked Bar Chart of Disturbance Attribution (Plot 1: 'm' as Separate Category)",
+    x = "Decade",
+    y = "Proportion of Total Loss (%)"
+  ) +
+  theme_academic(base_size = 11) +
+  theme(legend.position = "bottom")
+
+composite_decadal_p1 <- p_top_decadal / p_bot_decadal_p1 + plot_layout(heights = c(1, 2.2))
+
+# Decadal Plot 2: Partitioned
+p2_dec_summary <- df_plot2 %>%
+  group_by(Decade, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop_last") %>%
+  mutate(
+    Decade_Total = sum(Total_Loss),
+    Prop = Total_Loss / Decade_Total,
+    Label = ifelse(Prop >= 0.03, sprintf("%.1f%%", Prop * 100), "")
+  )
+
+p_bot_decadal_p2 <- ggplot(p2_dec_summary, aes(x = Decade, y = Prop, fill = factor(Disturbance, levels = names(dist_colors_p2)))) +
+  geom_bar(stat = "identity", width = 0.55, color = "black", linewidth = 0.3) +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5),
+            color = "white", fontface = "bold", size = 3.6) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p2, name = "Disturbance Type") +
+  labs(
+    subtitle = "B: 100% Stacked Bar Chart of Disturbance Attribution (Plot 2: 'm' Partitioned)",
+    x = "Decade",
+    y = "Proportion of Total Loss (%)"
+  ) +
+  theme_academic(base_size = 11) +
+  theme(legend.position = "bottom")
+
+composite_decadal_p2 <- p_top_decadal / p_bot_decadal_p2 + plot_layout(heights = c(1, 2.2))
+
+# Display Decadal Plots
+print(composite_decadal_p1)
+print(composite_decadal_p2)
+```
+
+### Annual Disturbance Attribution (1987–2026)
+
+```{r annual-disturbance-attribution-composite}
+#| label: annual-disturbance-attribution-composite
+#| fig.width: 13
+#| fig.height: 9
+#| dpi: 300
+#| warning: false
+#| message: false
+
+# --- ANNUAL COMPOSITE VISUALIZATION ---
+annual_loss_stats <- df_surveyed %>%
+  group_by(report_year) %>%
+  summarise(
+    N = n(),
+    Mean_Loss = mean(raw_loss * 100),
+    SD_Loss = sd(raw_loss * 100),
+    SE_Loss = ifelse(N > 1, SD_Loss / sqrt(N), 0),
+    .groups = "drop"
+  )
+
+p_top_annual <- ggplot(annual_loss_stats, aes(x = factor(report_year), y = Mean_Loss, group = 1)) +
+  geom_ribbon(aes(ymin = pmax(0, Mean_Loss - SE_Loss), ymax = Mean_Loss + SE_Loss),
+              fill = "#4B5563", alpha = 0.25) +
+  geom_line(color = "#111827", linewidth = 0.8) +
+  geom_point(color = "#111827", size = 1.8) +
+  scale_y_continuous(limits = c(0, max(annual_loss_stats$Mean_Loss + annual_loss_stats$SE_Loss, na.rm = TRUE) * 1.1),
+                     expand = c(0, 0)) +
+  labs(
+    title = "Annual Coral Cover Loss and Disturbance Attribution (1987–2026)",
+    subtitle = "A: Mean Hard Coral Cover Loss per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Mean Loss (% cover)"
+  ) +
+  theme_academic(base_size = 11) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+# Annual Plot 1: Unpartitioned
+p_bot_annual_p1 <- df_plot1 %>%
+  group_by(report_year, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop") %>%
+  ggplot(aes(x = factor(report_year), y = Total_Loss, fill = factor(Disturbance, levels = names(dist_colors_p1)))) +
+  geom_bar(position = "fill", stat = "identity", width = 0.8, color = "black", linewidth = 0.15) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p1, name = "Disturbance Type") +
+  labs(
+    subtitle = "B: Annual 100% Stacked Bar Chart (Plot 1: 'm' as Separate Category)",
+    x = "Survey Year",
+    y = "Proportion of Total Loss (%)"
+  ) +
+  theme_academic(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold"),
+    legend.position = "bottom"
+  )
+
+composite_annual_p1 <- p_top_annual / p_bot_annual_p1 + plot_layout(heights = c(1, 2.2))
+
+# Annual Plot 2: Partitioned
+p_bot_annual_p2 <- df_plot2 %>%
+  group_by(report_year, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop") %>%
+  ggplot(aes(x = factor(report_year), y = Total_Loss, fill = factor(Disturbance, levels = names(dist_colors_p2)))) +
+  geom_bar(position = "fill", stat = "identity", width = 0.8, color = "black", linewidth = 0.15) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p2, name = "Disturbance Type") +
+  labs(
+    subtitle = "B: Annual 100% Stacked Bar Chart (Plot 2: 'm' Partitioned)",
+    x = "Survey Year",
+    y = "Proportion of Total Loss (%)"
+  ) +
+  theme_academic(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold"),
+    legend.position = "bottom"
+  )
+
+composite_annual_p2 <- p_top_annual / p_bot_annual_p2 + plot_layout(heights = c(1, 2.2))
+
+# Display Annual Plots
+print(composite_annual_p1)
+print(composite_annual_p2)
+```
+
+### Regional Disturbance Attribution Faceted Visualizations (Overall GBR & Regions)
+
+This section presents the partitioned disturbance attribution (`m` partitioned) for the **Overall GBR** baseline stacked above the 3 regional facets (**Northern GBR**, **Central GBR**, **Southern GBR**) with a single shared legend at the bottom.
+
+```{r regional-disturbance-attribution-composite}
+#| label: regional-disturbance-attribution-composite
+#| fig.width: 14
+#| fig.height: 16
+#| dpi: 300
+#| warning: false
+#| message: false
+
+# ==============================================================================
+# 1. DECADAL STACKED COMPOSITE (6-PANEL HIERARCHY WITH NET CHANGE GRADIENT)
+# ==============================================================================
+
+# --- Overall GBR Decadal Aggregations ---
+overall_dec_net <- df_surveyed %>%
+  group_by(Decade) %>%
+  summarise(
+    N = n(),
+    Mean_Change = mean(net_change, na.rm = TRUE),
+    SE_Change = ifelse(N > 1, sd(net_change, na.rm = TRUE) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = "Overall GBR")
+
+overall_dec_loss <- df_surveyed %>%
+  group_by(Decade) %>%
+  summarise(
+    N = n(),
+    Mean_Loss = mean(raw_loss * 100),
+    SE_Loss = ifelse(N > 1, sd(raw_loss * 100) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = "Overall GBR")
+
+overall_p2_dec <- df_plot2 %>%
+  group_by(Decade, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop_last") %>%
+  mutate(
+    Decade_Total = sum(Total_Loss),
+    Prop = Total_Loss / Decade_Total,
+    Label = ifelse(Prop >= 0.04, sprintf("%.1f%%", Prop * 100), ""),
+    Region = "Overall GBR"
+  )
+
+# --- Regional Decadal Aggregations ---
+reg_dec_net <- df_surveyed %>%
+  filter(Region != "Other") %>%
+  group_by(Region, Decade) %>%
+  summarise(
+    N = n(),
+    Mean_Change = mean(net_change, na.rm = TRUE),
+    SE_Change = ifelse(N > 1, sd(net_change, na.rm = TRUE) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = factor(Region, levels = c("Northern GBR", "Central GBR", "Southern GBR")))
+
+reg_dec_loss <- df_surveyed %>%
+  filter(Region != "Other") %>%
+  group_by(Region, Decade) %>%
+  summarise(
+    N = n(),
+    Mean_Loss = mean(raw_loss * 100),
+    SE_Loss = ifelse(N > 1, sd(raw_loss * 100) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = factor(Region, levels = c("Northern GBR", "Central GBR", "Southern GBR")))
+
+reg_p2_dec <- df_plot2 %>%
+  filter(Region != "Other") %>%
+  group_by(Region, Decade, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop_last") %>%
+  mutate(
+    Decade_Total = sum(Total_Loss),
+    Prop = Total_Loss / Decade_Total,
+    Label = ifelse(Prop >= 0.04, sprintf("%.1f%%", Prop * 100), ""),
+    Region = factor(Region, levels = c("Northern GBR", "Central GBR", "Southern GBR"))
+  )
+
+# --- Decadal Subplots ---
+# Panel A: Overall Net Change Bar Chart
+p_top_net_dec <- ggplot(overall_dec_net, aes(x = Decade, y = Mean_Change, fill = Mean_Change)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.6) +
+  geom_bar(stat = "identity", width = 0.45, color = "black", linewidth = 0.4) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change, ymax = Mean_Change + SE_Change), width = 0.15, linewidth = 0.7) +
+  geom_text(aes(y = ifelse(Mean_Change >= 0, Mean_Change + SE_Change + 0.35, Mean_Change - SE_Change - 0.45),
+                label = sprintf("%+.1f%%", Mean_Change)), size = 3.2, fontface = "bold") +
+  facet_wrap(~Region) +
+  scale_fill_gradient2(low = "#B2182B", mid = "#E0E0E0", high = "#2166AC", midpoint = 0, guide = "none") +
+  scale_y_continuous(limits = c(-2, 2.5), breaks = seq(-2, 2, 1), expand = c(0, 0)) +
+  labs(
+    title = "Coral Trajectory & Disturbance Attribution: Overall GBR & Regional Breakdown",
+    subtitle = "A: Overall GBR Mean Net Coral Cover Change per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Net Change (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Panel B: Overall Gross Loss Bar Chart
+p_top_loss_dec <- ggplot(overall_dec_loss, aes(x = Decade, y = Mean_Loss)) +
+  geom_bar(stat = "identity", fill = "#4B5563", width = 0.45, alpha = 0.9, color = "black", linewidth = 0.4) +
+  geom_errorbar(aes(ymin = Mean_Loss - SE_Loss, ymax = Mean_Loss + SE_Loss), width = 0.15, linewidth = 0.7, color = "black") +
+  geom_text(aes(label = sprintf("%.1f%%", Mean_Loss)), vjust = -1.2, size = 3.2, fontface = "bold") +
+  facet_wrap(~Region) +
+  scale_y_continuous(limits = c(0, 5.2), breaks = seq(0, 5, 1), expand = c(0, 0)) +
+  labs(
+    subtitle = "B: Overall GBR Mean Hard Coral Cover Loss per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Mean Loss (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Panel C: Overall Stacked Attribution
+p_top_attr_dec <- ggplot(overall_p2_dec, aes(x = Decade, y = Prop, fill = factor(Disturbance, levels = names(dist_colors_p2)))) +
+  geom_bar(stat = "identity", width = 0.5, color = "black", linewidth = 0.3) +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5), color = "white", fontface = "bold", size = 3.1) +
+  facet_wrap(~Region) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p2, name = "Disturbance Type") +
+  labs(
+    subtitle = "C: Overall GBR 100% Stacked Bar Chart ('m' Partitioned)",
+    x = NULL,
+    y = "Proportion of Loss (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_text(face = "bold"), legend.position = "none")
+
+# Panel D: Regional Net Change Bar Chart
+p_reg_net_dec <- ggplot(reg_dec_net, aes(x = Decade, y = Mean_Change, fill = Mean_Change)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.6) +
+  geom_bar(stat = "identity", width = 0.55, color = "black", linewidth = 0.4) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change, ymax = Mean_Change + SE_Change), width = 0.18, linewidth = 0.7) +
+  geom_text(aes(y = ifelse(Mean_Change >= 0, Mean_Change + SE_Change + 0.45, Mean_Change - SE_Change - 0.55),
+                label = sprintf("%+.1f%%", Mean_Change)), size = 3.0, fontface = "bold") +
+  facet_wrap(~Region, nrow = 1) +
+  scale_fill_gradient2(low = "#B2182B", mid = "#E0E0E0", high = "#2166AC", midpoint = 0, guide = "none") +
+  scale_y_continuous(limits = c(-4.8, 3.8), breaks = seq(-4, 3, 1), expand = c(0, 0)) +
+  labs(
+    subtitle = "D: Regional Mean Net Coral Cover Change per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Net Change (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Panel E: Regional Gross Loss Bar Chart
+p_reg_loss_dec <- ggplot(reg_dec_loss, aes(x = Decade, y = Mean_Loss)) +
+  geom_bar(stat = "identity", fill = "#4B5563", width = 0.55, alpha = 0.9, color = "black", linewidth = 0.4) +
+  geom_errorbar(aes(ymin = Mean_Loss - SE_Loss, ymax = Mean_Loss + SE_Loss), width = 0.18, linewidth = 0.7, color = "black") +
+  geom_text(aes(label = sprintf("%.1f%%", Mean_Loss)), vjust = -1.2, size = 3.0, fontface = "bold") +
+  facet_wrap(~Region, nrow = 1) +
+  scale_y_continuous(limits = c(0, 9.5), breaks = seq(0, 8, 2), expand = c(0, 0)) +
+  labs(
+    subtitle = "E: Regional Mean Hard Coral Cover Loss per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Mean Loss (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Panel F: Regional Stacked Attribution
+p_reg_attr_dec <- ggplot(reg_p2_dec, aes(x = Decade, y = Prop, fill = factor(Disturbance, levels = names(dist_colors_p2)))) +
+  geom_bar(stat = "identity", width = 0.6, color = "black", linewidth = 0.3) +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5), color = "white", fontface = "bold", size = 3.0) +
+  facet_wrap(~Region, nrow = 1) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p2, name = "Disturbance Type") +
+  labs(
+    subtitle = "F: Regional 100% Stacked Bar Charts ('m' Partitioned)",
+    x = "Decade",
+    y = "Proportion of Loss (%)"
+  ) +
+  theme_academic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold"),
+    legend.position = "bottom"
+  )
+
+composite_decadal_6panel <- (p_top_net_dec / p_top_loss_dec / p_top_attr_dec / p_reg_net_dec / p_reg_loss_dec / p_reg_attr_dec) +
+  plot_layout(heights = c(1, 1, 1.8, 1, 1, 2.2), guides = "collect") &
+  theme(legend.position = "bottom")
+
+print(composite_decadal_6panel)
+# 2. ANNUAL STACKED COMPOSITE (6-PANEL HIERARCHY WITH NET CHANGE GRADIENT)
+# ==============================================================================
+
+# --- Overall GBR Annual Aggregations ---
+overall_ann_net <- df_surveyed %>%
+  group_by(report_year) %>%
+  summarise(
+    N = n(),
+    Mean_Change = mean(net_change, na.rm = TRUE),
+    SE_Change = ifelse(N > 1, sd(net_change, na.rm = TRUE) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = "Overall GBR")
+
+overall_ann_loss <- df_surveyed %>%
+  group_by(report_year) %>%
+  summarise(
+    N = n(),
+    Mean_Loss = mean(raw_loss * 100),
+    SE_Loss = ifelse(N > 1, sd(raw_loss * 100) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = "Overall GBR")
+
+overall_p2_ann <- df_plot2 %>%
+  group_by(report_year, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop") %>%
+  mutate(Region = "Overall GBR")
+
+# --- Regional Annual Aggregations ---
+reg_ann_net <- df_surveyed %>%
+  filter(Region != "Other") %>%
+  group_by(Region, report_year) %>%
+  summarise(
+    N = n(),
+    Mean_Change = mean(net_change, na.rm = TRUE),
+    SE_Change = ifelse(N > 1, sd(net_change, na.rm = TRUE) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = factor(Region, levels = c("Northern GBR", "Central GBR", "Southern GBR")))
+
+reg_ann_loss <- df_surveyed %>%
+  filter(Region != "Other") %>%
+  group_by(Region, report_year) %>%
+  summarise(
+    N = n(),
+    Mean_Loss = mean(raw_loss * 100),
+    SE_Loss = ifelse(N > 1, sd(raw_loss * 100) / sqrt(N), 0),
+    .groups = "drop"
+  ) %>%
+  mutate(Region = factor(Region, levels = c("Northern GBR", "Central GBR", "Southern GBR")))
+
+reg_p2_ann <- df_plot2 %>%
+  filter(Region != "Other") %>%
+  group_by(Region, report_year, Disturbance) %>%
+  summarise(Total_Loss = sum(raw_loss), .groups = "drop") %>%
+  mutate(Region = factor(Region, levels = c("Northern GBR", "Central GBR", "Southern GBR")))
+
+# --- Annual Subplots ---
+p_top_net_ann <- ggplot(overall_ann_net, aes(x = factor(report_year), y = Mean_Change, fill = Mean_Change)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.6) +
+  geom_bar(stat = "identity", width = 0.8, color = "black", linewidth = 0.2) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change, ymax = Mean_Change + SE_Change), width = 0.25, linewidth = 0.5) +
+  facet_wrap(~Region) +
+  scale_fill_gradient2(low = "#B2182B", mid = "#E0E0E0", high = "#2166AC", midpoint = 0, guide = "none") +
+  scale_y_continuous(limits = c(min(overall_ann_net$Mean_Change - overall_ann_net$SE_Change) * 1.15,
+                                max(overall_ann_net$Mean_Change + overall_ann_net$SE_Change) * 1.15),
+                     expand = c(0, 0)) +
+  labs(
+    title = "Annual Coral Trajectory and Disturbance Attribution (1987–2026)",
+    subtitle = "A: Overall GBR Mean Net Coral Cover Change per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Net Change (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+p_top_loss_ann <- ggplot(overall_ann_loss, aes(x = factor(report_year), y = Mean_Loss, group = 1)) +
+  geom_ribbon(aes(ymin = pmax(0, Mean_Loss - SE_Loss), ymax = Mean_Loss + SE_Loss), fill = "#4B5563", alpha = 0.25) +
+  geom_line(color = "#111827", linewidth = 0.8) +
+  geom_point(color = "#111827", size = 1.6) +
+  facet_wrap(~Region) +
+  scale_y_continuous(limits = c(0, max(overall_ann_loss$Mean_Loss + overall_ann_loss$SE_Loss) * 1.1), expand = c(0, 0)) +
+  labs(
+    subtitle = "B: Overall GBR Mean Hard Coral Cover Loss per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Mean Loss (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+p_top_attr_ann <- ggplot(overall_p2_ann, aes(x = factor(report_year), y = Total_Loss, fill = factor(Disturbance, levels = names(dist_colors_p2)))) +
+  geom_bar(position = "fill", stat = "identity", width = 0.8, color = "black", linewidth = 0.15) +
+  facet_wrap(~Region) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p2, name = "Disturbance Type") +
+  labs(
+    subtitle = "C: Overall GBR Annual 100% Stacked Bar Chart ('m' Partitioned)",
+    x = NULL,
+    y = "Proportion of Loss (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "none")
+
+p_reg_net_ann <- ggplot(reg_ann_net, aes(x = factor(report_year), y = Mean_Change, fill = Mean_Change)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.6) +
+  geom_bar(stat = "identity", width = 0.85, color = "black", linewidth = 0.15) +
+  geom_errorbar(aes(ymin = Mean_Change - SE_Change, ymax = Mean_Change + SE_Change), width = 0.25, linewidth = 0.4) +
+  facet_wrap(~Region, nrow = 1) +
+  scale_fill_gradient2(low = "#B2182B", mid = "#E0E0E0", high = "#2166AC", midpoint = 0, guide = "none") +
+  scale_y_continuous(limits = c(min(reg_ann_net$Mean_Change - reg_ann_net$SE_Change) * 1.15,
+                                max(reg_ann_net$Mean_Change + reg_ann_net$SE_Change) * 1.15),
+                     expand = c(0, 0)) +
+  labs(
+    subtitle = "D: Regional Mean Net Coral Cover Change per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Net Change (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+p_reg_loss_ann <- ggplot(reg_ann_loss, aes(x = factor(report_year), y = Mean_Loss, group = 1)) +
+  geom_ribbon(aes(ymin = pmax(0, Mean_Loss - SE_Loss), ymax = Mean_Loss + SE_Loss), fill = "#4B5563", alpha = 0.25) +
+  geom_line(color = "#111827", linewidth = 0.7) +
+  geom_point(color = "#111827", size = 1.3) +
+  facet_wrap(~Region, nrow = 1) +
+  scale_y_continuous(limits = c(0, max(reg_ann_loss$Mean_Loss + reg_ann_loss$SE_Loss) * 1.1), expand = c(0, 0)) +
+  labs(
+    subtitle = "E: Regional Mean Hard Coral Cover Loss per Surveyed Reef (% cover ± SE)",
+    x = NULL,
+    y = "Mean Loss (%)"
+  ) +
+  theme_academic() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+p_reg_attr_ann <- ggplot(reg_p2_ann, aes(x = factor(report_year), y = Total_Loss, fill = factor(Disturbance, levels = names(dist_colors_p2)))) +
+  geom_bar(position = "fill", stat = "identity", width = 0.85, color = "black", linewidth = 0.15) +
+  facet_wrap(~Region, nrow = 1) +
+  scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+  scale_fill_manual(values = dist_colors_p2, name = "Disturbance Type") +
+  labs(
+    subtitle = "F: Regional Annual 100% Stacked Bar Charts ('m' Partitioned)",
+    x = "Survey Year",
+    y = "Proportion of Loss (%)"
+  ) +
+  theme_academic() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 7, face = "bold"),
+    legend.position = "bottom"
+  )
+
+composite_annual_6panel <- (p_top_net_ann / p_top_loss_ann / p_top_attr_ann / p_reg_net_ann / p_reg_loss_ann / p_reg_attr_ann) +
+  plot_layout(heights = c(1, 1, 1.8, 1, 1, 2.2), guides = "collect") &
+  theme(legend.position = "bottom")
+
+print(composite_annual_6panel)
+```
+
+```{r manta-model-data}
+#| label: manta-model-data
+#| cache: true
+# Load spatial regions
+gbr <- st_read("Data/GBR_AIMS") |> st_make_valid()
+data_bucket <- s3_bucket("s3://gbr-dms-data-public/gbrmpa-complete-gbr-features/data.parquet")
+reefs <- open_dataset(data_bucket) %>%
+    filter(FEAT_NAME == "Reef", DATASET == "GBR Features") |>
+    distinct(UNIQUE_ID, GBR_NAME, LOC_NAME_S, geometry, FEAT_NAME) %>%
+    collect() %>%
+    st_as_sf(crs = 4283) |>
+    st_make_valid()
+
+coast <- open_dataset(data_bucket) %>%
+    filter(FEAT_NAME %in% c("Mainland", "Island"), DATASET == "GBR Features") |>
+    distinct(UNIQUE_ID, GBR_NAME, LOC_NAME_S, geometry, FEAT_NAME) %>%
+    collect() %>%
+    st_as_sf(crs = 4283) |>
+    st_make_valid()
+reefs_centroids <- st_centroid(reefs)
+reefs_join <- st_join(reefs_centroids, gbr)
+
+dat.mod.mant <- df.MANT %>%
+    filter(Lag < 3, project_code != "MMP", abs(Change) > 0.01) %>%
+    left_join(select(Disturbances_mant, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description),
+        by = c("ReefName", "report_year")
+    ) %>%
+    filter(
+        is.na(DISTURBANCE_TYPE) | DISTURBANCE_TYPE %in% c("b", "m", "n"),
+        report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024, 2025)
+    ) %>%
+    mutate(
+        Era = case_when(
+            DHWYear %in% c(1998, 2002) ~ "1998/2002",
+            DHWYear %in% c(2016, 2017) ~ "2016/2017",
+            DHWYear %in% c(2020, 2022) ~ "2020/2022",
+            DHWYear == 2024 ~ "2024",
+            TRUE ~ NA_character_
+        )
+    ) |>
+    left_join(reefs_join %>% st_drop_geometry() %>% select(LOC_NAME_S, Region) %>% distinct(), by = c("ReefName" = "LOC_NAME_S"))
+```
+
+```{r manta-plots}
+#| label: manta-plots
+#| fig-cap: "Manta tow DHW vs relative change by era and region."
+ggplot(
+    dat.mod.mant,
+    aes(x = MaxDHW.mean, y = Rel.Change, fill = Era, colour = Era)
+) +
+    geom_point(alpha = 0.5) +
+    scale_fill_viridis_d(end = 0.8) +
+    scale_color_viridis_d(end = 0.8) +
+    coord_cartesian(xlim = c(0, 12), ylim = c(-1, 1)) +
+    scale_y_continuous(labels = scales::percent) +
+    geom_smooth(method = "gam", formula = y ~ s(x, k = 4)) +
+    theme_bw() +
+    labs(x = "DHW (°C-weeks)", y = "Relative change (growth-adjusted)")
+```
+
+# Model Comparison: LM vs GAM
+
+We compare linear model and GAM fits to the DHW–mortality relationship, stratified by era and region. This helps assess whether the relationship is stable across events or whether more recent events show different sensitivity.
+
+```{r lm-vs-gam}
+#| label: lm-vs-gam
+#| fig-cap: "LM vs GAM fits stratified by bleaching era."
+dat.mod.mantTerry <- dat.mod.mant |>
+    bind_rows(rename(dat.bleach, "Rel.Change" = "Change", "MaxDHW.mean" = "DHW") |>
+        mutate(Era = "Hughes et al 2018", Rel.Change = Rel.Change / 100))
+
+dat_plot <- dat.mod.mantTerry %>%
+    filter(is.finite(MaxDHW.mean), is.finite(Rel.Change)) %>%
+    mutate(Region = case_when(
+        Era == "Hughes et al 2018" ~ "Hughes et al 2018",
+        TRUE ~ Region
+    )) %>%
+    mutate(Era = factor(Era), Region = factor(Region)) %>%
+    filter(!is.na(Era), !is.na(Region))
+
+# Prediction function for LM + GAM
+fit_predict <- function(dat_sub, grid_sub, k = 4) {
+    m_lm <- lm(Rel.Change ~ MaxDHW.mean, data = dat_sub)
+    pr_lm <- predict(m_lm, newdata = grid_sub, se.fit = TRUE)
+    out_lm <- grid_sub %>%
+        mutate(
+            model = "LM", fit = pr_lm$fit,
+            lwr = pr_lm$fit - 1.96 * pr_lm$se.fit,
+            upr = pr_lm$fit + 1.96 * pr_lm$se.fit
+        )
+
+    m_gam <- mgcv::gam(Rel.Change ~ s(MaxDHW.mean, k = k), data = dat_sub, method = "REML")
+    pr_gam <- predict(m_gam, newdata = grid_sub, se.fit = TRUE)
+    out_gam <- grid_sub %>%
+        mutate(
+            model = paste0("GAM (k=", k, ")"), fit = pr_gam$fit,
+            lwr = pr_gam$fit - 1.96 * pr_gam$se.fit,
+            upr = pr_gam$fit + 1.96 * pr_gam$se.fit
+        )
+
+    bind_rows(out_lm, out_gam)
+}
+
+grid <- dat_plot %>%
+    distinct(Era) %>%
+    tidyr::expand_grid(MaxDHW.mean = seq(0, 20, by = 0.05))
+
+pred.era <- dat_plot %>%
+    group_by(Era) %>%
+    group_modify(~ {
+        grid_sub <- grid %>%
+            filter(Era == .y$Era) %>%
+            dplyr::select(MaxDHW.mean)
+        fit_predict(.x, grid_sub, k = 3)
+    }) %>%
+    ungroup()
+
+x_max <- max(dat_plot$MaxDHW.mean, na.rm = TRUE)
+
+Fig3.Eras <- ggplot(dat_plot, aes(MaxDHW.mean, Rel.Change, colour = Era, fill = Era)) +
+    annotate("rect",
+        xmin = x_max, xmax = 20, ymin = -Inf, ymax = Inf,
+        fill = "grey80", alpha = 0.5
+    ) +
+    geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+    geom_point(shape = 17, alpha = 0.5) +
+    geom_ribbon(
+        data = pred.era,
+        aes(x = MaxDHW.mean, y = fit, ymin = lwr, ymax = upr, group = Era),
+        alpha = 0.12, colour = NA, show.legend = FALSE
+    ) +
+    geom_line(data = pred.era, aes(x = MaxDHW.mean, y = fit), linewidth = 1) +
+    scale_color_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+    scale_fill_viridis_d(option = "A", begin = 0.2, end = 0.9) +
+    scale_y_continuous(labels = scales::percent) +
+    coord_cartesian(xlim = c(0, 20), ylim = c(-1, 1)) +
+    theme_classic() +
+    facet_grid(~model) +
+    labs(
+        x = "DHW (°C-weeks)", y = "Relative change (growth-adjusted)",
+        colour = NULL, fill = NULL
+    )
+
+Fig3.Eras
+ggsave("output/plots/Fig3_Eras.png", Fig3.Eras, width = 8, height = 5, dpi = 300)
+```
+
+# Model Choice & Extrapolation Sensitivity
+
+A critical but often overlooked question in coral mortality modelling is: **what happens to our predictions when we extrapolate beyond the observed DHW range?** As mass bleaching events intensify, reefs are increasingly exposed to DHW values that exceed historical observations. The choice of statistical model profoundly affects these out-of-range predictions — some models predict physically impossible outcomes (mortality >100%, or coral cover below zero).
+
+This section compares four model families applied to the DHW–mortality relationship, and contrasts their behaviour with the ReefMod process-based curve (Bozec et al.) to assess which statistical approaches produce physically plausible extrapolations.
+
+## Models Fitted
+
+We fit three model families to the mortality proportion (bounded 0–1):
+
+1. **Bounded GAM** — `gam(Mort ~ s(DHW), family = quasibinomial("logit"))`. Logit-linked, structurally bounded to (0, 1). This is the recommended approach as it allows for a flexible non-linear shape while preventing impossible predictions.
+2. **Beta regression** — `betareg(Mort ~ DHW)`. Designed for proportions with heteroscedastic variance.
+3. **Quasi-binomial GLM** — `glm(Mort ~ DHW, family = quasibinomial("logit"))`. Linear on logit scale, bounded.
+
+```{r model-extrapolation-fits}
+#| label: model-extrapolation-fits
+# ── ReefMod mortality function (Bozec et al.) ──
+reefmod_M <- function(DHW, d = 7, s = 1, threshold = 3) {
+    w <- 1 / (0.420 + 0.272 * d)
+    m <- w * s * (exp(0.168 + 0.347 * DHW) - 1) / 100
+    m <- pmin(1, pmax(0, m))
+    m[DHW < threshold] <- 0
+    M <- 1 - (1 - m)^6
+    pmin(1, pmax(0, M))
+}
+
+# ── Helper: fit all four models and return prediction grid ──
+fit_four_models <- function(dat, dhw_col, mort_col, max_dhw = 20) {
+    d <- dat %>%
+        transmute(DHW = .data[[dhw_col]], Mort = .data[[mort_col]]) %>%
+        filter(is.finite(DHW), is.finite(Mort), Mort >= 0, Mort <= 1)
+
+    # Nudge exact 0/1 for beta regression
+    n <- nrow(d)
+    d <- d %>% mutate(
+        Mort_beta = pmin(pmax(Mort, 0), 1),
+        Mort_beta = (Mort_beta * (n - 1) + 0.5) / n
+    )
+
+    grid <- data.frame(DHW = seq(0, max_dhw, by = 0.1))
+    obs_max <- max(d$DHW, na.rm = TRUE)
+
+    # 1. Unbounded GAM
+    m1 <- gam(Mort ~ s(DHW, k = 4), data = d, method = "REML")
+    pr1 <- predict(m1, newdata = grid, se.fit = TRUE)
+    grid$unb_fit <- pr1$fit
+    grid$unb_lwr <- pr1$fit - 1.96 * pr1$se.fit
+    grid$unb_upr <- pr1$fit + 1.96 * pr1$se.fit
+
+    # 2. Bounded GAM (quasibinomial logit)
+    m2 <- gam(Mort ~ s(DHW, k = 4), data = d, family = quasibinomial(link = "logit"), method = "REML")
+    pr2 <- predict(m2, newdata = grid, type = "link", se.fit = TRUE)
+    grid$bnd_fit <- inv_logit(pr2$fit)
+    grid$bnd_lwr <- inv_logit(pr2$fit - 1.96 * pr2$se.fit)
+    grid$bnd_upr <- inv_logit(pr2$fit + 1.96 * pr2$se.fit)
+
+    # 3. Beta regression
+    m3 <- tryCatch(betareg(Mort_beta ~ DHW, data = d, link = "logit"), error = function(e) NULL)
+    if (!is.null(m3)) {
+        grid$beta_fit <- predict(m3, newdata = grid, type = "response")
+        # Bootstrap CIs via coefficient simulation
+        Xg <- model.matrix(~DHW, data = grid)
+        b_mean <- coef(m3)[c("(Intercept)", "DHW")]
+        V_mean <- vcov(m3)[c("(Intercept)", "DHW"), c("(Intercept)", "DHW")]
+        set.seed(42)
+        b_sim <- MASS::mvrnorm(2000, mu = b_mean, Sigma = V_mean)
+        mu_sim <- inv_logit(b_sim %*% t(Xg))
+        grid$beta_lwr <- apply(mu_sim, 2, quantile, 0.025)
+        grid$beta_upr <- apply(mu_sim, 2, quantile, 0.975)
+    } else {
+        grid$beta_fit <- grid$beta_lwr <- grid$beta_upr <- NA
+    }
+
+    # 4. Quasi-binomial GLM
+    m4 <- glm(Mort ~ DHW, data = d, family = quasibinomial(link = "logit"))
+    pr4 <- predict(m4, newdata = grid, type = "link", se.fit = TRUE)
+    grid$glm_fit <- inv_logit(pr4$fit)
+    grid$glm_lwr <- inv_logit(pr4$fit - 1.96 * pr4$se.fit)
+    grid$glm_upr <- inv_logit(pr4$fit + 1.96 * pr4$se.fit)
+
+    # ReefMod reference curves
+    sens_s <- c(1.4, 1.5, 1.6, 1.7)
+    grid$reefmod_sens <- reefmod_M(grid$DHW, d = 7, s = mean(sens_s))
+    grid$reefmod_sens_lwr <- reefmod_M(grid$DHW, d = 7, s = min(sens_s))
+    grid$reefmod_sens_upr <- reefmod_M(grid$DHW, d = 7, s = max(sens_s))
+    grid$reefmod_tol <- reefmod_M(grid$DHW, d = 7, s = 0.25)
+
+    # Calculate R2 values
+    r2_vals <- list(
+        unb_gam = summary(m1)$r.sq,
+        bnd_gam = summary(m2)$r.sq,
+        beta    = if (!is.null(m3)) m3$pseudo.r.squared else NA,
+        glm     = 1 - (m4$deviance / m4$null.deviance)
+    )
+
+    list(
+        data = d, grid = grid, obs_max = obs_max, r2 = r2_vals,
+        models = list(unbounded_gam = m1, bounded_gam = m2, beta = m3, glm = m4)
+    )
+}
+
+# ── Fit to Hughes et al. (2018) data ──
+hughes_fits <- fit_four_models(dat.bleach, "DHW", "Mort.bin", max_dhw = 20)
+
+# ── Fit to AIMS LTMP manta tow data ──
+# Transform growth-adjusted Rel.Change to mortality proportion
+dat_aims_mort <- dat.mod.mant %>%
+    ungroup() %>%
+    filter(is.finite(MaxDHW.mean), is.finite(Rel.Change)) %>%
+    mutate(
+        Mort.prop = pmin(pmax(-Rel.Change, 0), 1),
+        Mort.prop = ifelse(Mort.prop == 0, 0.001, Mort.prop)
+    )
+
+aims_fits <- fit_four_models(dat_aims_mort, "MaxDHW.mean", "Mort.prop", max_dhw = 25)
+```
+
+## Extrapolation Comparison
+
+```{r model-extrapolation-plot}
+#| label: model-extrapolation-plot
+#| fig-cap: "Model choice & extrapolation sensitivity. Left: Hughes et al. (2018) single-event data. Right: AIMS LTMP manta tow data (growth-corrected, multi-event). Grey shading indicates extrapolation beyond the observed DHW range. Black lines show the ReefMod process-based mortality curve (solid = heat-sensitive, dashed = heat-tolerant)."
+#| fig-height: 7
+#| fig-width: 12
+# ── Helper: build a plot from fits ──
+build_extrap_plot <- function(fits, title_label, caption_text = NULL, x_limit = 20) {
+    g <- fits$grid %>% filter(DHW <= x_limit)
+    d <- fits$data
+    x_max <- fits$obs_max
+    r2 <- fits$r2
+
+    # Reshape to long format for plotting
+    pred_long <- bind_rows(
+        g %>% transmute(DHW, model = "Bounded GAM (logit)", fit = bnd_fit, lwr = bnd_lwr, upr = bnd_upr),
+        g %>% transmute(DHW, model = "Beta regression", fit = beta_fit, lwr = beta_lwr, upr = beta_upr),
+        g %>% transmute(DHW, model = "Quasi-binomial GLM", fit = glm_fit, lwr = glm_lwr, upr = glm_upr)
+    ) %>%
+        mutate(model = factor(model, levels = c("Bounded GAM (logit)", "Beta regression", "Quasi-binomial GLM")))
+
+    # Create R2 annotation text
+    r2_text <- paste0(
+        "R\u00B2 values:\n",
+        "Bounded GAM: ", round(r2$bnd_gam, 3), "\n",
+        "Beta Reg: ", round(r2$beta, 3), "\n",
+        "GLM: ", round(r2$glm, 3)
+    )
+
+    p <- ggplot(d, aes(DHW, Mort)) +
+        # Extrapolation shading
+        annotate("rect",
+            xmin = x_max, xmax = x_limit, ymin = -Inf, ymax = Inf,
+            fill = "grey80", alpha = 0.5
+        ) +
+        geom_vline(xintercept = x_max, linetype = "dotted", linewidth = 0.8) +
+        annotate("text",
+            x = x_max + (x_limit - x_max) * 0.5, y = 0.05,
+            label = "Extrapolation", colour = "grey30", size = 3
+        ) +
+
+        # Data points
+        geom_point(shape = 17, colour = "grey30", size = 1.2, alpha = 0.3) +
+
+        # Model ribbons and lines
+        geom_ribbon(
+            data = pred_long,
+            aes(x = DHW, ymin = lwr, ymax = upr, fill = model),
+            alpha = 0.12, inherit.aes = FALSE
+        ) +
+        geom_line(
+            data = pred_long,
+            aes(x = DHW, y = fit, colour = model),
+            linewidth = 0.9, inherit.aes = FALSE
+        ) +
+
+        # ReefMod reference (heat-sensitive)
+        geom_ribbon(
+            data = g, aes(x = DHW, ymin = reefmod_sens_lwr, ymax = reefmod_sens_upr),
+            fill = "black", alpha = 0.06, inherit.aes = FALSE
+        ) +
+        geom_line(
+            data = g, aes(x = DHW, y = reefmod_sens),
+            colour = "black", linewidth = 1, inherit.aes = FALSE
+        ) +
+        # ReefMod (heat-tolerant)
+        geom_line(
+            data = g, aes(x = DHW, y = reefmod_tol),
+            colour = "black", linewidth = 0.8, linetype = "dashed", inherit.aes = FALSE
+        ) +
+
+        # R2 Annotation
+        annotate("label",
+            x = x_limit, y = 0, label = r2_text,
+            hjust = 1.05, vjust = -0.1, size = 3, label.size = NA, fill = "white", alpha = 0.7
+        ) +
+        scale_color_viridis_d(option = "A", begin = 0.15, end = 0.85) +
+        scale_fill_viridis_d(option = "A", begin = 0.15, end = 0.85) +
+        coord_cartesian(xlim = c(0, x_limit), ylim = c(0, 1.05)) +
+        theme_classic(base_size = 11) +
+        labs(
+            x = "DHW (°C-weeks)", y = "Mortality proportion",
+            colour = NULL, fill = NULL, title = title_label,
+            caption = caption_text
+        )
+
+    return(p)
+}
+
+p_hughes <- build_extrap_plot(
+    hughes_fits,
+    "A) Hughes et al. (2018) — Single event (2016)"
+)
+
+p_aims <- build_extrap_plot(
+    aims_fits,
+    "B) AIMS LTMP Manta Tow \u2014 Multi-event (1998\u20132024)",
+    caption_text = "Note: AIMS mortality proportions are growth-corrected.\nReefs that gained cover are set to mortality \u2248 0.",
+    x_limit = 25
+)
+
+Fig_Extrapolation <- p_hughes + p_aims +
+    plot_layout(ncol = 2, guides = "collect") &
+    theme(legend.position = "bottom")
+
+Fig_Extrapolation
+ggsave("output/plots/Fig_ModelChoice_Extrapolation.png", Fig_Extrapolation,
+    width = 12, height = 7, dpi = 300
+)
+```
+
+## Predicted Mortality at Key DHW Thresholds
+
+```{r model-extrapolation-table}
+#| label: model-extrapolation-table
+# Extract predictions at key DHW values
+extract_at_dhw <- function(fits, dataset_label, dhw_vals = c(8, 10, 12, 15, 20)) {
+    g <- fits$grid %>% filter(round(DHW, 1) %in% dhw_vals)
+
+    bind_rows(
+        g %>% transmute(Dataset = dataset_label, DHW, Model = "Bounded GAM", Predicted_Mortality = bnd_fit),
+        g %>% transmute(Dataset = dataset_label, DHW, Model = "Beta regression", Predicted_Mortality = beta_fit),
+        g %>% transmute(Dataset = dataset_label, DHW, Model = "Quasi-binomial GLM", Predicted_Mortality = glm_fit),
+        g %>% transmute(Dataset = dataset_label, DHW, Model = "ReefMod (sensitive)", Predicted_Mortality = reefmod_sens)
+    )
+}
+
+extrap_table <- bind_rows(
+    extract_at_dhw(hughes_fits, "Hughes et al. 2018"),
+    extract_at_dhw(aims_fits, "AIMS LTMP Manta Tow")
+) %>%
+    tidyr::pivot_wider(
+        names_from = DHW, values_from = Predicted_Mortality,
+        names_prefix = "DHW_"
+    ) %>%
+    mutate(across(starts_with("DHW_"), ~ round(., 3)))
+
+datatable(extrap_table,
+    caption = "Predicted mortality proportion at key DHW thresholds.",
+    options = list(pageLength = 12, dom = "t")
+)
+```
+
+# Benthic Transect Analysis
+
+In addition to manta tow data, AIMS LTMP uses benthic photo-transects to record detailed cover estimates, primarily at 5 m depth (with some sites at 2 m and 8 m). This section extracts and processes benthic hard coral cover for mortality attribution.
+
+```{r benthic-data}
+#| label: benthic-data
+#| cache: true
+load("Data/aims_ltmp/aims_ltmp.RData")
+df.AIMS.full <- reef_photo_df
+
+df.AIMS.Bent <- df.AIMS.full |>
+    filter(
+        data_type == "photo-transect", domain_category == "reef",
+        project_code %in% c("LTMP", "MMP"), purpose == "GROUP_LEVEL", variable == "HARD CORAL"
+    ) |>
+    mutate(
+        Reef_Name = toupper(domain_name),
+        Reef_Name_Clean = gsub(" REEF(S)?| ISLAND| IS", "", Reef_Name)
+    ) |>
+    select(Reef_Name, Reef_Name_Clean, project_code, report_year, date, depth, lower:median, mean, reef_zone, id, shelf, reefpage_category)
+
+# Create a cleaned version of the reference for matching, ensuring uniqueness
+dat.Ref.Clean <- dat.AIMSRef %>%
+    mutate(AIMS_REEF_NAME_Clean = gsub(" REEF(S)?| ISLAND| IS", "", toupper(Reef_Name))) %>%
+    group_by(AIMS_REEF_NAME_Clean) %>%
+    slice(1) %>% # Take the first match to avoid many-to-many explosion
+    ungroup()
+
+df.BENT.HC <- df.AIMS.Bent |>
+    left_join(select(dat.Ref.Clean, AIMS_REEF_NAME_Clean, ReefID, ReefName, SECT_NAME, SECTOR),
+        by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")
+    ) %>%
+    mutate(
+        ReefName = case_when(
+            Reef_Name == "FRANKLAND ISLANDS" & reef_zone == "East" ~ "Normanby-Mabel Reef (17-012)",
+            Reef_Name == "FRANKLAND ISLANDS" & reef_zone == "West" ~ "Round-Russell Reef (17-013)",
+            TRUE ~ ReefName
+        ),
+        ReefID = case_when(
+            Reef_Name == "FRANKLAND ISLANDS" & reef_zone == "East" ~ "17-012",
+            Reef_Name == "FRANKLAND ISLANDS" & reef_zone == "West" ~ "17-013",
+            TRUE ~ ReefID
+        )
+    )
+
+# Add fallback growth parameters for any remaining ungridded inshore reefs
+missing_benth_reefs <- df.BENT.HC %>%
+    filter(!ReefName %in% dat.gridSum$REEF_NAME) %>%
+    distinct(ReefName, ReefID, SECTOR)
+
+if (nrow(missing_benth_reefs) > 0) {
+    fallback_rows <- missing_benth_reefs %>%
+        inner_join(sector_params, by = "SECTOR") %>%
+        mutate(
+            REEF_NAME = ReefName,
+            REEF_ID = ReefID,
+            WQ1 = WQ / 3, WQ2 = WQ / 3, WQ3 = WQ / 3,
+            HC90 = 0.8 * HC.asym
+        )
+    dat.gridSum <- bind_rows(dat.gridSum, fallback_rows)
+}
+
+# Find max DHW for each reef year
+dat.yrs.bent.hc <- df.BENT.HC |>
+    ungroup() |>
+    distinct(ReefName, date, report_year) |>
+    filter(!is.na(ReefName)) |>
+    mutate(
+        year_int = floor(as.numeric(date)),
+        frac = as.numeric(date) - year_int,
+        Date = ymd(paste0(year_int, "-01-01")) +
+            round(frac * as.numeric(ymd(paste0(year_int + 1, "-01-01")) - ymd(paste0(year_int, "-01-01")))),
+        Prev = report_year - 1,
+        Year = year(Date), Month = month(Date),
+        DHWYear = ifelse(Month >= 5, Year, Year - 1)
+    ) |>
+    select(-year_int, -frac) |>
+    left_join(dplyr::select(dat.DHW, ReefName, Year, MaxDHW.mean),
+        by = c("ReefName", "DHWYear" = "Year")
+    )
+
+# Calculate % decline for each reef
+df.BENT.HC <- df.BENT.HC %>%
+    arrange(ReefName, Reef_Name, depth, reef_zone, reefpage_category, report_year) |>
+    group_by(ReefName, Reef_Name, depth, reef_zone, reefpage_category) |>
+    mutate(
+        Change = mean - lag(mean, n = 1),
+        Rel.Change = Change / lag(mean, n = 1),
+        Lag = report_year - lag(report_year, n = 1)
+    ) |>
+    relocate(c("Change", "Lag", "Rel.Change"), .before = median) |>
+    left_join(dat.yrs.bent.hc, by = c("ReefName", "date", "report_year"))
+
+# Apply growth correction
+df.BENT.HC <- df.BENT.HC |>
+    mutate(Change.Cor = Change, Prev.HC = mean - Change.Cor) |>
+    filter(
+        ReefName %in% dat.gridSum$REEF_NAME, !is.na(Lag),
+        Reef_Name != "MILLN REEF"
+    ) |>
+    rowwise() |>
+    mutate(
+        idx = which(dat.gridSum$REEF_NAME == ReefName)[1],
+        Pred.Grth = doCoralGrowth.Simp(
+            CoralCover = Prev.HC * 100,
+            B0 = dat.gridSum$B0[idx],
+            WQ = dat.gridSum$WQ[idx],
+            HC.asym = dat.gridSum$HC.asym[idx]
+        )[3] / 100
+    ) |>
+    mutate(
+        Pred.Grth2 = ifelse(Lag == 2,
+            Pred.Grth + doCoralGrowth.Simp(
+                CoralCover = (Prev.HC + Pred.Grth) * 100,
+                B0 = dat.gridSum$B0[idx],
+                WQ = dat.gridSum$WQ[idx],
+                HC.asym = dat.gridSum$HC.asym[idx]
+            )[3] / 100,
+            Pred.Grth
+        ),
+        Abs.Change = Change.Cor - Pred.Grth2,
+        Rel.Change = Abs.Change / (Prev.HC + Pred.Grth2 + 0.001) # Small epsilon to avoid division by zero
+    )
+
+dat.mod.bent.hc <- df.BENT.HC %>%
+    filter(Lag < 3) %>%
+    left_join(select(Disturbances_bent, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description),
+        by = c("ReefName", "report_year")
+    ) %>%
+    filter(
+        is.na(DISTURBANCE_TYPE) | DISTURBANCE_TYPE %in% c("b", "m", "n"),
+        report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024, 2025)
+    ) %>%
+    mutate(
+        Era = case_when(
+            DHWYear %in% c(1998, 2002) ~ "1998/2002",
+            DHWYear %in% c(2016, 2017) ~ "2016/2017",
+            DHWYear %in% c(2020, 2022) ~ "2020/2022",
+            DHWYear == 2024 ~ "2024",
+            TRUE ~ NA_character_
+        )
+    ) |>
+    left_join(reefs_join %>% st_drop_geometry() %>% select(LOC_NAME_S, Region) %>% distinct(), by = c("ReefName" = "LOC_NAME_S"))
+```
+
+```{r benthic-plots}
+#| label: benthic-plots
+#| fig-cap: "Benthic transect DHW vs relative change by era and region."
+ggplot(dat.mod.bent.hc, aes(x = MaxDHW.mean, y = Rel.Change, fill = Era, colour = Era)) +
+    geom_point() +
+    scale_fill_viridis_d(end = 0.8) +
+    scale_color_viridis_d(end = 0.8) +
+    coord_cartesian(xlim = c(0, 12), ylim = c(-1, 1)) +
+    scale_y_continuous(labels = scales::percent) +
+    geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
+    facet_wrap(~project_code) +
+    theme_bw() +
+    labs(
+        x = "DHW (°C-weeks)", y = "Relative change (growth-adjusted)",
+        title = "Benthic Transect: LTMP (Offshore) vs MMP (Inshore)"
+    )
+```
+
+# Repeat Exposure & Frequency
+
+Does the DHW–mortality relationship change for reefs that have been bleached previously? We stratify by first vs repeat exposure, and also look at the overall frequency of >8 DHW events since 2015.
+
+## First vs Repeat Exposure
+
+```{r repeat-exposure}
+#| label: repeat-exposure
+dat.mod.repeat <- dat.mod.mant %>%
+    filter(report_year > 2015) %>%
+    group_by(Reef_Name) %>%
+    arrange(report_year, .by_group = TRUE) %>%
+    mutate(
+        exposed4 = MaxDHW.mean > 4,
+        ExposureNo = cumsum(exposed4),
+        ExposureCat = case_when(
+            exposed4 & ExposureNo == 1 ~ "First",
+            exposed4 & ExposureNo > 1 ~ "Repeat",
+            TRUE ~ "NotExposed"
+        ),
+        StressCat = case_when(
+            MaxDHW.mean < 4 ~ "0-4DHW",
+            MaxDHW.mean < 8 ~ "4-8DHW",
+            TRUE ~ "8-14DHW"
+        )
+    ) %>%
+    ungroup()
+
+dat_exp <- dat.mod.repeat %>%
+    filter(ExposureCat %in% c("First", "Repeat")) %>%
+    filter(is.finite(Abs.Change), is.finite(MaxDHW.mean))
+
+# Mixed effects model to account for repeated measures on reefs
+m1_re <- lmer(Abs.Change ~ ExposureCat + MaxDHW.mean + Region + (1 | Reef_Name), data = dat_exp)
+summary(m1_re)
+```
+
+```{r repeat-exposure-plots}
+#| label: repeat-exposure-plots
+#| fig-cap: "Relative coral cover change by first vs repeat DHW exposure >4."
+Fig4Repeat <- ggplot(
+    dat_exp |> filter(!is.na(ExposureCat)),
+    aes(x = MaxDHW.mean, y = Rel.Change, fill = ExposureCat, shape = ExposureCat, colour = ExposureCat)
+) +
+    geom_point(alpha = 0.6) +
+    scale_fill_manual(values = cols_exposure) +
+    scale_color_manual(values = cols_exposure) +
+    coord_cartesian(xlim = c(4, 12)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
+    scale_y_continuous(labels = scales::percent) +
+    labs(
+        x = "DHW (°C-weeks)", y = "Relative coral cover change",
+        fill = "Exposure", shape = "Exposure", colour = "Exposure"
+    ) +
+    theme_bw() +
+    theme(legend.position = "bottom")
+
+Fig4Repeat
+```
+
+## Thermal Stress Frequency
+
+```{r frequency-analysis}
+#| label: frequency-analysis
+# Total cover change vs frequency of >8 DHW since 2015
+reef_keys <- dat.mod.repeat %>%
+    distinct(ReefName) %>%
+    filter(!is.na(ReefName))
+
+dhw_2015 <- dat.DHW %>%
+    filter(ReefName %in% reef_keys$ReefName, Year >= 2015) %>%
+    arrange(ReefName, Year) %>%
+    group_by(ReefName) %>%
+    mutate(ev8 = MaxDHW.mean > 8) %>%
+    ungroup()
+
+exposure_summary <- dhw_2015 %>%
+    group_by(ReefName) %>%
+    summarise(
+        dhw_years = n_distinct(Year),
+        n_ev8 = sum(ev8, na.rm = TRUE),
+        freq_ev8 = n_ev8 / dhw_years,
+        .groups = "drop"
+    )
+
+reef_summary <- dat.mod.repeat %>%
+    filter(report_year > 2015) %>%
+    filter(!is.na(ReefName), is.finite(mean)) %>%
+    group_by(ReefName) %>%
+    summarise(
+        Region = first(Region),
+        coral_years = n_distinct(report_year),
+        year_start = min(report_year, na.rm = TRUE),
+        year_end = max(report_year, na.rm = TRUE),
+        cover_start = mean[which.min(report_year)],
+        cover_end = mean[which.max(report_year)],
+        rel_total_change = (cover_end - cover_start) / cover_start,
+        total_cover_change = cover_end - cover_start,
+        .groups = "drop"
+    ) %>%
+    filter(coral_years >= 3, is.finite(rel_total_change), cover_start > 0, year_end > 2023)
+
+reef_disturbance_df <- read_csv("Data/aims_ltmp/reef_disturbance.csv")
+dist_summary <- reef_disturbance_df %>%
+    filter(year > 2015, sample_type == "MANTA", disturbance == "c") %>%
+    group_by(aims_reef_name, disturbance) %>%
+    summarise(n_disturbances = n(), .groups = "drop") %>%
+    left_join(dat.AIMSRef_key |> dplyr::select(aims_reef_name = AIMS_REEF_NAME_case, ReefName),
+        by = "aims_reef_name"
+    )
+
+reef_summary2 <- reef_summary %>%
+    left_join(exposure_summary, by = "ReefName") %>%
+    left_join(dist_summary, by = "ReefName") %>%
+    mutate(
+        COTSOutbreak = case_when(
+            n_disturbances > 0 ~ "COTS Outbreak",
+            is.na(n_disturbances) ~ "No Outbreak"
+        ),
+        BleachingFreq = case_when(
+            freq_ev8 == 0 ~ "0",
+            freq_ev8 < 0.2 ~ "0-0.2/year",
+            TRUE ~ "0.2/year +"
+        )
+    )
+
+Fig4Freq <- ggplot(reef_summary2, aes(BleachingFreq, total_cover_change, fill = COTSOutbreak)) +
+    geom_boxplot() +
+    scale_fill_manual(values = cols_outbreak) +
+    scale_y_continuous(labels = scales::percent) +
+    theme_bw() +
+    labs(
+        x = "Frequency of >8 DHW years since 2015",
+        y = "Total coral cover change since 2015", fill = NULL
+    ) +
+    theme(legend.position = "bottom")
+
+Fig4Freq
+```
+
+## Reef Condition Index (RCI) Response
+
+```{r rci-data}
+#| label: rci-data
+# ── Load LTMP/CSMP metrics and compute RCI ──
+dat_metrics <- read_csv("data/aims_ltmp/metricsLTMPCSMP.csv", show_col_types = FALSE) %>%
+    rename(
+        Reef = Reef,
+        Year = Year,
+        Site = Site,
+        Coral_Cover_raw = coral,
+        Structural_Complexity = Complexity,
+        Coral_Diversity_Raw = simpD,
+        Fish_Biomass_raw = f.biomass,
+        Fish_Diversity_raw = FsimpD,
+        Algal_Cover_raw = cca # CCA cover as algal metric
+    )
+
+# ── Scale each metric to 0–1 and compute RCI ──
+dat_rci <- dat_metrics %>%
+    filter(
+        !is.na(Coral_Cover_raw), !is.na(Structural_Complexity),
+        !is.na(Coral_Diversity_Raw), !is.na(Fish_Biomass_raw),
+        !is.na(Fish_Diversity_raw), !is.na(Algal_Cover_raw)
+    ) %>%
+    mutate(
+        # Convert coral cover proportion (if % divide by 100)
+        Coral_Cover_prop = Coral_Cover_raw / 100,
+        # Log transform fish biomass
+        Fish_Biomass_log = log(Fish_Biomass_raw + 1),
+        # Scale each metric to 0–1 using min-max across the dataset
+        Coral_sc = (Coral_Cover_prop - min(Coral_Cover_prop, na.rm = TRUE)) /
+            (max(Coral_Cover_prop, na.rm = TRUE) - min(Coral_Cover_prop, na.rm = TRUE)),
+        Complexity_sc = (Structural_Complexity - min(Structural_Complexity, na.rm = TRUE)) /
+            (max(Structural_Complexity, na.rm = TRUE) - min(Structural_Complexity, na.rm = TRUE)),
+        CoralDiv_sc = (Coral_Diversity_Raw - min(Coral_Diversity_Raw, na.rm = TRUE)) /
+            (max(Coral_Diversity_Raw, na.rm = TRUE) - min(Coral_Diversity_Raw, na.rm = TRUE)),
+        FishBiomass_sc = (Fish_Biomass_log - min(Fish_Biomass_log, na.rm = TRUE)) /
+            (max(Fish_Biomass_log, na.rm = TRUE) - min(Fish_Biomass_log, na.rm = TRUE)),
+        FishDiv_sc = (Fish_Diversity_raw - min(Fish_Diversity_raw, na.rm = TRUE)) /
+            (max(Fish_Diversity_raw, na.rm = TRUE) - min(Fish_Diversity_raw, na.rm = TRUE)),
+        AlgalCover_sc = (Algal_Cover_raw - min(Algal_Cover_raw, na.rm = TRUE)) /
+            (max(Algal_Cover_raw, na.rm = TRUE) - min(Algal_Cover_raw, na.rm = TRUE)),
+        # RCI = mean of 6 scaled metrics
+        RCI = (Coral_sc + Complexity_sc + CoralDiv_sc + FishBiomass_sc + FishDiv_sc + AlgalCover_sc) / 6
+    )
+
+# ── Average RCI per reef-year (across sites/transects) ──
+rci_reef_year <- dat_rci %>%
+    group_by(Reef, Year) %>%
+    summarise(RCI = mean(RCI, na.rm = TRUE), .groups = "drop")
+
+# ── Join to DHW via AIMS reference key ──
+# New CSV Reef column is uppercase, matching AIMS_REEF_NAME_cap
+rci_dhw <- rci_reef_year %>%
+    left_join(
+        dat.AIMSRef_key %>% select(AIMS_REEF_NAME_cap, ReefName),
+        by = c("Reef" = "AIMS_REEF_NAME_cap")
+    ) %>%
+    filter(!is.na(ReefName)) %>%
+    left_join(
+        dat.DHW %>% select(ReefName, Year, MaxDHW.mean),
+        by = c("ReefName", "Year")
+    )
+
+# ── Calculate year-over-year RCI change per reef ──
+rci_change <- rci_dhw %>%
+    arrange(ReefName, Year) %>%
+    group_by(ReefName) %>%
+    mutate(
+        RCI_lag = lag(RCI),
+        RCI_change = RCI - RCI_lag,
+        Year_lag = lag(Year)
+    ) %>%
+    filter(!is.na(RCI_change)) %>%
+    ungroup()
+
+# ── First vs Repeat exposure classification (mirroring dat.mod.repeat) ──
+rci_repeat <- rci_change %>%
+    filter(Year > 2015) %>%
+    group_by(ReefName) %>%
+    arrange(Year, .by_group = TRUE) %>%
+    mutate(
+        exposed4 = MaxDHW.mean > 4,
+        ExposureNo = cumsum(exposed4),
+        ExposureCat = case_when(
+            exposed4 & ExposureNo == 1 ~ "First",
+            exposed4 & ExposureNo > 1 ~ "Repeat",
+            TRUE ~ "NotExposed"
+        )
+    ) %>%
+    ungroup()
+
+rci_exp <- rci_repeat %>%
+    filter(ExposureCat %in% c("First", "Repeat")) %>%
+    filter(is.finite(RCI_change), is.finite(MaxDHW.mean))
+```
+
+```{r rci-repeat-plot}
+#| label: rci-repeat-plot
+#| fig-cap: "RCI change by first vs repeat DHW exposure >4 (GAM smooth)."
+Fig4RCI_Repeat <- ggplot(
+    rci_exp,
+    aes(
+        x = MaxDHW.mean, y = RCI_change, fill = ExposureCat,
+        shape = ExposureCat, colour = ExposureCat
+    )
+) +
+    geom_point(alpha = 0.6) +
+    scale_fill_manual(values = cols_exposure) +
+    scale_color_manual(values = cols_exposure) +
+    coord_cartesian(xlim = c(4, 12)) +
+    geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
+    labs(
+        x = "DHW (°C-weeks)", y = "RCI change",
+        fill = "Exposure", shape = "Exposure", colour = "Exposure"
+    ) +
+    theme_bw() +
+    theme(legend.position = "bottom")
+
+Fig4RCI_Repeat
+```
+
+```{r rci-frequency}
+#| label: rci-frequency
+#| fig-cap: "RCI change by frequency of >8 DHW years since 2015."
+# ── Total RCI change since 2015 per reef (mirroring reef_summary) ──
+rci_summary <- rci_dhw %>%
+    filter(Year > 2015) %>%
+    filter(!is.na(ReefName), is.finite(RCI)) %>%
+    group_by(ReefName) %>%
+    summarise(
+        rci_years = n_distinct(Year),
+        year_start = min(Year, na.rm = TRUE),
+        year_end = max(Year, na.rm = TRUE),
+        rci_start = RCI[which.min(Year)],
+        rci_end = RCI[which.max(Year)],
+        total_rci_change = rci_end - rci_start,
+        .groups = "drop"
+    ) %>%
+    filter(rci_years >= 3, is.finite(total_rci_change), year_end > 2023)
+
+# ── Join with exposure frequency and COTS disturbance ──
+rci_summary2 <- rci_summary %>%
+    left_join(exposure_summary, by = "ReefName") %>%
+    left_join(dist_summary, by = "ReefName") %>%
+    mutate(
+        COTSOutbreak = case_when(
+            n_disturbances > 0 ~ "COTS Outbreak",
+            is.na(n_disturbances) ~ "No Outbreak"
+        ),
+        BleachingFreq = case_when(
+            freq_ev8 == 0 ~ "0",
+            freq_ev8 < 0.2 ~ "0-0.2/year",
+            TRUE ~ "0.2/year +"
+        )
+    )
+
+Fig4RCI_Freq <- ggplot(rci_summary2, aes(BleachingFreq, total_rci_change, fill = COTSOutbreak)) +
+    geom_boxplot() +
+    scale_fill_manual(values = cols_outbreak) +
+    theme_bw() +
+    labs(
+        x = "Frequency of >8 DHW years since 2015",
+        y = "Total RCI change since 2015", fill = NULL
+    ) +
+    theme(legend.position = "bottom")
+
+Fig4RCI_Freq
+```
+
+# Spatial Mapping
+
+We can map the frequency of >8 DHW events since 2015 and the corresponding net coral cover change per sector.
+
+```{r spatial-mapping}
+#| label: spatial-mapping
+#| fig-cap: "Spatial distribution of thermal stress frequency ( >8 DHW) across the GBR."
+shp <- list.files("data/SectorShapefile", pattern = "\\.shp$", full.names = TRUE)[1]
+sectors <- st_read(shp, quiet = TRUE) |> st_make_valid()
+sect_id <- intersect(names(sectors), c("SECT_NAME", "SECTOR", "Sector", "NAME", "Name"))[1]
+
+target_crs <- st_crs(sectors)
+coast_sp <- st_transform(coast, target_crs)
+reefs_sp <- st_transform(reefs, target_crs)
+reef_id <- intersect(names(reefs_sp), c("ReefName", "REEF_NAME", "LOC_NAME_S", "domain_name", "name"))[1]
+
+reef_pts <- st_point_on_surface(reefs_sp) |>
+    mutate(ReefName = .data[[reef_id]]) |>
+    left_join(reef_summary2, by = "ReefName") |>
+    filter(is.finite(freq_ev8), is.finite(rel_total_change))
+
+reef_pts2 <- st_join(reef_pts, sectors |> dplyr::select(!!sect_id), left = TRUE)
+
+sector_stats <- reef_pts2 |>
+    st_drop_geometry() |>
+    group_by(sector = .data[[sect_id]]) |>
+    summarise(
+        n_reefs = n(),
+        freq_mean = mean(freq_ev8, na.rm = TRUE),
+        freq_max = max(freq_ev8, na.rm = TRUE),
+        chg_mean = mean(total_cover_change, na.rm = TRUE),
+        chg_se = sd(total_cover_change, na.rm = TRUE) / sqrt(sum(is.finite(total_cover_change))),
+        .groups = "drop"
+    )
+
+sectors2 <- sectors |>
+    mutate(sector = .data[[sect_id]]) |>
+    left_join(sector_stats, by = "sector")
+
+sector_labs <- sectors2 |>
+    filter(is.finite(freq_mean)) |>
+    mutate(
+        lab_pt = st_point_on_surface(geometry),
+        label = sprintf(
+            "freq>8: %.2f\nΔcover: %+.0f ± %.0f%%",
+            freq_mean, 100 * chg_mean, 100 * chg_se
+        )
+    )
+
+pal <- c("#2A9D8F", "#E9C46A", "#E76F51")
+
+FigMapFreq <- ggplot() +
+    geom_sf(data = coast_sp, fill = "grey92", colour = "grey50", linewidth = 0.2) +
+    geom_sf(data = sectors2, aes(fill = freq_mean), colour = "grey25", linewidth = 0.25, alpha = 0.95) +
+    geom_sf(data = reef_pts2, aes(colour = freq_ev8, size = freq_ev8 * 10), alpha = 0.9) +
+    geom_sf_text(data = sector_labs, aes(geometry = lab_pt, label = label), size = 3.0, lineheight = 0.95) +
+    scale_fill_gradientn(colours = pal, limits = c(0, 0.5), name = "Freq >8 DHW") +
+    scale_colour_gradientn(colours = pal, limits = c(0, 0.5), name = "Freq >8 DHW") +
+    scale_size(range = c(0.8, 4.2), limits = c(0, 1), guide = "none") +
+    coord_sf(expand = FALSE) +
+    theme_classic(base_size = 12) +
+    theme(
+        axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank(), legend.position = "right"
+    )
+
+FigMapFreq
+```
+
+
+# Spatial-Temporal IDW % Acropora Interpolation
+
+To resolve missing benthic composition in Manta Tow surveys and un-sampled reef-year pairs, we apply a spatial-temporal Inverse Distance Weighting (IDW) interpolation pipeline ($w = 1/d^2$, radius $\le 150\text{ km}$, temporal window $\pm 2$ years) across LTMP Benthic photo-transects and MMP Inshore observations.
+
+```{r idw-acropora-load}
+#| label: idw-acropora-load
+#| cache: true
+if (!file.exists('data/processed/acropora_interpolated_df.rds')) {
+  source('scripts/idw_acropora_interpolation.R')
+}
+acrop_interpolated <- readRDS('data/processed/acropora_interpolated_df.rds')
+```
+
+```{r idw-acropora-plot}
+#| label: idw-acropora-plot
+#| fig-cap: 'Distribution of interpolated % Acropora cover across GBR reefs and survey methods.'
+#| fig-width: 9
+#| fig-height: 5
+ggplot(acrop_interpolated, aes(x = prop_acropora_idw * 100, fill = imputation_method)) +
+  geom_histogram(bins = 35, color = 'black', alpha = 0.8) +
+  scale_fill_brewer(palette = 'Set2', name = 'Imputation Tier') +
+  theme_classic() +
+  labs(x = 'Interpolated % Acropora Cover', y = 'Reef-Year Observation Count',
+       title = 'Spatial-Temporal IDW % Acropora Distribution (1985–2024)')
+```
+
+# Workspace Export for Downstream Modelling
+
+All cleaned exploratory datasets, growth correction functions, and IDW acropora spatial objects are saved to `data/processed/01_exploratory_workspace.RData` for high-performance loading in `02_DHW_Mortality_Modelling.qmd`.
+
+```{r export-workspace}
+#| label: export-workspace
+save.image('data/processed/01_exploratory_workspace.RData')
+cat('Successfully exported 01_exploratory_workspace.RData\n')
+```

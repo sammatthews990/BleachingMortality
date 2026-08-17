@@ -2,7 +2,8 @@
 Cheung et al. (2025) Environmental Predictor Pipeline (Full Historical Suite)
 Extracts NOAA CRW SST/DHW, 40-year Thermal History (histmDHW6, yrsince6, histmDHW4, yrsince4),
 eReefs surface hydrodynamics (k=16, zc=-0.5m), and IMOS Secchi depth (Kd490)
-for all ~7,000 GBR + Torres Strait reefs across survey years 2016, 2017, 2020, and 2024.
+for all ~7,000 GBR + Torres Strait reef features across survey years 2016, 2017,
+2020, 2022, and 2024.
 """
 import os
 import sys
@@ -191,30 +192,57 @@ def main():
         
     df_out = pd.concat(all_dfs, ignore_index=True)
     
-    # 5. Populate PATMOS-x Cloud Cover (cloudp_90) from benchmark lookup and reef climatology
-    lookup_path = "data/processed/cheung_cloudp90_lookup.csv"
-    if os.path.exists(lookup_path):
-        df_c = pd.read_csv(lookup_path)
-        df_out['LABEL_clean'] = df_out['LABEL_ID'].astype(str).str.strip().str.upper()
-        df_c['LABEL_clean'] = df_c['LABEL_ID'].astype(str).str.strip().str.upper()
-        
-        lookup_map = df_c.set_index(['LABEL_clean', 'year'])['cloudp_90'].to_dict()
-        reef_mean_map = df_c.groupby('LABEL_clean')['cloudp_90'].mean().to_dict()
-        overall_med = df_c['cloudp_90'].median()
-        
-        def get_cloud_val(row):
-            key = (row['LABEL_clean'], int(row['year']))
-            if key in lookup_map and not np.isnan(lookup_map[key]):
-                return lookup_map[key]
-            r_key = row['LABEL_clean']
-            if r_key in reef_mean_map and not np.isnan(reef_mean_map[r_key]):
-                return reef_mean_map[r_key]
-            return overall_med
-            
-        df_out['cloudp_90'] = df_out.apply(get_cloud_val, axis=1)
-        df_out.drop(columns=['LABEL_clean'], inplace=True)
-    else:
-        df_out['cloudp_90'] = df_out['cloudp_90'].fillna(0.72)
+    # 5. Join independently reconstructed PATMOS-x v6 reef-year cloud cover.
+    # Never substitute archived paper values, another-year reef climatology, or
+    # an overall median: those shortcuts erase interannual event information.
+    cloud_path = "data/processed/patmosx_cloud_reef_year.csv"
+    if not os.path.exists(cloud_path):
+        raise FileNotFoundError(
+            f"Missing {cloud_path}. Run `python scripts/fetch_patmosx_cloud.py` "
+            "before this environmental assembly step."
+        )
+
+    cloud = pd.read_csv(cloud_path)
+    required_cloud = {
+        'LABEL_ID', 'year', 'cloudp_90', 'cloud_n_days', 'cloud_n_asc',
+        'cloud_n_des', 'cloud_n_paired_days', 'cloud_n_preliminary_files',
+        'cloud_platform', 'cloud_product_version', 'cloud_aggregation',
+        'cloud_spatial_match', 'lon', 'lat'
+    }
+    missing_columns = required_cloud.difference(cloud.columns)
+    if missing_columns:
+        raise ValueError(f"PATMOS-x table is missing columns: {sorted(missing_columns)}")
+
+    df_out['LABEL_clean'] = df_out['LABEL_ID'].astype(str).str.strip().str.upper()
+    cloud['LABEL_clean'] = cloud['LABEL_ID'].astype(str).str.strip().str.upper()
+    cloud['year'] = pd.to_numeric(cloud['year'], errors='raise').astype(int)
+    for frame in (df_out, cloud):
+        frame['lon_key'] = pd.to_numeric(frame['lon'], errors='raise').round(6)
+        frame['lat_key'] = pd.to_numeric(frame['lat'], errors='raise').round(6)
+    cloud_keys = ['LABEL_clean', 'lon_key', 'lat_key', 'year']
+    if cloud.duplicated(cloud_keys).any():
+        raise ValueError("PATMOS-x table contains duplicate reef-feature-year keys")
+    if ((cloud['cloudp_90'] < 0) | (cloud['cloudp_90'] > 1)).any():
+        raise ValueError("PATMOS-x cloud fractions must be within [0, 1]")
+
+    cloud_columns = cloud_keys + sorted(required_cloud - {'LABEL_ID', 'year', 'lon', 'lat'})
+    df_out = df_out.drop(columns=['cloudp_90']).merge(
+        cloud[cloud_columns],
+        on=cloud_keys,
+        how='left',
+        validate='one_to_one',
+        indicator='_cloud_join'
+    )
+    cloud_coverage = df_out.groupby('year')['cloudp_90'].agg(['count', 'size'])
+    print("\nPATMOS-x reef-year coverage:\n", cloud_coverage)
+    missing_cloud = df_out['cloudp_90'].isna()
+    if missing_cloud.any():
+        missing_counts = df_out.loc[missing_cloud].groupby('year').size().to_dict()
+        raise RuntimeError(
+            "PATMOS-x reconstruction has unmatched reef-years; no fallback was applied: "
+            f"{missing_counts}"
+        )
+    df_out.drop(columns=['LABEL_clean', 'lon_key', 'lat_key', '_cloud_join'], inplace=True)
 
     # Fill post-Jan 2024 eReefs current speed using multi-year reef climatological mean
     clim_mcur = df_out.groupby('LABEL_ID')['mcur_90'].mean().to_dict()
