@@ -7,6 +7,7 @@ DHW_Mortality_Attribution_files/figure-html/
 .Rproj.user
 
 output/models/
+output/model_validation/
 
 01_DHW_Mortality_Exploratory_cache/
 02_DHW_Mortality_Modelling_cache/
@@ -14,3 +15,23 @@ output/models/
 01_DHW_Mortality_Exploratory_files/
 02_DHW_Mortality_Modelling_files/
 scratch/
+
+output/formal_models/
+
+output/prediction_uncertainty/
+
+output/salinity_kd490_loyo_minimum_metrics.csv
+
+output/salinity_kd490_loyo_minimum_predictions.csv
+
+output/salinity_kd490_loyo_occurrence_metrics.csv
+
+output/salinity_kd490_loyo_occurrence_predictions.csv
+
+output/wind_audit/sar_wind_2024_q1_daily_coverage.csv
+
+output/wind_audit/sar_wind_2024_q1_grid_coverage.csv
+
+output/wind_audit/sar_wind_2024_q1_reef_coverage.csv
+
+output/wind_audit/wind_product_comparison_metrics.csv

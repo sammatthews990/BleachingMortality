@@ -396,12 +396,14 @@ dat.yrs.mant <- df.MANT |>
 
 # Calculate change per reef
 df.MANT <- df.MANT %>%
-    arrange(ReefName, Reef_Name, reefpage_category, depth, report_year) |>
+    arrange(ReefName, Reef_Name, reefpage_category, depth, report_year, date_approx) |>
     group_by(ReefName, Reef_Name, depth, reefpage_category) |>
     mutate(
         Change = mean - lag(mean, n = 1),
         Rel.Change = Change / lag(mean, n = 1),
-        Lag = report_year - lag(report_year, n = 1)
+        Lag = report_year - lag(report_year, n = 1),
+        Baseline.Date = lag(date_approx, n = 1),
+        Interval.Days = as.integer(date_approx - Baseline.Date)
     ) |>
     relocate(c("Change", "Lag", "Rel.Change"), .before = median) |>
     left_join(dat.yrs.mant)
@@ -1134,7 +1136,7 @@ reefs_centroids <- st_centroid(reefs)
 reefs_join <- st_join(reefs_centroids, gbr)
 
 dat.mod.mant <- df.MANT %>%
-    filter(Lag < 3, project_code != "MMP", abs(Change) > 0.01) %>%
+    filter(Lag < 3, project_code != "MMP") %>%
     left_join(select(Disturbances_mant, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description),
         by = c("ReefName", "report_year")
     ) %>%
@@ -1602,15 +1604,17 @@ dat.yrs.bent.hc <- df.BENT.HC |>
 
 # Calculate % decline for each reef
 df.BENT.HC <- df.BENT.HC %>%
-    arrange(ReefName, Reef_Name, depth, reef_zone, reefpage_category, report_year) |>
+    left_join(dat.yrs.bent.hc, by = join_by(ReefName, date, report_year)) |>
+    arrange(ReefName, Reef_Name, depth, reef_zone, reefpage_category, report_year, Date) |>
     group_by(ReefName, Reef_Name, depth, reef_zone, reefpage_category) |>
     mutate(
         Change = mean - lag(mean, n = 1),
         Rel.Change = Change / lag(mean, n = 1),
-        Lag = report_year - lag(report_year, n = 1)
+        Lag = report_year - lag(report_year, n = 1),
+        Baseline.Date = lag(Date, n = 1),
+        Interval.Days = as.integer(Date - Baseline.Date)
     ) |>
-    relocate(c("Change", "Lag", "Rel.Change"), .before = median) |>
-    left_join(dat.yrs.bent.hc, by = c("ReefName", "date", "report_year"))
+    relocate(c("Change", "Lag", "Rel.Change", "Baseline.Date", "Interval.Days"), .before = median)
 
 # Apply growth correction
 df.BENT.HC <- df.BENT.HC |>
@@ -2087,6 +2091,30 @@ ggplot(acrop_interpolated, aes(x = prop_acropora_idw * 100, fill = imputation_me
   theme_classic() +
   labs(x = 'Interpolated % Acropora Cover', y = 'Reef-Year Observation Count',
        title = 'Spatial-Temporal IDW % Acropora Distribution (1985–2024)')
+```
+
+# Harmonised Mortality Outcomes
+
+The canonical response is the proportional loss of total hard-coral cover relative to observed pre-event cover. It is bounded to `[0, 1]`; cover gains are represented as zero mortality, while true zero and complete-loss observations are retained without nudging. Absolute loss in percentage points is the secondary response. The former Gompertz growth-adjusted outcomes and their component cover estimates are retained as sensitivity variables rather than built into the primary estimand.
+
+Manta tow, LTMP benthic, and MMP inshore benthic observations remain in separate tables. Each row is the finest survey observation supplied by AIMS. Eligible observations use the most recent baseline no more than 24 months earlier and retain the established May-to-April event window: May--December surveys map to that calendar year's bleaching event and January--April surveys map to the preceding event year. This allows mortality to be assessed after the required post-bleaching delay without mixing survey programmes.
+
+```{r harmonise-mortality-outcomes}
+#| label: harmonise-mortality-outcomes
+source('scripts/harmonise_mortality_outcomes.R')
+
+outcome_tables <- build_mortality_outcome_tables(
+    dat.mod.mant,
+    dat.mod.bent.hc,
+    raw_manta = df.AIMS.Mant,
+    raw_benthic = df.AIMS.Bent
+)
+mortality_outcomes_manta <- outcome_tables$manta
+mortality_outcomes_ltmp <- outcome_tables$ltmp
+mortality_outcomes_mmp <- outcome_tables$mmp
+mortality_outcomes_manifest <- outcome_tables$manifest
+
+mortality_outcomes_manifest
 ```
 
 # Workspace Export for Downstream Modelling

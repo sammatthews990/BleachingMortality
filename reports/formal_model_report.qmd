@@ -1,0 +1,672 @@
+---
+title: "GBR coral mortality: formal BRMS-BRT prediction models"
+subtitle: "Blocked validation, cross-fitted stacking, and all-event production refits"
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(scales)
+library(knitr)
+
+formal_dir <- "../output/formal_models"
+files <- c(
+  comparison_metrics = file.path(formal_dir, "model_comparison_metrics.csv"),
+  comparison_predictions = file.path(formal_dir, "model_comparison_predictions.csv"),
+  production_weights = file.path(formal_dir, "production_ensemble_weights.csv"),
+  fold_weights = file.path(formal_dir, "ensemble_fold_weights.csv"),
+  brms_diagnostics = file.path(formal_dir, "brms_diagnostics.csv"),
+  brms_production_diagnostics = file.path(formal_dir, "brms_production_diagnostics.csv"),
+  brt_tuning = file.path(formal_dir, "brt_tuning.csv"),
+  brt_influence = file.path(formal_dir, "brt_production_influence.csv")
+)
+files <- c(
+  files,
+  brms_fit_statistics = file.path(formal_dir, 'brms_fit_statistics.csv'),
+  explanatory_metrics = '../output/model_validation/candidate_explanatory_metrics.csv',
+  acropora_coverage = '../data/processed/pre_event_acropora_coverage.csv'
+)
+files <- c(
+  files,
+  event_context = file.path(formal_dir, 'event_context_predictor_audit.csv'),
+  event_calibration = file.path(formal_dir, 'event_component_calibration.csv')
+)
+if (any(!file.exists(files))) {
+  stop("Formal model results are incomplete. Run the BRMS, BRT, and ensemble scripts first.")
+}
+
+metrics <- read_csv(files[["comparison_metrics"]], show_col_types = FALSE)
+predictions <- read_csv(files[["comparison_predictions"]], show_col_types = FALSE)
+production_weights <- read_csv(files[["production_weights"]], show_col_types = FALSE)
+fold_weights <- read_csv(files[["fold_weights"]], show_col_types = FALSE)
+brms_diagnostics <- read_csv(files[["brms_diagnostics"]], show_col_types = FALSE)
+brms_production_diagnostics <- read_csv(
+  files[["brms_production_diagnostics"]], show_col_types = FALSE
+)
+brt_tuning <- read_csv(files[["brt_tuning"]], show_col_types = FALSE)
+brt_influence <- read_csv(files[["brt_influence"]], show_col_types = FALSE)
+
+brms_fit_statistics <- read_csv(
+  files[['brms_fit_statistics']], show_col_types = FALSE
+)
+explanatory_metrics <- read_csv(
+  files[['explanatory_metrics']], show_col_types = FALSE
+)
+acropora_coverage <- read_csv(
+  files[['acropora_coverage']], show_col_types = FALSE
+)
+event_context <- read_csv(files[['event_context']], show_col_types = FALSE)
+event_calibration <- read_csv(
+  files[['event_calibration']], show_col_types = FALSE
+)
+
+programme_labels <- c(
+  manta = "LTMP manta tow",
+  ltmp = "LTMP benthic",
+  mmp = "MMP inshore"
+)
+scheme_labels <- c(
+  leave_one_event_out = "Leave one event out",
+  reef_blocked_5fold = "Reef blocked",
+  region_blocked = "Region blocked"
+)
+learner_labels <- c(
+  benchmark = "Benchmark",
+  brms = "BRMS",
+  brt = "BRT",
+  formal_ensemble = "BRMS-BRT ensemble",
+  stacked_ensemble = "Benchmark-BRMS-BRT stack"
+)
+
+theme_set(theme_bw(base_size = 11))
+```
+
+# What was fitted
+
+The response tables retain the established bleaching-attribution restriction:
+disturbance codes `b`, `m`, `n`, or an unrecorded disturbance are eligible,
+while records explicitly assigned to COTS, storms/cyclones, disease, or other
+excluded disturbances are not used. The meaning of `m` is unchanged, and blank
+disturbance records remain eligible when mortality can plausibly be attributed
+to the bleaching event. Genuine zero-loss observations are retained as controls.
+
+The benchmark models remain interpretable references. They do not limit the
+production learners. The formal BRMS model is boundary-aware and hierarchical,
+with a nonlinear DHW response, all attainable environmental predictors,
+preceding-year Acropora proportion and absolute Acropora cover, a DHW--Acropora
+interaction, and prespecified DHW interactions with cloud, Secchi depth,
+current speed, prior severe heat exposure, ten-year cumulative heat load,
+signed thermal novelty, and an acute IMOS optical-extreme metric. Reef, event,
+and region effects capture repeated observations in the positive beta mean.
+Event and region effects are now also fitted in the zero-boundary component,
+where the earlier models most strongly underpredicted 2024 occurrence.
+
+The BRT uses the same predictors in a two-part occurrence/magnitude model.
+Its positive component compares Gaussian mortality against a logit-Gaussian
+bounded response. Response scale, tree depth, learning rate, minimum node size,
+and tree number are selected only within each outer analysis fold.
+
+All observations receive one out-of-fold prediction per validation scheme.
+Ensemble weights for a held-out fold are learned only from the other folds. Two
+ensembles are retained: a BRMS-BRT framework blend and a prediction-focused
+stack that may also use the low-variance benchmark. Final production weights use
+the event- and reef-blocked predictions; region blocking remains a geographic
+stress test. The final models are refitted on every modern event, including 2024.
+
+Two prediction targets are kept explicit. Leave-one-event-out predictions are
+future-event forecasts and exclude event and region random effects. Reef-blocked
+predictions represent mapping an observed event to unsurveyed reefs and include
+the known event and region effects. Region-blocked predictions include the known
+event effect but exclude the held-out region effect. GBR-wide reconstruction
+should therefore be judged primarily from reef-blocked validation, while
+leave-one-event-out remains the stricter test of forecasting a new event.
+
+## Pre-event Acropora reconstruction
+
+Acropora composition is aligned to the survey used as the pre-bleaching coral
+cover baseline. Exact reef, depth, and baseline-year observations are preferred.
+Where these are unavailable, only past observations are used: first the same
+reef, then a past-only spatial-temporal interpolation. No future community
+composition is allowed to enter a validation row.
+
+```{r acropora-coverage}
+acropora_coverage |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Source = recode(
+      acropora_source,
+      observed_depth_year = 'Observed reef-depth-year',
+      past_same_reef = 'Earlier observation at same reef',
+      past_only_spatiotemporal_idw = 'Past-only spatial-temporal estimate'
+    ),
+    Coverage = percent(proportion, accuracy = 0.1)
+  ) |>
+  select(Programme, Source, Rows = rows, Coverage) |>
+  arrange(Programme, desc(Rows)) |>
+  kable()
+```
+
+All 537 validation observations now have a preceding-year Acropora estimate.
+The source year is checked to be no later than the baseline year. LTMP benthic
+is fully observed, MMP is 97.8% observed, and manta tow is 69.8% observed; the
+remaining manta estimates therefore deserve a source-specific sensitivity
+analysis before ecological effect sizes are treated as definitive.
+
+# Blocked predictive performance
+
+```{r performance-plot, fig.width=11, fig.height=7}
+plot_metrics <- metrics |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels),
+    Learner = recode(learner, !!!learner_labels)
+  )
+
+ggplot(plot_metrics, aes(x = Learner, y = rmse, colour = Learner)) +
+  geom_point(size = 2.8) +
+  geom_line(aes(group = Assessment), colour = "grey70", linewidth = 0.4) +
+  facet_grid(Programme ~ Assessment, scales = "free_y") +
+  scale_colour_brewer(palette = "Dark2", guide = "none") +
+  labs(x = NULL, y = "Out-of-fold RMSE", title = "No learner is judged from in-sample fit") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+```
+
+```{r predictive-r2-plot, fig.width=11, fig.height=7}
+ggplot(plot_metrics, aes(x = Learner, y = predictive_r2, colour = Learner)) +
+  geom_hline(yintercept = 0, colour = 'grey55', linetype = 2) +
+  geom_point(size = 2.8) +
+  geom_line(aes(group = Assessment), colour = 'grey70', linewidth = 0.4) +
+  facet_grid(Programme ~ Assessment, scales = 'free_y') +
+  scale_colour_brewer(palette = 'Dark2', guide = 'none') +
+  labs(
+    x = NULL, y = expression(R[predictive]^2),
+    title = 'Variance explained in blocked assessment data'
+  ) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
+```
+
+```{r performance-table}
+metrics |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels),
+    Learner = recode(learner, !!!learner_labels)
+  ) |>
+  select(
+    Programme, Assessment, Learner, n,
+    MAE = mae, RMSE = rmse, `Predictive R2` = predictive_r2,
+    `Balanced MAE` = balanced_mae, `Severe-event MAE` = severe_mae,
+    `Occurrence Brier` = occurrence_brier, Bias = bias,
+    `Observed mean` = observed_mean, `Predicted mean` = predicted_mean
+  ) |>
+  arrange(Programme, Assessment, RMSE) |>
+  kable(digits = 3)
+```
+
+## Current predictive choice
+
+The table below pools the two prespecified selection tasks: transfer to another
+event and transfer to unsurveyed reefs. It is an honest routing decision, not a
+claim that the winning learner is the most ecologically informative model.
+
+```{r current-predictive-choice}
+selection_scores <- predictions |>
+  filter(scheme %in% c("leave_one_event_out", "reef_blocked_5fold")) |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Learner = recode(learner, !!!learner_labels)
+  ) |>
+  group_by(Programme, Learner) |>
+  summarise(
+    n = n(),
+    MAE = mean(abs(predicted_mortality - observed_mortality)),
+    RMSE = sqrt(mean((predicted_mortality - observed_mortality)^2)),
+    `Predictive R2` = 1 -
+      sum((predicted_mortality - observed_mortality)^2) /
+      sum((observed_mortality - mean(observed_mortality))^2),
+    `Balanced MAE` = mean(c(
+      mean(abs(predicted_mortality - observed_mortality)[observed_mortality == 0]),
+      mean(abs(predicted_mortality - observed_mortality)[observed_mortality > 0])
+    )),
+    `Severe-event MAE` = mean(
+      abs(predicted_mortality - observed_mortality)[observed_mortality >= 0.2]
+    ),
+    `Occurrence Brier` = mean(
+      (predicted_occurrence - as.numeric(observed_mortality > 0))^2
+    ),
+    Bias = mean(predicted_mortality - observed_mortality),
+    .groups = "drop"
+  )
+
+production_route <- tibble::tribble(
+  ~Programme, ~Learner,
+  'LTMP benthic', 'Benchmark-BRMS-BRT stack',
+  'LTMP manta tow', 'BRMS-BRT ensemble',
+  'MMP inshore', 'BRMS-BRT ensemble'
+)
+
+selection_scores |>
+  inner_join(production_route, by = c('Programme', 'Learner')) |>
+  arrange(Programme) |>
+  kable(digits = 3)
+```
+
+RMSE remains the primary measure for the continuous expected-mortality target:
+it penalises large errors in the high-mortality observations that matter most
+for GBR-wide loss estimates. It is not sufficient alone for this zero-heavy
+response. Balanced MAE gives zero and positive observations equal influence,
+severe-event MAE targets observations with at least 20% mortality, and the
+occurrence Brier score assesses the boundary component.
+
+LTMP and manta select the displayed routes consistently across the continuous
+error measures. MMP is less decisive: BRMS has the lowest pooled RMSE (0.231),
+but the BRMS--BRT ensemble is within 1%, improves balanced MAE and occurrence
+Brier score, and retains both modelling frameworks. It is therefore the
+provisional MMP production route. This explicit trade-off is preferable to
+declaring a DHW-only benchmark the winner from one metric in a small,
+three-event dataset.
+
+# Event context added in this refit
+
+Ten-year cumulative load is the sum of annual DHW above 4 within the ten full
+calendar years before an event. Signed novelty is current annual maximum DHW
+minus the greatest annual maximum in that preceding window. Negative values
+therefore identify events weaker than recent exposure, while positive values
+identify unprecedented exposure. The acute optical predictor is
+`1.7 / Q90(Kd490)` during January--March: lower values indicate unusually low
+water clarity. It is a consistent IMOS plume/turbidity proxy, not a direct
+salinity measurement.
+
+```{r event-context-plot, fig.width=10, fig.height=5.5}
+event_context |>
+  filter(event_year %in% c(2022, 2024)) |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Event = factor(event_year)
+  ) |>
+  ggplot(aes(
+    x = novelty10, y = secchi_p10,
+    colour = Event, size = mortality, shape = region_block
+  )) +
+  geom_vline(xintercept = 0, colour = 'grey65', linetype = 2) +
+  geom_point(alpha = 0.85) +
+  facet_wrap(~ Programme, scales = 'free') +
+  scale_size_continuous(labels = percent_format(), range = c(2, 7)) +
+  labs(
+    x = 'Signed thermal novelty (DHW)',
+    y = 'Acute IMOS Secchi proxy (m; lower = poorer clarity)',
+    size = 'Observed mortality', shape = 'Region',
+    title = 'Thermal novelty and optical conditions separate parts of 2022 and 2024'
+  )
+```
+
+Southern 2024 observations have positive mean novelty, including the
+Capricorn--Bunker signal, whereas 2022 is negative across the observed regions.
+Northern and central 2024 observations also have lower IMOS Secchi proxies than
+their 2022 counterparts. These summaries support the proposed mechanisms, but
+the optical metric cannot distinguish freshwater from sediment, coloured
+dissolved matter, or other sources of attenuation. Direct salinity remains a
+sensitivity analysis when a complete, consistent 2024 product is available.
+
+# Forecasting and reconstructing the 2024 event
+
+```{r predictions-2024, fig.width=10, fig.height=4.8}
+predictions_2024 <- predictions |>
+  filter(scheme == "leave_one_event_out", fold == "2024") |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Learner = recode(learner, !!!learner_labels)
+  )
+
+ggplot(
+  predictions_2024,
+  aes(x = observed_mortality, y = predicted_mortality, colour = Learner)
+) +
+  geom_abline(slope = 1, intercept = 0, colour = "grey55", linetype = 2) +
+  geom_point(alpha = 0.65, size = 1.7) +
+  facet_wrap(~ Programme) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  scale_colour_brewer(palette = "Dark2") +
+  labs(
+    x = "Observed mortality proportion",
+    y = "Prediction trained without 2024",
+    title = "The 2024 fold remains the central temporal-transfer test"
+  )
+```
+
+```{r means-2024}
+predictions_2024 |>
+  group_by(Programme, Learner) |>
+  summarise(
+    n = n(),
+    `Observed mean` = mean(observed_mortality),
+    `Predicted mean` = mean(predicted_mortality),
+    Bias = mean(predicted_mortality - observed_mortality),
+    RMSE = sqrt(mean((predicted_mortality - observed_mortality)^2)),
+    `Predictive R2` = 1 -
+      sum((predicted_mortality - observed_mortality)^2) /
+      sum((observed_mortality - mean(observed_mortality))^2),
+    `Balanced MAE` = mean(c(
+      mean(abs(predicted_mortality - observed_mortality)[observed_mortality == 0]),
+      mean(abs(predicted_mortality - observed_mortality)[observed_mortality > 0])
+    )),
+    .groups = "drop"
+  ) |>
+  arrange(Programme, RMSE) |>
+  kable(digits = 3)
+```
+
+## Component calibration in 2022 and 2024
+
+```{r event-component-plot, fig.width=10, fig.height=6}
+event_calibration |>
+  filter(learner == 'brms') |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels),
+    Event = factor(event_year)
+  ) |>
+  select(Programme, Assessment, Event, obs, pred) |>
+  tidyr::pivot_longer(
+    c(obs, pred), names_to = 'Series', values_to = 'Mean_mortality'
+  ) |>
+  mutate(Series = recode(Series, obs = 'Observed', pred = 'BRMS')) |>
+  ggplot(aes(x = Event, y = Mean_mortality, colour = Series, group = Series)) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 2.5) +
+  facet_grid(Programme ~ Assessment, scales = 'free_y') +
+  scale_y_continuous(labels = percent_format()) +
+  scale_colour_manual(values = c(Observed = 'black', BRMS = '#2C7FB8')) +
+  labs(
+    x = 'Bleaching event', y = 'Mean mortality', colour = NULL,
+    title = 'Known-event effects improve reconstruction; unseen-event forecasting remains harder'
+  )
+```
+
+```{r event-component-table}
+event_calibration |>
+  filter(learner == 'brms') |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels)
+  ) |>
+  select(
+    Programme, Assessment, Event = event_year, n,
+    `Observed mean` = obs, `Predicted mean` = pred,
+    `Observed occurrence` = obs_occ, `Predicted occurrence` = pred_occ,
+    `Observed positive magnitude` = obs_pos,
+    `Predicted positive magnitude` = pred_pos
+  ) |>
+  arrange(Programme, Assessment, Event) |>
+  kable(digits = 3)
+```
+
+For known-event reef-blocked reconstruction, BRMS reproduces 2024 mean
+mortality closely: 0.112 versus 0.113 observed for LTMP benthic, 0.171 versus
+0.191 for manta tow, and 0.246 versus 0.238 for MMP. Occurrence is also close.
+Leave-one-event-out forecasting remains more conservative, particularly for
+MMP. The 2022 positive magnitude is still overpredicted by BRMS, although the
+known-event effect reduces the error. This residual is an explicit target for
+future event-mechanism work, not a reason to discard the bounded beta response.
+
+# Ensemble weights
+
+```{r ensemble-weights, fig.width=7.5, fig.height=4.5}
+weights_plot <- production_weights |>
+  filter(learner == "stacked_ensemble") |>
+  mutate(Programme = recode(programme_key, !!!programme_labels)) |>
+  select(
+    Programme,
+    Benchmark = weight_benchmark,
+    BRMS = weight_brms,
+    BRT = weight_brt
+  ) |>
+  tidyr::pivot_longer(
+    c(Benchmark, BRMS, BRT),
+    names_to = "Learner",
+    values_to = "Weight"
+  )
+
+ggplot(weights_plot, aes(x = Programme, y = Weight, fill = Learner)) +
+  geom_col() +
+  scale_y_continuous(labels = percent_format()) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = NULL, y = "Production ensemble weight")
+```
+
+The weights are performance estimates, not ecological importance measures. A
+weight near zero means that one learner did not add squared-error skill to the
+other under the current blocked data; it does not invalidate that framework's
+uncertainty estimates or mechanistic interpretation.
+
+```{r ensemble-weight-table}
+production_weights |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Ensemble = recode(learner, !!!learner_labels)
+  ) |>
+  select(
+    Programme, Ensemble,
+    `Cross-fitted predictions` = n_cross_fitted_predictions,
+    Benchmark = weight_benchmark, BRMS = weight_brms, BRT = weight_brt
+  ) |>
+  arrange(Programme, Ensemble) |>
+  kable(digits = 3)
+```
+
+# Predictive influence
+
+```{r brt-influence, fig.width=10, fig.height=9}
+top_brt_influence <- brt_influence |>
+  group_by(programme_key, component) |>
+  slice_max(relative_influence, n = 6, with_ties = FALSE) |>
+  ungroup() |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Component = recode(
+      component,
+      occurrence = "Any mortality",
+      magnitude = "Magnitude when positive"
+    )
+  )
+
+ggplot(
+  top_brt_influence,
+  aes(x = relative_influence, y = reorder(predictor, relative_influence))
+) +
+  geom_col(fill = "#2C7FB8") +
+  facet_grid(Programme ~ Component, scales = "free_y", space = "free_y") +
+  labs(
+    x = "Relative BRT influence (%)",
+    y = NULL,
+    title = "Leading predictors in the full-data BRT refits"
+  )
+```
+
+BRT influence measures predictive use, not causal effect or effect direction.
+Correlated thermal-history variables can share or exchange influence. The BRMS
+model therefore remains the appropriate framework for response-shape and
+uncertainty summaries, while blocked predictions decide production routing.
+
+# Ecological explanatory fit
+
+Predictive validation and ecological explanation answer different questions.
+For the nested two-part GLM benchmarks, AICc and McFadden pseudo-R2 are reported
+for the binomial occurrence component. The positive-magnitude component is
+quasibinomial, so it has no likelihood-based AIC; its deviance explained is
+shown instead. The apparent response R2 is an in-sample descriptive statistic,
+not an estimate of transfer skill.
+
+```{r explanatory-benchmark-fit}
+explanatory_metrics |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Model = recode(
+      model,
+      thermal_linear = 'Linear DHW',
+      thermal_nonlinear = 'Nonlinear DHW',
+      thermal_optical = 'Nonlinear DHW + optics',
+      thermal_context = 'DHW + physical context',
+      thermal_composition = 'DHW + context + Acropora'
+    )
+  ) |>
+  select(
+    Programme, Model,
+    `Occurrence AICc` = occurrence_aicc,
+    `Occurrence McFadden R2` = occurrence_mcfadden_r2,
+    `Positive deviance explained` = positive_deviance_explained,
+    `Apparent response R2` = apparent_response_r2
+  ) |>
+  arrange(Programme, `Occurrence AICc`) |>
+  kable(digits = 3)
+```
+
+Adding preceding-year Acropora improves the apparent explanatory fit and the
+occurrence AICc in all three programmes. It does not uniformly improve blocked
+prediction in an unregularised GLM, especially for MMP. That combination is
+evidence of ecological signal plus overfitting risk, not evidence that
+Acropora should be removed. The predictor is therefore retained in the
+regularised BRT and BRMS learners.
+
+```{r acropora-brt-influence}
+brt_influence |>
+  filter(grepl('acropora', predictor)) |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Component = recode(
+      component,
+      occurrence = 'Any mortality',
+      magnitude = 'Magnitude when positive'
+    ),
+    Predictor = recode(
+      predictor,
+      prop_acropora_pre = 'Pre-event Acropora proportion',
+      acropora_cover_pre = 'Pre-event absolute Acropora cover'
+    )
+  ) |>
+  select(Programme, Component, Predictor, `Relative influence (%)` = relative_influence) |>
+  arrange(Programme, Component, desc(`Relative influence (%)`)) |>
+  kable(digits = 2)
+```
+
+Both Acropora measures are used by both BRT components. Absolute pre-event
+Acropora cover is particularly influential for occurrence in manta tow and
+MMP. Relative influence is predictive usage rather than a causal effect, and
+the two correlated composition measures may divide influence between them.
+
+```{r brms-fit-statistics}
+brms_fit_statistics |>
+  mutate(Programme = recode(programme_key, !!!programme_labels)) |>
+  select(
+    Programme,
+    `Marginal Bayesian R2` = marginal_bayesian_r2,
+    `Marginal R2 90% lower` = marginal_bayesian_r2_q05,
+    `Marginal R2 90% upper` = marginal_bayesian_r2_q95,
+    `Conditional Bayesian R2` = conditional_bayesian_r2,
+    LOOIC = looic,
+    `Pareto k > 0.7` = pareto_k_over_0_7,
+    `Maximum Pareto k` = max_pareto_k
+  ) |>
+  arrange(Programme) |>
+  kable(digits = 3)
+```
+
+Marginal Bayesian R2 describes the variance captured by the population-level
+environmental response; conditional Bayesian R2 also includes reef, event, and
+region effects. LOOIC is reported for completeness but is not used to compare
+programmes or route predictions. Each production fit has influential
+observations with Pareto k above 0.7, so these raw LOO values require moment
+matching or exact refits before they can support fine model comparisons.
+
+AIC, LOOIC, and R2 are not interchangeable across the GLM, BRT, and BRMS
+frameworks. The models use different likelihoods and boundary constructions.
+Blocked scores on identical assessment rows remain the valid cross-framework
+comparison; model-family-specific fit statistics support interpretation within
+each framework.
+
+# Diagnostics
+
+```{r brms-diagnostics}
+brms_diagnostics |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels),
+    diagnostic_pass = divergences == 0 & max_treedepth_hits == 0 &
+      max_rhat <= 1.01 & min_bulk_ess >= 100 & min_tail_ess >= 100
+  ) |>
+  group_by(Programme, Assessment) |>
+  summarise(
+    Folds = n(),
+    `Maximum R-hat` = max(max_rhat),
+    `Minimum bulk ESS` = min(min_bulk_ess),
+    `Minimum tail ESS` = min(min_tail_ess),
+    Divergences = sum(divergences),
+    `Tree-depth hits` = sum(max_treedepth_hits),
+    `Passing folds` = sum(diagnostic_pass),
+    .groups = "drop"
+  ) |>
+  kable(digits = 2)
+```
+
+```{r brms-production-diagnostics}
+brms_production_diagnostics |>
+  mutate(Programme = recode(programme_key, !!!programme_labels)) |>
+  select(
+    Programme, n, event_years,
+    `Maximum R-hat` = max_rhat,
+    `Minimum bulk ESS` = min_bulk_ess,
+    `Minimum tail ESS` = min_tail_ess,
+    Divergences = divergences,
+    `Tree-depth hits` = max_treedepth_hits
+  ) |>
+  kable(digits = 2)
+```
+
+All 36 outer BRMS fits pass the prespecified diagnostic gate: maximum R-hat
+1.01, minimum bulk ESS 167, minimum tail ESS 301, zero divergences, and zero
+maximum-tree-depth hits. All three longer production fits also pass.
+
+```{r brt-tuning}
+brt_tuning |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels)
+  ) |>
+  count(
+    Programme, Assessment, interaction_depth, shrinkage, minobs,
+    magnitude_mode, n_trees,
+    name = "Outer folds selecting setting"
+  ) |>
+  arrange(Programme, Assessment, desc(`Outer folds selecting setting`)) |>
+  kable(digits = 3)
+```
+
+# Interpretation and next use
+
+The formal comparison answers a predictive question: how well can each learner
+transfer to another bleaching event, another set of reefs, or another GBR
+region? Coefficients and variable influence are secondary and must be read in
+the context of correlated predictors. GBR-wide application should generate
+predictions from every saved full-data component and then apply the validated
+programme-specific route shown above. Environmental-novelty flags are still
+required for extrapolation checks even though signed novelty is now a fitted
+predictor, and BRT resampling uncertainty should be propagated alongside the
+BRMS posterior before publication.
+
+IMOS MODIS-Aqua Kd490 is used consistently as the water-clarity source. It is
+preferred to the modelled eReefs chlorophyll/Kd490 field for this application
+and provides the required 2024 coverage. Recovered nearshore Secchi estimates
+retain their extraction radius and observation counts for sensitivity checks.
+The new acute optical metric uses the Q1 Kd490 90th percentile from the same
+source and extraction geometry; it should not be labelled freshwater exposure
+without independent salinity validation.

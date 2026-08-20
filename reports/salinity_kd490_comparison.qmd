@@ -1,0 +1,603 @@
+---
+title: 'Can IMOS Kd490 reconstruct missing 2024 eReefs salinity?'
+subtitle: 'Event-blocked validation of a deliberately limited optical sensitivity analysis'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(mgcv)
+library(readr)
+library(scales)
+library(tidyr)
+library(yardstick)
+
+input_file <- '../data/processed/ereefs_salinity_imos_kd490_reef_year.csv'
+if (!file.exists(input_file)) {
+  stop('Run scripts/extract_ereefs_salinity.py before rendering this report.')
+}
+
+salinity <- read_csv(input_file, show_col_types = FALSE)
+
+# Several reef features can share one 4-km eReefs cell. Salinity is identical
+# within that cell, so modelling every feature would create pseudo-replication.
+# IMOS Kd490 is at finer resolution and is represented by the within-cell median.
+cell_year <- salinity |>
+  group_by(ereefs_lat_index, ereefs_lon_index, year) |>
+  summarise(
+    lon = first(ereefs_longitude),
+    lat = first(ereefs_latitude),
+    n_reef_features = n(),
+    k490_q90 = if (all(is.na(k490_q90))) {
+      NA_real_
+    } else {
+      median(k490_q90, na.rm = TRUE)
+    },
+    salinity_min = first(salinity_min),
+    salinity_q10 = first(salinity_q10),
+    salinity_mean = first(salinity_mean),
+    freshwater_exposure_26 = first(freshwater_exposure_26),
+    freshwater_exposure_28 = first(freshwater_exposure_28),
+    days_below_26 = first(days_below_26),
+    days_below_28 = first(days_below_28),
+    salinity_available_days = first(salinity_available_days),
+    salinity_complete_q1 = first(salinity_complete_q1),
+    salinity_forcing_warning = first(salinity_forcing_warning),
+    salinity_period_end = first(salinity_period_end),
+    .groups = 'drop'
+  ) |>
+  mutate(
+    flood28 = freshwater_exposure_28 > 0,
+    log_kd = log(k490_q90)
+  )
+
+complete_years <- c(2016, 2017, 2020)
+historical <- cell_year |>
+  filter(
+    year %in% complete_years,
+    salinity_complete_q1,
+    !salinity_forcing_warning,
+    is.finite(log_kd)
+  )
+
+coverage <- cell_year |>
+  group_by(year) |>
+  summarise(
+    `eReefs cells` = n(),
+    `Available days` = first(salinity_available_days),
+    `Complete Q1` = first(salinity_complete_q1),
+    `Forcing warning` = first(salinity_forcing_warning),
+    `Cells below 28 PSU` = sum(flood28, na.rm = TRUE),
+    `Cells below 26 PSU` = sum(freshwater_exposure_26 > 0, na.rm = TRUE),
+    `Minimum salinity` = min(salinity_min, na.rm = TRUE),
+    `Maximum exposure below 28` = max(freshwater_exposure_28, na.rm = TRUE),
+    .groups = 'drop'
+  )
+```
+
+# Decision
+
+This analysis asks a narrow question: can a consistent, full-quarter IMOS
+optical metric reconstruct the salinity information that is absent after 17
+January 2024 in the public eReefs GBR4 v2 aggregation?
+
+The answer is assessed by holding out one *complete event year* at a time. The
+analysis is not allowed to call an imputation successful merely because it
+fits the many normal-salinity cells. It must identify the rare cells exposed
+below 28 PSU and predict their minimum salinity with useful accuracy.
+
+The 2022 eReefs values are shown for transparency but excluded from calibration
+because AIMS documents a river-forcing error spanning December 2021 with
+carry-over into January 2022. The 2024 eReefs values cover only 1--17 January
+and are descriptive, not a validation target for the full January--March IMOS
+metric.
+
+# Data coverage
+
+```{r coverage-table}
+coverage |>
+  mutate(
+    `Minimum salinity` = round(`Minimum salinity`, 2),
+    `Maximum exposure below 28` = round(`Maximum exposure below 28`, 1)
+  ) |>
+  kable(
+    caption = paste(
+      'Surface salinity coverage and low-salinity tail.',
+      'Exposure is accumulated daily deficit in PSU-days.'
+    )
+  )
+```
+
+[AIMS defines freshwater exposure](https://ereefs.aims.gov.au/gbr1/fresh-water-exposure/)
+as the accumulated daily salinity deficit below a nominated threshold. The
+4-km product is useful for a first sensitivity analysis, but the low-salinity
+tail is very sparse. The
+[eReefs extraction service](https://extraction.ereefs.aims.gov.au/extract-data)
+also records that GBR4 v2 stops on 17 January 2024.
+
+# What Kd490 and salinity measure
+
+Kd490 is optical attenuation. It can respond to river plumes, but also to
+suspended sediment, coloured dissolved material, phytoplankton, and other
+sources of reduced water clarity. It therefore cannot be assumed to be a
+one-to-one salinity measurement.
+
+```{r relationship-plot, fig.width=10, fig.height=4.8}
+relationship_summary <- historical |>
+  group_by(year, flood28) |>
+  summarise(
+    cells = n(),
+    median_kd490 = median(k490_q90),
+    median_min_salinity = median(salinity_min),
+    .groups = 'drop'
+  )
+
+ggplot(
+  historical,
+  aes(x = k490_q90, y = salinity_min)
+) +
+  geom_point(colour = 'grey55', alpha = 0.18, size = 0.75) +
+  geom_point(
+    data = filter(historical, flood28),
+    aes(colour = freshwater_exposure_28),
+    size = 2.2
+  ) +
+  geom_hline(yintercept = 28, linetype = 2, colour = '#B2182B') +
+  facet_wrap(~ year) +
+  scale_x_log10() +
+  scale_colour_viridis_c(option = 'C', trans = 'sqrt') +
+  labs(
+    x = expression('IMOS Q1 ' * K[d] * '(490) Q90'),
+    y = 'eReefs Q1 minimum surface salinity (PSU)',
+    colour = 'Exposure below\n28 (PSU-days)',
+    title = 'Optical attenuation is associated with flooding in some events, not all'
+  )
+```
+
+```{r relationship-table}
+relationship_summary |>
+  mutate(
+    flood28 = if_else(flood28, 'Any exposure below 28', 'No exposure below 28'),
+    median_kd490 = round(median_kd490, 3),
+    median_min_salinity = round(median_min_salinity, 2)
+  ) |>
+  rename(
+    Year = year,
+    Group = flood28,
+    Cells = cells,
+    `Median Kd490` = median_kd490,
+    `Median minimum salinity` = median_min_salinity
+  ) |>
+  kable()
+```
+
+# Leave-one-event-out validation
+
+Four occurrence models are compared. The spatial terms are a static
+reconstruction prior: they learn where low-salinity exposure has occurred in
+other events, but receive no information from the held-out event. This is
+appropriate for reconstructing 2024 at known GBR locations, not for forecasting
+novel locations.
+
+Two continuous models then attempt the harder task of predicting minimum
+salinity. Tail MAE and the fraction of truly flooded cells predicted below 28
+PSU are the decisive diagnostics.
+
+```{r blocked-models}
+classification_predictions <- list()
+salinity_predictions <- list()
+prediction_index <- 1
+
+for (held_out_year in complete_years) {
+  training <- filter(historical, year != held_out_year)
+  testing <- filter(historical, year == held_out_year)
+
+  kd_centre <- mean(training$log_kd)
+  kd_scale <- sd(training$log_kd)
+  training <- mutate(training, log_kd_z = (log_kd - kd_centre) / kd_scale)
+  testing <- mutate(testing, log_kd_z = (log_kd - kd_centre) / kd_scale)
+
+  occurrence_fits <- list(
+    'Intercept only' = glm(
+      flood28 ~ 1, data = training, family = binomial()
+    ),
+    'Kd490 only' = glm(
+      flood28 ~ log_kd_z, data = training, family = binomial()
+    ),
+    'Spatial prior only' = bam(
+      flood28 ~ s(lon, lat, k = 40),
+      data = training, family = binomial(), method = 'fREML',
+      select = TRUE, discrete = TRUE
+    ),
+    'Kd490 + spatial prior' = bam(
+      flood28 ~ s(log_kd_z, k = 5, bs = 'cr') + s(lon, lat, k = 40),
+      data = training, family = binomial(), method = 'fREML',
+      select = TRUE, discrete = TRUE
+    )
+  )
+
+  for (model_name in names(occurrence_fits)) {
+    classification_predictions[[prediction_index]] <- testing |>
+      transmute(
+        held_out_year,
+        model = model_name,
+        flood28,
+        observed_exposure = freshwater_exposure_28,
+        predicted = as.numeric(predict(
+          occurrence_fits[[model_name]], newdata = testing, type = 'response'
+        ))
+      )
+    prediction_index <- prediction_index + 1
+  }
+
+  magnitude_fits <- list(
+    'Kd490 only' = gam(
+      salinity_min ~ s(log_kd_z, k = 5, bs = 'cr'),
+      data = training, method = 'REML', select = TRUE
+    ),
+    'Kd490 + spatial prior' = bam(
+      salinity_min ~ s(log_kd_z, k = 5, bs = 'cr') +
+        s(lon, lat, k = 40),
+      data = training, method = 'fREML', select = TRUE, discrete = TRUE
+    )
+  )
+
+  for (model_name in names(magnitude_fits)) {
+    salinity_predictions[[prediction_index]] <- testing |>
+      transmute(
+        held_out_year,
+        model = model_name,
+        flood28,
+        observed = salinity_min,
+        predicted = as.numeric(predict(
+          magnitude_fits[[model_name]], newdata = testing
+        ))
+      )
+    prediction_index <- prediction_index + 1
+  }
+}
+
+classification_predictions <- bind_rows(classification_predictions)
+salinity_predictions <- bind_rows(salinity_predictions)
+
+top_one_percent_recall <- function(truth, estimate) {
+  top_n <- max(1, ceiling(length(truth) * 0.01))
+  selected <- order(estimate, decreasing = TRUE)[seq_len(top_n)]
+  sum(truth[selected]) / sum(truth)
+}
+
+# Integrate precision over the recall increments at each distinct threshold.
+# Unlike trapezoidal interpolation, this returns prevalence for a constant
+# classifier, which is the correct no-skill reference for a rare event.
+average_precision <- function(truth, estimate) {
+  ordered <- order(estimate, decreasing = TRUE)
+  truth <- as.integer(truth[ordered])
+  estimate <- estimate[ordered]
+  threshold_ends <- c(which(diff(estimate) != 0), length(estimate))
+  true_positives <- cumsum(truth)[threshold_ends]
+  recall <- true_positives / sum(truth)
+  precision <- true_positives / threshold_ends
+  sum(diff(c(0, recall)) * precision)
+}
+
+classification_metrics <- classification_predictions |>
+  group_by(model, held_out_year) |>
+  summarise(
+    cells = n(),
+    flood_cells = sum(flood28),
+    prevalence = mean(flood28),
+    roc_auc = roc_auc_vec(
+      factor(flood28, levels = c(FALSE, TRUE)),
+      predicted,
+      event_level = 'second'
+    ),
+    average_precision = average_precision(flood28, predicted),
+    brier = mean((predicted - as.numeric(flood28))^2),
+    balanced_brier = 0.5 * (
+      mean((predicted[flood28] - 1)^2) +
+        mean(predicted[!flood28]^2)
+    ),
+    top_one_percent_recall = top_one_percent_recall(flood28, predicted),
+    .groups = 'drop'
+  )
+
+classification_event_mean <- classification_metrics |>
+  group_by(model) |>
+  summarise(
+    held_out_year = 'Event mean',
+    cells = sum(cells),
+    flood_cells = sum(flood_cells),
+    prevalence = mean(prevalence),
+    roc_auc = mean(roc_auc),
+    average_precision = mean(average_precision),
+    brier = mean(brier),
+    balanced_brier = mean(balanced_brier),
+    top_one_percent_recall = mean(top_one_percent_recall),
+    .groups = 'drop'
+  )
+
+salinity_metrics <- salinity_predictions |>
+  group_by(model, held_out_year) |>
+  summarise(
+    cells = n(),
+    flood_cells = sum(flood28),
+    all_cell_mae = mean(abs(predicted - observed)),
+    flood_cell_mae = mean(abs(predicted[flood28] - observed[flood28]), na.rm = TRUE),
+    flood_cell_bias = mean(predicted[flood28] - observed[flood28], na.rm = TRUE),
+    flood_detection = mean(predicted[flood28] < 28, na.rm = TRUE),
+    .groups = 'drop'
+  )
+```
+
+Average precision is the principal occurrence metric because fewer than 0.5%
+of cells are exposed below 28 PSU. Its no-skill value is the event prevalence.
+ROC AUC is retained but can appear optimistic under that imbalance. Balanced
+Brier gives flooded and non-flooded cells equal weight, and top-1% recall asks
+whether a practical risk screen actually captures the flooded cells.
+
+```{r occurrence-results}
+classification_event_mean |>
+  select(
+    Model = model,
+    `ROC AUC` = roc_auc,
+    `Average precision` = average_precision,
+    `Balanced Brier` = balanced_brier,
+    `Top 1% recall` = top_one_percent_recall
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  arrange(desc(`Average precision`)) |>
+  kable(caption = 'Event-balanced leave-one-event-out occurrence performance')
+```
+
+```{r occurrence-plot, fig.width=10, fig.height=4.8}
+classification_metrics |>
+  select(
+    model, held_out_year, prevalence,
+    average_precision, top_one_percent_recall
+  ) |>
+  pivot_longer(
+    c(average_precision, top_one_percent_recall),
+    names_to = 'metric', values_to = 'value'
+  ) |>
+  mutate(
+    metric = recode(
+      metric,
+      average_precision = 'Average precision (PR)',
+      top_one_percent_recall = 'Recall within highest-risk 1%'
+    ),
+    held_out_year = factor(held_out_year)
+  ) |>
+  ggplot(aes(x = held_out_year, y = value, colour = model, group = model)) +
+  geom_point(size = 2.4) +
+  geom_line() +
+  facet_wrap(~ metric, scales = 'free_y') +
+  scale_y_continuous(labels = label_number(accuracy = 0.01)) +
+  scale_colour_brewer(palette = 'Dark2') +
+  labs(
+    x = 'Held-out event year', y = NULL, colour = 'Model',
+    title = 'Optical flood detection does not transfer uniformly among events'
+  )
+```
+
+```{r salinity-results}
+salinity_metrics |>
+  mutate(
+    across(c(all_cell_mae, flood_cell_mae, flood_cell_bias), ~ round(.x, 2)),
+    flood_detection = percent(flood_detection, accuracy = 1)
+  ) |>
+  rename(
+    Model = model,
+    `Held-out year` = held_out_year,
+    `All-cell MAE` = all_cell_mae,
+    `Flood-cell MAE` = flood_cell_mae,
+    `Flood-cell bias` = flood_cell_bias,
+    `Flood cells predicted below 28` = flood_detection
+  ) |>
+  select(
+    Model, `Held-out year`, `All-cell MAE`, `Flood-cell MAE`,
+    `Flood-cell bias`, `Flood cells predicted below 28`
+  ) |>
+  kable(
+    caption = paste(
+      'Leave-one-event-out minimum-salinity prediction.',
+      'Positive flood-cell bias means harmful freshening is underestimated.'
+    )
+  )
+```
+
+```{r salinity-tail-plot, fig.width=10, fig.height=4.8}
+salinity_predictions |>
+  filter(flood28) |>
+  ggplot(aes(x = observed, y = predicted, colour = factor(held_out_year))) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, colour = 'grey55') +
+  geom_hline(yintercept = 28, linetype = 3, colour = '#B2182B') +
+  geom_vline(xintercept = 28, linetype = 3, colour = '#B2182B') +
+  geom_point(size = 2.3, alpha = 0.8) +
+  facet_wrap(~ model) +
+  coord_equal() +
+  scale_colour_brewer(palette = 'Dark2') +
+  labs(
+    x = 'Observed minimum salinity (PSU)',
+    y = 'Event-held-out prediction (PSU)',
+    colour = 'Held-out year',
+    title = 'Ordinary error is small because normal cells dominate; the flood tail decides utility'
+  )
+```
+
+# Exploratory 2024 optical reconstruction
+
+The following reconstruction is generated to show what the optical model
+would imply, not to fill the primary mortality predictor table. It uses all
+three complete, unflagged historical events and the full-Q1 2024 IMOS metric.
+The observed eReefs overlay covers only 1--17 January.
+
+```{r reconstruction-2024}
+training <- historical
+testing_2024 <- cell_year |>
+  filter(year == 2024, is.finite(log_kd))
+
+kd_centre <- mean(training$log_kd)
+kd_scale <- sd(training$log_kd)
+training <- mutate(training, log_kd_z = (log_kd - kd_centre) / kd_scale)
+testing_2024 <- mutate(
+  testing_2024,
+  log_kd_z = (log_kd - kd_centre) / kd_scale
+)
+
+final_kd490 <- glm(
+  flood28 ~ log_kd_z,
+  data = training, family = binomial()
+)
+final_spatial <- bam(
+  flood28 ~ s(lon, lat, k = 40),
+  data = training, family = binomial(), method = 'fREML',
+  select = TRUE, discrete = TRUE
+)
+final_occurrence <- bam(
+  flood28 ~ s(log_kd_z, k = 5, bs = 'cr') + s(lon, lat, k = 40),
+  data = training, family = binomial(), method = 'fREML',
+  select = TRUE, discrete = TRUE
+)
+final_minimum <- bam(
+  salinity_min ~ s(log_kd_z, k = 5, bs = 'cr') + s(lon, lat, k = 40),
+  data = training, method = 'fREML', select = TRUE, discrete = TRUE
+)
+
+reconstruction_2024 <- testing_2024 |>
+  mutate(
+    kd490_only_flood28_probability = as.numeric(predict(
+      final_kd490, newdata = testing_2024, type = 'response'
+    )),
+    kd490_only_risk_percentile = percent_rank(
+      kd490_only_flood28_probability
+    ),
+    spatial_prior_flood28_probability = as.numeric(predict(
+      final_spatial, newdata = testing_2024, type = 'response'
+    )),
+    spatial_prior_risk_percentile = percent_rank(
+      spatial_prior_flood28_probability
+    ),
+    kd490_spatial_flood28_probability = as.numeric(predict(
+      final_occurrence, newdata = testing_2024, type = 'response'
+    )),
+    kd490_spatial_risk_percentile = percent_rank(
+      kd490_spatial_flood28_probability
+    ),
+    candidate_salinity_min_q1 = as.numeric(predict(
+      final_minimum, newdata = testing_2024
+    )),
+    partial_ereefs_flood28 = freshwater_exposure_28 > 0
+  )
+
+reef_reconstruction_2024 <- salinity |>
+  filter(year == 2024) |>
+  left_join(
+    reconstruction_2024 |>
+      select(
+        ereefs_lat_index, ereefs_lon_index,
+        kd490_only_flood28_probability,
+        kd490_only_risk_percentile,
+        spatial_prior_flood28_probability,
+        spatial_prior_risk_percentile,
+        kd490_spatial_flood28_probability,
+        kd490_spatial_risk_percentile,
+        candidate_salinity_min_q1
+      ),
+    by = c('ereefs_lat_index', 'ereefs_lon_index')
+  ) |>
+  mutate(
+    reconstruction_status = paste(
+      'exploratory Kd490 and spatial sensitivity; salinity imputation',
+      'not accepted for the primary mortality model'
+    ),
+    use_in_primary_mortality_model = FALSE
+  )
+
+write_csv(
+  reef_reconstruction_2024,
+  '../data/processed/ereefs_salinity_2024_optical_sensitivity.csv'
+)
+write_csv(
+  classification_metrics,
+  '../output/salinity_kd490_loyo_occurrence_metrics.csv'
+)
+write_csv(
+  classification_predictions,
+  '../output/salinity_kd490_loyo_occurrence_predictions.csv'
+)
+write_csv(
+  salinity_metrics,
+  '../output/salinity_kd490_loyo_minimum_metrics.csv'
+)
+write_csv(
+  salinity_predictions,
+  '../output/salinity_kd490_loyo_minimum_predictions.csv'
+)
+```
+
+```{r reconstruction-map, fig.width=10, fig.height=6}
+ggplot(
+  reconstruction_2024,
+  aes(x = lon, y = lat, colour = kd490_spatial_risk_percentile)
+) +
+  geom_point(size = 1.05) +
+  geom_point(
+    data = filter(reconstruction_2024, partial_ereefs_flood28),
+    shape = 21, fill = NA, colour = 'black', size = 4, stroke = 1.1
+  ) +
+  coord_equal() +
+  scale_colour_viridis_c(labels = percent, option = 'C') +
+  labs(
+    x = 'Longitude', y = 'Latitude',
+    colour = 'Kd490 + spatial\nrisk percentile',
+    title = 'Exploratory 2024 Kd490-plus-spatial risk surface',
+    subtitle = 'Black rings: eReefs exposure below 28 PSU observed during 1--17 January only'
+  )
+```
+
+All three low-salinity cells available in the partial 2024 eReefs record fall
+at or above the `r percent(min(reconstruction_2024$kd490_spatial_risk_percentile[reconstruction_2024$partial_ereefs_flood28]), accuracy = 0.1)`
+Kd490-plus-spatial risk percentile. Their Kd490-only percentiles span
+`r paste(percent(range(reconstruction_2024$kd490_only_risk_percentile[reconstruction_2024$partial_ereefs_flood28]), accuracy = 0.1), collapse = ' to ')`,
+showing how strongly the combined result relies on the spatial prior. This
+supports retaining a ranked sensitivity layer, but not calling it satellite
+salinity. It also does not rescue numeric salinity imputation: their observed
+partial-period minima
+range from `r round(min(reconstruction_2024$salinity_min[reconstruction_2024$partial_ereefs_flood28]), 1)`
+to `r round(max(reconstruction_2024$salinity_min[reconstruction_2024$partial_ereefs_flood28]), 1)`
+PSU, whereas the candidate full-quarter model predicts
+`r paste(round(range(reconstruction_2024$candidate_salinity_min_q1[reconstruction_2024$partial_ereefs_flood28]), 1), collapse = ' to ')`
+PSU. These periods are not temporally aligned, so the comparison is descriptive;
+the held-out historical tail errors provide the formal reason for rejection.
+
+# Recommendation
+
+The optical analysis is retained as a *plume/flood-risk sensitivity*, because
+it can contain ecologically relevant information that direct heat metrics do
+not. It is not promoted to a quantitative salinity imputation for the primary
+mortality model unless event-held-out results show consistent low-salinity-tail
+performance. In particular:
+
+1. Do not replace missing February--March 2024 salinity with the smooth
+   `candidate_salinity_min_q1` values merely because all-cell MAE is small.
+2. Keep the existing IMOS acute optical predictor in the formal BRMS and BRT
+   models; it is observed consistently through the 2024 event.
+3. Use the saved, explicitly separated Kd490-only, spatial-only, and combined
+   risk percentiles only as sensitivity covariates or stratification layers,
+   with `use_in_primary_mortality_model = FALSE`.
+4. Revisit direct salinity only when a consistent 2024 hydrodynamic product or
+   an independent in-situ/satellite salinity validation source is available.
+
+This prevents a model-derived environmental covariate from being treated as a
+measurement and avoids giving a visually plausible map more certainty than the
+event-transfer tests support.

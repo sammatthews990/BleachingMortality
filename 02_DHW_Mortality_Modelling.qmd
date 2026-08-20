@@ -64,6 +64,221 @@ if (file.exists(workspace_file)) {
 }
 ```
 
+# Prespecified Validation Design
+
+The research-grade refit uses fixed row-level assignments created before model fitting. Model selection uses complementary leave-one-event-out, reef-blocked, and region-blocked assessment across all modern events. The widespread, high-intensity 2024 event is explicitly tested as an event holdout, then included when the selected production model is refitted. Preprocessing, imputation, feature selection, and tuning must be repeated within each analysis fold. See `reports/validation_protocol.md` for the complete rules.
+
+::: {.callout-warning}
+The older exploratory model blocks below use several ad hoc random or internal cross-validation schemes. Their reported performance is not final out-of-sample evidence. They are superseded by the fixed assignments and formal models below.
+The formal scripts and report provide the replacement; the legacy
+blocks remain read-only provenance and should not be used to route predictions.
+:::
+
+```{r load-validation-design}
+#| label: load-validation-design
+validation_files <- c(
+    manta = 'data/processed/validation_rows_manta.rds',
+    ltmp = 'data/processed/validation_rows_ltmp.rds',
+    mmp = 'data/processed/validation_rows_mmp.rds'
+)
+
+if (!all(file.exists(validation_files))) {
+    stop('Validation files are missing. Run Rscript scripts/build_validation_splits.R first.')
+}
+
+validation_manta <- readRDS(validation_files[['manta']])
+validation_ltmp <- readRDS(validation_files[['ltmp']])
+validation_mmp <- readRDS(validation_files[['mmp']])
+validation_manifest <- read_csv(
+    'data/processed/validation_split_manifest.csv',
+    show_col_types = FALSE
+)
+
+validation_manifest %>%
+    group_by(programme_key, scheme) %>%
+    summarise(
+        folds = n(),
+        assessment_n_min = min(assessment_rows),
+        assessment_n_max = max(assessment_rows),
+        leakage_checks_pass = all(leakage_check),
+        .groups = 'drop'
+    )
+```
+
+# Prespecified Candidate Models
+
+The benchmark comparison is deliberately small. Five nested hypotheses test a
+linear DHW response, a nonlinear DHW response, optical modifiers (cloud and
+Secchi depth), a broader physical-context model, and a community-composition
+extension with preceding-year Acropora proportion, absolute Acropora cover, and
+a DHW--Acropora interaction. Each candidate is fitted as a two-part model:
+logistic occurrence of any cover loss followed by fractional-logit loss
+magnitude among positive observations. This represents exact zeros and ones
+without nudging.
+
+Candidate comparison uses leave-one-event-out and reef-blocked predictions.
+Region blocking is retained as a geographic stress test. Two decisions are
+recorded separately: the simplest explanatory model within 2% of minimum RMSE,
+and the lowest-RMSE benchmark used in formal predictive comparisons. The latter
+is not penalised merely for having more attainable predictors. After selection,
+the benchmark is refitted using all modern events, including 2024. It remains
+an interpretable comparator rather than the final GBR prediction system.
+
+```{r candidate-model-results}
+#| label: candidate-model-results
+model_result_files <- c(
+    selection = 'output/model_validation/selected_models.csv',
+    metrics = 'output/model_validation/candidate_metrics.csv',
+    fold_metrics = 'output/model_validation/candidate_fold_metrics.csv',
+    warnings = 'output/model_validation/fit_warnings.csv'
+)
+if (!all(file.exists(model_result_files))) {
+    stop('Candidate-model results are missing. Run Rscript scripts/fit_candidate_models.R first.')
+}
+
+selected_models <- read_csv(model_result_files[['selection']], show_col_types = FALSE)
+candidate_metrics <- read_csv(model_result_files[['metrics']], show_col_types = FALSE)
+candidate_fold_metrics <- read_csv(model_result_files[['fold_metrics']], show_col_types = FALSE)
+fit_warnings <- read_csv(model_result_files[['warnings']], show_col_types = FALSE)
+
+selected_models
+
+selected_2024_performance <- candidate_fold_metrics %>%
+    filter(scheme == 'leave_one_event_out', fold == '2024') %>%
+    inner_join(
+        selected_models %>% select(programme_key, model),
+        by = c('programme_key', 'model')
+    ) %>%
+    select(
+        programme_key, model, n, mae, rmse, bias,
+        observed_mean, predicted_mean
+    )
+
+selected_2024_performance
+```
+
+The prediction-optimal benchmark is the physical-context model for both LTMP
+benthic and manta tow observations, and linear DHW for MMP. The simpler
+parsimony result is retained only as an explanatory comparison. The 2024
+event-fold assessment exposes an important limitation: models trained only on
+earlier events underpredict mean 2024 mortality, particularly for manta and
+MMP. The full-data benchmark learns from 2024, but this does not erase the
+evidence that transfer to a novel, extreme event was difficult.
+
+The unregularised composition-rich MMP benchmark overfits several held-out
+folds. That model is not selected as the simple comparator. This does not remove
+Acropora from the formal models: its large apparent fit improvement and strong
+BRT influence indicate signal that requires regularisation. The small number
+of MMP reefs and three event years mean its linear benchmark is only a stable
+reference, not evidence that environmental context is unimportant.
+
+# Formal BRMS and BRT Prediction Models
+
+::: {.callout-important}
+This is the canonical production-model comparison. The older model experiments
+later in this notebook are retained for provenance, but they do not supersede
+the fixed blocked-validation results reported here.
+:::
+
+The formal learners use all attainable environmental predictors rather than the
+benchmark's reduced candidate sets. BRMS uses a boundary-aware hierarchical
+beta model with a spline for annual maximum DHW, preceding-year Acropora
+proportion and absolute cover, prespecified DHW interactions including
+DHW--Acropora, ten-year cumulative heat load, signed thermal novelty, an acute
+IMOS Kd490 optical-extreme metric, and reef, event, and region effects. The
+zero-boundary component also includes event and region variation. BRT uses the
+same predictor contract in a two-part occurrence/magnitude model and compares
+Gaussian with logit-Gaussian bounded magnitude inside each outer analysis fold.
+MMP also retains survey depth. Both frameworks are refitted on all modern
+events, including 2024, after validation.
+
+Leave-one-event-out predictions exclude event and region random effects and
+represent forecasting a new event. Reef-blocked predictions include known
+event and region effects and represent mapping that event to unsurveyed reefs.
+Region-blocked predictions include the event effect but exclude the held-out
+region. The detailed results and plots are in
+[`reports/formal_model_report.html`](reports/formal_model_report.html).
+
+```{r formal-model-results}
+#| label: formal-model-results
+formal_files <- c(
+    metrics = 'output/formal_models/model_comparison_metrics.csv',
+    predictions = 'output/formal_models/model_comparison_predictions.csv',
+    weights = 'output/formal_models/production_ensemble_weights.csv',
+    diagnostics = 'output/formal_models/brms_diagnostics.csv'
+)
+if (!all(file.exists(formal_files))) {
+    stop(
+        'Formal results are missing. Run the formal BRT, BRMS, summary, ',
+        'and ensemble scripts listed in README.md.'
+    )
+}
+
+formal_metrics <- read_csv(formal_files[['metrics']], show_col_types = FALSE)
+formal_predictions <- read_csv(
+    formal_files[['predictions']], show_col_types = FALSE
+)
+production_weights <- read_csv(
+    formal_files[['weights']], show_col_types = FALSE
+)
+brms_diagnostics <- read_csv(
+    formal_files[['diagnostics']], show_col_types = FALSE
+)
+
+formal_selection_scores <- formal_predictions %>%
+    filter(scheme %in% c('leave_one_event_out', 'reef_blocked_5fold')) %>%
+    group_by(programme_key, learner) %>%
+    summarise(
+        n = n(),
+        mae = mean(abs(predicted_mortality - observed_mortality)),
+        rmse = sqrt(mean((predicted_mortality - observed_mortality)^2)),
+        bias = mean(predicted_mortality - observed_mortality),
+        .groups = 'drop'
+    )
+
+formal_selection_scores %>%
+    group_by(programme_key) %>%
+    slice_min(rmse, n = 1, with_ties = FALSE) %>%
+    ungroup()
+
+production_weights %>%
+    filter(learner == 'stacked_ensemble') %>%
+    select(
+        programme_key,
+        weight_benchmark, weight_brms, weight_brt,
+        n_cross_fitted_predictions
+    )
+
+brms_diagnostics %>%
+    summarise(
+        folds = n(),
+        max_rhat = max(max_rhat),
+        min_bulk_ess = min(min_bulk_ess),
+        min_tail_ess = min(min_tail_ess),
+        divergences = sum(divergences),
+        treedepth_hits = sum(max_treedepth_hits)
+    )
+```
+
+The predictive routes now use the formal model outputs. Pooled event- and
+reef-blocked assessment selects the benchmark--BRMS--BRT stack for LTMP and the
+BRMS--BRT ensemble for manta. For MMP, BRMS has the lowest RMSE by less than 1%
+over the BRMS--BRT ensemble, while the ensemble improves balanced MAE and the
+mortality-occurrence Brier score. The ensemble is therefore the provisional
+MMP route, with that uncertainty reported rather than masked by a single metric.
+RMSE remains primary for expected mortality, while balanced MAE, severe-event
+MAE, occurrence Brier score, predictive R2, and framework-specific explanatory
+fit are reported alongside it.
+
+The 2024 event remains an explicit holdout assessment inside validation, but it
+is included in all final refits. IMOS MODIS-Aqua Kd490 is the water-clarity
+source for every event year and is preferred here to the less accurate modelled
+eReefs chlorophyll/Kd490 fields.
+
+See the rendered [formal model report](reports/formal_model_report.html) for the
+performance plots, 2024 transfer results, ensemble weights, BRT influence, and
+BRMS diagnostics.
+
 # ML Mortality Model (Cheung et al. 2025 Predictors)
 
 This section integrates environmental and thermal history predictors from Cheung et al. (2025) to build a machine-learning model for coral mortality. While Cheung et al. predicted *bleaching severity*, we adapt their predictor set to predict *mortality* (both absolute and relative coral cover change).

@@ -1,0 +1,307 @@
+---
+title: 'Wind and doldrum-like conditions for GBR bleaching mortality'
+subtitle: 'Coverage audit and source decision for eReefs, Sentinel-1 SAR, and Metop-B'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+ereefs_file <- '../data/processed/ereefs_wind_reef_year.csv'
+metop_file <- '../data/processed/imos_metop_b_wind_reef_year.csv'
+sar_daily_file <- '../output/wind_audit/sar_wind_2024_q1_daily_coverage.csv'
+sar_reef_file <- '../output/wind_audit/sar_wind_2024_q1_reef_coverage.csv'
+required <- c(ereefs_file, metop_file, sar_daily_file, sar_reef_file)
+if (any(!file.exists(required))) {
+  stop('Run the eReefs, Metop-B, and Sentinel-1 coverage scripts first.')
+}
+
+ereefs <- read_csv(ereefs_file, show_col_types = FALSE) |>
+  mutate(lon_key = round(lon, 6), lat_key = round(lat, 6))
+metop <- read_csv(metop_file, show_col_types = FALSE) |>
+  mutate(lon_key = round(lon, 6), lat_key = round(lat, 6))
+sar_daily <- read_csv(sar_daily_file, show_col_types = FALSE)
+sar_reef <- read_csv(sar_reef_file, show_col_types = FALSE)
+
+event_summary <- ereefs |>
+  group_by(year) |>
+  summarise(
+    features = n(),
+    available_days = first(ereefs_wind_available_days),
+    complete_q1 = first(ereefs_wind_complete_q1),
+    median_mean_wind = median(ereefs_wind_mean),
+    median_q10_wind = median(ereefs_wind_q10),
+    median_fraction_below_3 = median(ereefs_wind_fraction_below_3),
+    median_longest_spell_below_3 = median(
+      ereefs_wind_longest_spell_below_3
+    ),
+    .groups = 'drop'
+  )
+
+joined <- ereefs |>
+  inner_join(
+    metop |>
+      select(
+        LABEL_ID, LOC_NAME_S, lon_key, lat_key, year,
+        metop_mean = wind_mean,
+        metop_q10 = wind_q10,
+        metop_calm_fraction = wind_fraction_below_3,
+        metop_coverage = wind_day_coverage
+      ),
+    by = c('LABEL_ID', 'LOC_NAME_S', 'lon_key', 'lat_key', 'year')
+  ) |>
+  group_by(ereefs_lat_index, ereefs_lon_index, year) |>
+  summarise(
+    lon = first(ereefs_longitude),
+    lat = first(ereefs_latitude),
+    ereefs_mean = first(ereefs_wind_mean),
+    ereefs_q10 = first(ereefs_wind_q10),
+    ereefs_calm_fraction = first(ereefs_wind_fraction_below_3),
+    metop_mean = median(metop_mean, na.rm = TRUE),
+    metop_q10 = median(metop_q10, na.rm = TRUE),
+    metop_calm_fraction = median(metop_calm_fraction, na.rm = TRUE),
+    metop_coverage = max(metop_coverage, na.rm = TRUE),
+    .groups = 'drop'
+  ) |>
+  filter(
+    year != 2024,
+    metop_coverage >= 0.70,
+    is.finite(metop_mean)
+  )
+
+comparison <- joined |>
+  group_by(year) |>
+  summarise(
+    cells = n(),
+    mean_spearman = cor(ereefs_mean, metop_mean, method = 'spearman'),
+    mean_rmse = sqrt(mean((ereefs_mean - metop_mean)^2)),
+    ereefs_minus_metop_bias = mean(ereefs_mean - metop_mean),
+    q10_spearman = cor(ereefs_q10, metop_q10, method = 'spearman'),
+    calm_fraction_spearman = cor(
+      ereefs_calm_fraction, metop_calm_fraction, method = 'spearman'
+    ),
+    .groups = 'drop'
+  )
+write_csv(
+  comparison,
+  '../output/wind_audit/wind_product_comparison_metrics.csv'
+)
+
+programme_coverage <- bind_rows(lapply(c('ltmp', 'manta', 'mmp'), function(key) {
+  observations <- readRDS(paste0('../data/processed/validation_rows_', key, '.rds'))
+  observations |>
+    left_join(
+      metop |>
+        select(
+          LOC_NAME_S, year, wind_n_days, wind_day_coverage
+        ),
+      by = c('ReefName' = 'LOC_NAME_S', 'event_year' = 'year')
+    ) |>
+    summarise(
+      programme_key = key,
+      model_rows = n(),
+      any_metop_wind = sum(wind_n_days > 0, na.rm = TRUE),
+      adequate_metop_wind = sum(wind_day_coverage >= 0.70, na.rm = TRUE)
+    )
+}))
+```
+
+# Decision
+
+The linked Sentinel-1 SAR product should **not** be used to count calm days or
+reconstruct a full Q1 wind history. The eReefs daily wind forcing is retained
+for historical sensitivity analyses, but its 2024 value is explicitly partial.
+Metop-B is a useful independent offshore comparison, not a GBR-wide replacement.
+
+Wind should enter the formal BRMS/BRT candidate set only after a continuous,
+single-source 2016--2024 reanalysis extraction (ERA5 or the corresponding ACCESS
+product) passes comparison against eReefs and good-QC Metop observations.
+
+# What is available
+
+The [IMOS Sentinel-1 SAR wind record](https://portal-beta.aodn.org.au/details/b02b929f-2caf-45d4-ac60-d4632b7ca0ca?tab=summary)
+contains calibrated 10-m neutral wind speed and direction at approximately 1-km
+resolution. The official metadata dates it from 23 October 2017, which already
+excludes the 2016 event. Its
+[daily gridded THREDDS archive](https://thredds.aodn.org.au/thredds/catalog/IMOS/SRS/Surface-Waves/SAR_Wind/DELAYED/GRIDDED/SENTINEL-1/catalog.html)
+combines only the satellite swaths present on each day; a nominal daily file is
+not a wall-to-wall daily observation.
+
+The DMS eReefs GBR4 store contains `mean_wspeed`, `wspeed_u`, and `wspeed_v`.
+These are continuous model-forcing fields for complete Q1 periods in 2016,
+2017, 2020, and 2022, but the public v2 record stops on 17 January 2024.
+
+The adjacent IMOS Metop-B scatterometer archive spans every event from 2016 to
+2024 and is calibrated against buoy winds. It has regular repeat sampling
+offshore, but valid coastal coverage is insufficient for the inshore programme.
+
+# Sentinel-1 coverage audit
+
+The audit queried all 91 Q1 2024 daily files on a 0.1-degree GBR grid while
+preserving the native swath gaps.
+
+```{r sar-coverage}
+sar_summary <- tibble(
+  Measure = c(
+    'Mean GBR domain covered on a day',
+    'Median observed days per audit cell',
+    'Median observed days at a registry feature',
+    'Registry features with at least 10 observed days'
+  ),
+  Value = c(
+    percent(mean(sar_daily$valid_grid_fraction), accuracy = 0.1),
+    as.character(median(read_csv(
+      '../output/wind_audit/sar_wind_2024_q1_grid_coverage.csv',
+      show_col_types = FALSE
+    )$observed_days)),
+    as.character(median(sar_reef$audit_observed_days)),
+    paste0(sum(sar_reef$audit_observed_days >= 10), ' / ', nrow(sar_reef))
+  )
+)
+sar_summary |> kable()
+```
+
+Seven observed days out of 91 cannot identify sustained calm spells. Using a
+wide spatial neighbourhood would increase counts by pooling different places,
+not by observing the same reef more often.
+
+# Metop-B coverage at modelling reefs
+
+Good-QC Metop-B observations within 30 km were aggregated to daily medians. A
+reef-year is called adequate only when at least 70% of Q1 days are represented.
+
+```{r programme-coverage}
+programme_coverage |>
+  mutate(
+    Programme = recode(
+      programme_key,
+      ltmp = 'LTMP benthic',
+      manta = 'LTMP manta tow',
+      mmp = 'MMP inshore'
+    ),
+    `Adequate coverage` = paste0(
+      adequate_metop_wind, ' / ', model_rows,
+      ' (', percent(adequate_metop_wind / model_rows, accuracy = 1), ')'
+    )
+  ) |>
+  select(Programme, `Model rows` = model_rows, `Adequate coverage`) |>
+  kable()
+```
+
+The zero coverage for MMP is a hard ecological limitation: replacing inshore
+conditions with the nearest distant offshore pixel would erase the very
+coastal wind and flood context that matters.
+
+# Continuous eReefs historical metrics
+
+```{r event-table}
+event_summary |>
+  mutate(
+    Period = if_else(complete_q1, 'Complete Q1', '1--17 January only'),
+    across(
+      c(median_mean_wind, median_q10_wind),
+      ~ round(.x, 2)
+    ),
+    median_fraction_below_3 = percent(
+      median_fraction_below_3, accuracy = 0.1
+    )
+  ) |>
+  select(
+    Year = year, Period,
+    `Median mean wind (m/s)` = median_mean_wind,
+    `Median lower-decile wind (m/s)` = median_q10_wind,
+    `Median fraction below 3 m/s` = median_fraction_below_3,
+    `Median longest spell below 3 m/s` = median_longest_spell_below_3
+  ) |>
+  kable()
+```
+
+```{r event-plot, fig.width=10, fig.height=4.8}
+ereefs |>
+  mutate(
+    Event = if_else(
+      ereefs_wind_complete_q1,
+      as.character(year),
+      paste0(year, ' (partial)')
+    )
+  ) |>
+  ggplot(aes(x = factor(Event), y = ereefs_wind_fraction_below_3)) +
+  geom_boxplot(outlier.alpha = 0.08, fill = '#74ADD1') +
+  scale_y_continuous(labels = percent) +
+  labs(
+    x = 'Event period',
+    y = 'Fraction of available days below 3 m/s',
+    title = 'eReefs represents continuous historical calm exposure',
+    subtitle = 'The 2024 distribution covers only 1--17 January and is not comparable to full Q1'
+  )
+```
+
+# eReefs versus Metop-B
+
+Comparison is restricted to unique eReefs cells with at least 70% good-QC
+Metop coverage. The 2024 products are not compared because their time windows
+are different.
+
+```{r comparison-table}
+comparison |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  rename(
+    Year = year,
+    Cells = cells,
+    `Mean Spearman` = mean_spearman,
+    `Mean RMSE` = mean_rmse,
+    `eReefs - Metop bias` = ereefs_minus_metop_bias,
+    `Q10 Spearman` = q10_spearman,
+    `Calm-fraction Spearman` = calm_fraction_spearman
+  ) |>
+  kable()
+```
+
+```{r comparison-plot, fig.width=10, fig.height=5}
+ggplot(joined, aes(x = metop_mean, y = ereefs_mean)) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, colour = 'grey55') +
+  geom_point(alpha = 0.25, size = 0.8, colour = '#2166AC') +
+  facet_wrap(~ year) +
+  coord_equal() +
+  labs(
+    x = 'Metop-B Q1 mean wind (m/s)',
+    y = 'eReefs Q1 mean wind (m/s)',
+    title = 'Mean wind agrees better than the low-wind tail'
+  )
+```
+
+Mean wind agreement is adequate for a broad product check. It is not enough
+for imputation of doldrum exposure: event-specific lower-decile and calm-
+fraction correlations are weak and sometimes near zero. The products also
+represent different spatial scales and coastal masks.
+
+# Implementation recommendation
+
+1. Preserve the extracted eReefs variables as historical sensitivity inputs:
+   Q1 mean, Q10, minimum, fractions and days below 3/5 m/s, and longest calm
+   spells. Do not label the 2024 record complete.
+2. Preserve Sentinel-1 and Metop coverage fields and never interpret missing
+   satellite pixels as calm conditions.
+3. Extract hourly ERA5 or the matched ACCESS 10-m `u`/`v` winds for every event
+   from one source, compute speed before daily aggregation, and use the same
+   reef matching and Q1 definitions in all years.
+4. Validate reanalysis mean and low-wind tails against complete eReefs years
+   and good-QC Metop cells. Only then add a compact wind set to candidate models:
+   mean speed plus either calm fraction or longest calm spell, avoiding several
+   highly collinear threshold variants at once.
+5. Re-run the fixed outer validation folds before promoting wind into the
+   production BRMS/BRT ensemble. The ecological hypothesis is strong, but the
+   predictor still has to improve temporal transfer, severe-event error, or
+   interval calibration.

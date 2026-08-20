@@ -1,0 +1,328 @@
+---
+title: "GBR Coral Mortality: Blocked Validation Diagnostics"
+subtitle: "Baseline models and the path to a BRMS–BRT prediction ensemble"
+author: "Samuel Matthews"
+date-modified: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+    theme: cosmo
+    code-fold: true
+execute:
+  warning: false
+  message: false
+  echo: false
+---
+
+```{r setup}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(scales)
+library(knitr)
+
+repo_root <- if (file.exists("output/model_validation/blocked_predictions.csv")) "." else ".."
+result_path <- function(file) file.path(repo_root, "output", "model_validation", file)
+
+required <- c(
+    "blocked_predictions.csv", "candidate_metrics.csv",
+    "candidate_fold_metrics.csv", "candidate_selection.csv",
+    "selected_models.csv", "fit_warnings.csv"
+)
+if (!all(file.exists(vapply(required, result_path, character(1))))) {
+    stop("Model results are missing. Run Rscript scripts/fit_candidate_models.R first.")
+}
+
+predictions <- read_csv(result_path("blocked_predictions.csv"), show_col_types = FALSE)
+metrics <- read_csv(result_path("candidate_metrics.csv"), show_col_types = FALSE)
+fold_metrics <- read_csv(result_path("candidate_fold_metrics.csv"), show_col_types = FALSE)
+selection <- read_csv(result_path("candidate_selection.csv"), show_col_types = FALSE)
+selected <- read_csv(result_path("selected_models.csv"), show_col_types = FALSE)
+fit_warnings <- read_csv(result_path("fit_warnings.csv"), show_col_types = FALSE)
+
+programme_labels <- c(
+    manta = "LTMP manta tow",
+    ltmp = "LTMP benthic",
+    mmp = "MMP inshore"
+)
+model_labels <- c(
+    thermal_linear = "Linear DHW",
+    thermal_nonlinear = "Nonlinear DHW",
+    thermal_optical = "DHW + optical context",
+    thermal_context = "Full physical context"
+)
+model_labels <- c(
+    model_labels,
+    thermal_composition = 'DHW + context + Acropora'
+)
+scheme_labels <- c(
+    leave_one_event_out = "Leave one event out",
+    reef_blocked_5fold = "Reef blocked",
+    region_blocked = "Region blocked"
+)
+
+label_results <- function(data) {
+    data |>
+        mutate(
+            Programme = recode(programme_key, !!!programme_labels),
+            Model = recode(model, !!!model_labels),
+            Scheme = recode(scheme, !!!scheme_labels)
+        )
+}
+
+metrics_plot <- label_results(metrics)
+fold_metrics_plot <- label_results(fold_metrics)
+selected_predictions <- predictions |>
+    inner_join(select(selected, programme_key, model), by = c("programme_key", "model")) |>
+    label_results()
+
+theme_set(theme_classic(base_size = 12))
+```
+
+::: {.callout-warning}
+## These are benchmark models, not the final prediction machine
+
+The explanatory parsimony rule selects linear DHW for manta and MMP, but the
+prediction-optimal manta benchmark is the full physical-context model. These
+are reference GLMs, not ecological claims that mortality is truly linear in
+DHW and not the GBR-wide prediction machine. The formal BRMS and BRT models use
+the full predictor contract, including preceding-year Acropora, and ensemble
+their cross-fitted predictions.
+:::
+
+# Data and validation design
+
+All modern observations are used in modelling. Each event—including 2024—is
+held out in turn for temporal validation. Reef-blocked folds test transfer to
+unseen reefs, while broad region blocks provide a harder geographic stress
+test. After validation, production models are refitted using every event.
+
+```{r data-summary}
+data_summary <- predictions |>
+    distinct(programme_key, source_observation_id, ReefID, event_year) |>
+    group_by(programme_key) |>
+    summarise(
+        Observations = n(),
+        Reefs = n_distinct(ReefID),
+        Events = paste(sort(unique(event_year)), collapse = ", "),
+        .groups = "drop"
+    ) |>
+    mutate(Programme = recode(programme_key, !!!programme_labels)) |>
+    select(Programme, everything(), -programme_key)
+
+kable(data_summary, align = c("l", "r", "r", "l"))
+```
+
+# Candidate model comparison
+
+Five nested hypotheses were evaluated. The comparison adds a preceding-year
+Acropora composition model to the DHW, nonlinear, optical, and physical-context
+benchmarks. It tests how much predictive accuracy is gained before moving to
+the regularised BRMS and BRT frameworks.
+
+```{r candidate-rmse, fig.width=11, fig.height=6}
+ggplot(
+    metrics_plot,
+    aes(x = Model, y = rmse, colour = Scheme, group = Scheme)
+) +
+    geom_line(linewidth = 0.7) +
+    geom_point(size = 2.5) +
+    facet_wrap(~Programme, scales = "free_y") +
+    scale_colour_brewer(palette = "Dark2") +
+    labs(
+        x = NULL,
+        y = "Blocked RMSE",
+        colour = "Assessment",
+        title = "Predictive performance depends on programme and validation target"
+    ) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+```{r selected-table}
+selection_table <- selection |>
+    mutate(
+        Programme = recode(programme_key, !!!programme_labels),
+        Model = recode(model, !!!model_labels)
+    ) |>
+    arrange(Programme, selection_rmse) |>
+    select(
+        Programme, Model, complexity, selection_rmse,
+        selection_mae, within_two_percent, selected_for_prediction
+    ) |>
+    mutate(
+        across(c(selection_rmse, selection_mae), ~ round(.x, 3))
+    )
+
+kable(
+    selection_table,
+    col.names = c(
+        "Programme", "Candidate", "Complexity", "Selection RMSE",
+        "Selection MAE", "Within 2%", "Selected benchmark"
+    )
+)
+```
+
+# Event-to-event transfer
+
+Leave-one-event-out performance is the most relevant diagnostic for predicting
+a future bleaching event. The figure below gives each event its own RMSE rather
+than averaging away difficult years.
+
+```{r event-rmse, fig.width=11, fig.height=7}
+event_metrics <- fold_metrics_plot |>
+    filter(scheme == "leave_one_event_out") |>
+    mutate(Event = factor(fold, levels = sort(unique(as.integer(fold)))))
+
+ggplot(event_metrics, aes(Event, rmse, colour = Model, group = Model)) +
+    geom_line(linewidth = 0.8) +
+    geom_point(size = 2.4) +
+    facet_wrap(~Programme, scales = "free_y") +
+    scale_colour_brewer(palette = "Set1") +
+    labs(
+        x = "Held-out bleaching event",
+        y = "RMSE",
+        colour = "Candidate",
+        title = "No candidate transfers uniformly across bleaching events"
+    )
+```
+
+## The 2024 stress test
+
+The widespread 2024 event is retained as a transparent out-of-event test and
+then included in production fitting. The benchmark models trained on earlier
+events underpredict mean 2024 mortality, especially for manta and MMP.
+
+```{r event-2024-bars, fig.width=9, fig.height=5.5}
+event_2024 <- selected_predictions |>
+    filter(scheme == "leave_one_event_out", event_year == 2024) |>
+    group_by(Programme, Model) |>
+    summarise(
+        n = n(),
+        Observed = mean(observed_mortality),
+        Predicted = mean(predicted_mortality),
+        RMSE = sqrt(mean((observed_mortality - predicted_mortality)^2)),
+        .groups = "drop"
+    )
+
+event_2024 |>
+    pivot_longer(c(Observed, Predicted), names_to = "Series", values_to = "Mortality") |>
+    ggplot(aes(Programme, Mortality, fill = Series)) +
+    geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+    geom_text(
+        aes(label = percent(Mortality, accuracy = 0.1)),
+        position = position_dodge(width = 0.75), vjust = -0.35, size = 3.5
+    ) +
+    scale_y_continuous(labels = percent, expand = expansion(mult = c(0, 0.12))) +
+    scale_fill_manual(values = c(Observed = "#C44E52", Predicted = "#4C72B0")) +
+    labs(
+        x = NULL, y = "Mean mortality", fill = NULL,
+        title = "Earlier events do not fully anticipate 2024 mortality"
+    )
+```
+
+```{r event-2024-table}
+kable(
+    event_2024 |>
+        mutate(across(c(Observed, Predicted, RMSE), ~ round(.x, 3))) |>
+        select(Programme, Model, n, Observed, Predicted, RMSE),
+    col.names = c("Programme", "Benchmark", "N", "Observed mean", "Predicted mean", "RMSE")
+)
+```
+
+# Out-of-fold prediction diagnostics
+
+```{r observed-predicted, fig.width=10, fig.height=7}
+selected_event_predictions <- selected_predictions |>
+    filter(scheme == "leave_one_event_out")
+
+ggplot(
+    selected_event_predictions,
+    aes(observed_mortality, predicted_mortality, colour = factor(event_year))
+) +
+    geom_abline(slope = 1, intercept = 0, colour = "grey35", linetype = "dashed") +
+    geom_point(alpha = 0.62, size = 1.8) +
+    facet_wrap(~Programme) +
+    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+    scale_x_continuous(labels = percent) +
+    scale_y_continuous(labels = percent) +
+    scale_colour_viridis_d(end = 0.9) +
+    labs(
+        x = "Observed mortality",
+        y = "Out-of-event predicted mortality",
+        colour = "Event",
+        title = "Blocked predictions are compressed toward the mean"
+    )
+```
+
+```{r dhw-predictions, fig.width=11, fig.height=7}
+ggplot(
+    selected_event_predictions,
+    aes(ann_maxdhw, observed_mortality, colour = factor(event_year))
+) +
+    geom_point(alpha = 0.42, size = 1.5) +
+    geom_point(
+        aes(y = predicted_mortality),
+        shape = 1, alpha = 0.75, size = 1.7
+    ) +
+    facet_wrap(~Programme) +
+    scale_y_continuous(labels = percent, limits = c(0, 1)) +
+    scale_colour_viridis_d(end = 0.9) +
+    labs(
+        x = "Annual maximum DHW (°C-weeks)",
+        y = "Mortality",
+        colour = "Held-out event",
+        title = "Filled points are observed; open points are out-of-event predictions"
+    )
+```
+
+# What the benchmark does—and does not—tell us
+
+- DHW contains transferable signal, but it is not sufficient to reproduce the
+  mortality distribution of an unprecedented event.
+- Detailed LTMP benthic observations gain predictive accuracy from physical
+  context, supporting continued environmental modelling.
+- MMP cannot support a large standalone environmental model reliably because
+  it has only three event years and nearly half of Secchi values are missing.
+- Selection of a linear benchmark for manta or MMP is a statement about the
+  current small candidate comparison and validation variance. It is not a
+  mechanistic dose-response conclusion.
+
+```{r warning-table}
+if (nrow(fit_warnings) > 0) {
+    warning_display <- fit_warnings |>
+        mutate(
+            Programme = recode(programme_key, !!!programme_labels),
+            Candidate = recode(model, !!!model_labels),
+            Assessment = recode(scheme, !!!scheme_labels)
+        ) |>
+        select(Programme, Assessment, fold, Candidate, warning)
+    kable(warning_display)
+}
+```
+
+# Production prediction architecture
+
+The next comparison should retain the benchmark models but make prediction—not
+parsimony—the objective:
+
+1. **BRMS base learner:** a hierarchical boundary-aware model with nonlinear
+   DHW, environmental modifiers, event effects, reef/region structure, and full
+   posterior predictive uncertainty.
+2. **BRT base learner:** a regularised nonlinear learner using the complete
+   attainable predictor set, with depth and tree number tuned inside each
+   analysis fold.
+3. **Cross-fitted ensemble:** obtain BRMS and BRT predictions for every blocked
+   assessment row, estimate non-negative ensemble weights without using that
+   row's outcome, and compare the ensemble against each base learner and the
+   benchmark.
+4. **Full-data refit:** once the architecture and ensemble rule are frozen,
+   refit BRMS and BRT on all events including 2024, then produce GBR-wide means,
+   intervals, and environmental-extrapolation flags.
+
+The extensive cached BRMS and BRT work in `output/models` has not been removed.
+It remains valuable for model specification and diagnostics, but it must be
+refitted against the canonical outcomes, reconstructed cloud values, and fixed
+blocked folds before contributing to the production ensemble.

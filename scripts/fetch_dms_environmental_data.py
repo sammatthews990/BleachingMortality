@@ -8,12 +8,16 @@ for all ~7,000 GBR + Torres Strait reef features across survey years 2016, 2017,
 import os
 import sys
 import time
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import xarray as xr
 import s3fs
 import zarr
 from scipy.spatial import cKDTree
+
+from secchi_extraction import extract_q1_secchi
+from validate_environmental_data import validate_environmental_file
 
 def compute_historical_dhw_metrics(target_year, years_list, dhw_matrix, threshold):
     idx_target = years_list.index(target_year)
@@ -32,6 +36,52 @@ def compute_historical_dhw_metrics(target_year, years_list, dhw_matrix, threshol
             yrsince[r] = num_past_years - last_idx
             
     return histmDHW, yrsince
+
+def compute_ten_year_dhw_metrics(target_year, years_list, dhw_matrix,
+                                 window_years=10, load_threshold=4.0):
+    '''Summarise chronic load and signed novelty before an event.
+
+    The window contains complete calendar years before ``target_year``. Load
+    is accumulated DHW above the threshold; novelty is current-year maximum
+    DHW minus the largest annual maximum in the preceding window. Keeping the
+    novelty signed distinguishes unusually weak events such as 2022 from
+    unprecedented heat exposure such as parts of the GBR in 2024.
+    '''
+    idx_target = years_list.index(target_year)
+    start = max(0, idx_target - window_years)
+    past = np.asarray(dhw_matrix[start:idx_target, :], dtype=float)
+    current = np.asarray(dhw_matrix[idx_target, :], dtype=float)
+    if past.shape[0] == 0:
+        empty = np.full(current.shape, np.nan, dtype=np.float32)
+        return {
+            'dhw10_mean': empty,
+            'dhw10_max': empty,
+            'dhw10_load4': empty,
+            'dhw10_n4': empty,
+            'dhw10_n6': empty,
+            'dhw_novelty10': empty,
+        }
+
+    valid_history = np.isfinite(past).any(axis=0)
+    prior_max = np.nanmax(past, axis=0).astype(np.float32)
+    prior_mean = np.nanmean(past, axis=0).astype(np.float32)
+    load = np.nansum(
+        np.maximum(past - load_threshold, 0), axis=0
+    ).astype(np.float32)
+    n4 = np.sum(past >= 4.0, axis=0).astype(np.float32)
+    n6 = np.sum(past >= 6.0, axis=0).astype(np.float32)
+    for values in (prior_max, prior_mean, load, n4, n6):
+        values[~valid_history] = np.nan
+    novelty = (current - prior_max).astype(np.float32)
+
+    return {
+        'dhw10_mean': prior_mean,
+        'dhw10_max': prior_max,
+        'dhw10_load4': load,
+        'dhw10_n4': n4,
+        'dhw10_n6': n6,
+        'dhw_novelty10': novelty,
+    }
 
 def haversine_np(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
@@ -133,6 +183,9 @@ def main():
         ann_maxdhw = dhw_matrix[yr_idx, :]
         histmDHW6, yrsince6 = compute_historical_dhw_metrics(yr, all_years_hist, dhw_matrix, threshold=6.0)
         histmDHW4, yrsince4 = compute_historical_dhw_metrics(yr, all_years_hist, dhw_matrix, threshold=4.0)
+        dhw10 = compute_ten_year_dhw_metrics(
+            yr, all_years_hist, dhw_matrix
+        )
         
         # 2. CRW SST (Annual Max & Previous Year Baseline)
         ds_sst_yr = ds_sst.sel(time=slice(f"{yr}-01-01", f"{yr}-12-31"))
@@ -144,15 +197,17 @@ def main():
         winyear_mean = pts_sst_prev.mean(dim='time').compute().values
         winyear_sd = pts_sst_prev.std(dim='time').compute().values
         
-        # 3. IMOS Secchi Depth (Q1 composite: Jan-Mar)
-        t1_k = str(ds_k490.time.values[-1])[:10]
-        if f"{yr}-01-01" <= t1_k:
-            ds_k490_win = ds_k490.sel(time=slice(f"{yr}-01-01", f"{yr}-03-31"))
-            pts_k490 = ds_k490_win['K_490'].sel(latitude=reef_lats, longitude=reef_lons, method='nearest')
-            k490_mean = pts_k490.mean(dim='time').compute().values
-            secc3m = np.where((~np.isnan(k490_mean)) & (k490_mean > 0), 1.7 / k490_mean, np.nan)
-        else:
-            secc3m = np.full(len(df_reefs_clean), np.nan)
+        # 3. IMOS Secchi Depth proxy (Q1 composite: Jan-Mar). Reef centroids
+        # can occupy masked land/reef pixels, so missing centroid cells use the
+        # smallest valid-water neighbourhood (2, 3, then 5 km).
+        secchi = extract_q1_secchi(
+            ds_k490,
+            pd.DataFrame({'lon': lons_ref, 'lat': lats_ref}),
+            yr,
+        )
+        secc3m = secchi['secc3m'].values
+        k490_q90 = secchi['k490_q90'].values
+        secc3m_p10 = secchi['secc3m_p10'].values
             
         # 4. eReefs Surface Current (90-day window: Jan-Mar, Surface Layer k=16)
         win_start_90 = pd.Timestamp(f"{yr}-01-01")
@@ -180,12 +235,27 @@ def main():
             'yrsince6': yrsince6,
             'histmDHW4': histmDHW4,
             'yrsince4': yrsince4,
+            'dhw10_mean': dhw10['dhw10_mean'],
+            'dhw10_max': dhw10['dhw10_max'],
+            'dhw10_load4': dhw10['dhw10_load4'],
+            'dhw10_n4': dhw10['dhw10_n4'],
+            'dhw10_n6': dhw10['dhw10_n6'],
+            'dhw_novelty10': dhw10['dhw_novelty10'],
             'ann_maxsst': ann_maxsst,
             'winyear_mean': winyear_mean,
             'winyear_sd': winyear_sd,
             'mcur_90': mcur_90,
             'dist_to_er_km': dists_er_km,
             'secc3m': secc3m,
+            'k490_q90': k490_q90,
+            'secc3m_p10': secc3m_p10,
+            'secc_source': secchi['secc_source'].values,
+            'secc_match_method': secchi['secc_match_method'].values,
+            'secc_radius_km': secchi['secc_radius_km'].values,
+            'secc_n_observations': secchi['secc_n_observations'].values,
+            'secc_n_grid_cells': secchi['secc_n_grid_cells'].values,
+            'secc_centroid_grid_distance_km': secchi['secc_centroid_grid_distance_km'].values,
+            'secc_nearest_valid_distance_km': secchi['secc_nearest_valid_distance_km'].values,
             'cloudp_90': np.nan
         })
         all_dfs.append(df_yr)
@@ -250,6 +320,8 @@ def main():
     
     csv_path = "data/processed/cheung_recreated_gbr_full.csv"
     df_out.to_csv(csv_path, index=False)
+    manifest_path = "data/processed/cheung_recreated_gbr_full.manifest.json"
+    validate_environmental_file(Path(csv_path), Path(manifest_path))
     print(f"\nSuccessfully generated and saved complete pipeline dataset to {csv_path} (N={len(df_out)} rows across {df_out['LABEL_ID'].nunique()} reefs) in {time.time()-t0:.1f}s.")
 
 if __name__ == "__main__":

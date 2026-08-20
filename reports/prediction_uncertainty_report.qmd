@@ -1,0 +1,302 @@
+---
+title: 'GBR mortality prediction uncertainty and extrapolation contract'
+subtitle: 'Cross-fitted intervals, severe-event guardrails, and 2024 environmental support'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+output_dir <- '../output/prediction_uncertainty'
+files <- c(
+  intervals = file.path(
+    output_dir, 'selected_route_cross_calibrated_intervals.csv'
+  ),
+  coverage = file.path(
+    output_dir, 'selected_route_interval_coverage.csv'
+  ),
+  brms = file.path(output_dir, 'brms_expected_interval_coverage.csv'),
+  support = file.path(output_dir, 'environmental_support_2024.csv'),
+  predictors = file.path(
+    output_dir, 'environmental_support_predictor_summary.csv'
+  )
+)
+if (any(!file.exists(files))) {
+  stop('Run scripts/quantify_prediction_uncertainty.R first.')
+}
+
+intervals <- read_csv(files[['intervals']], show_col_types = FALSE)
+coverage <- read_csv(files[['coverage']], show_col_types = FALSE)
+brms_coverage <- read_csv(files[['brms']], show_col_types = FALSE)
+support <- read_csv(files[['support']], show_col_types = FALSE)
+predictor_support <- read_csv(files[['predictors']], show_col_types = FALSE)
+
+programme_labels <- c(
+  ltmp = 'LTMP benthic',
+  manta = 'LTMP manta tow',
+  mmp = 'MMP inshore'
+)
+scheme_labels <- c(
+  leave_one_event_out = 'Leave one event out',
+  reef_blocked_5fold = 'Reef blocked'
+)
+```
+
+# Decision
+
+The pipeline now distinguishes four things that should not be collapsed into a
+single confidence band:
+
+1. posterior uncertainty in the BRMS expected response;
+2. disagreement between BRMS and BRT;
+3. held-out residual/process error in the selected programme route; and
+4. environmental and community-input support at the prediction location.
+
+The saved BRMS Q05--Q95 limits came from `posterior_epred`; they are intervals
+for expected mortality, not observation-level prediction intervals. Cross-
+fitted residual intervals are therefore the current predictive uncertainty
+layer. Even these remain marginal: their severe-event coverage is reported
+separately and cannot be inferred from overall coverage.
+
+A full GBR mortality surface is **not released yet**. Every 2024 registry row
+lacks a complete, audited pre-event community layer for the model predictors
+`prop_acropora_pre` and `acropora_cover_pre`; MMP additionally requires depth.
+Environmental support maps below are diagnostics, not mortality maps.
+
+# Expected-response intervals are too narrow
+
+```{r brms-table}
+brms_coverage |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Assessment = recode(scheme, !!!scheme_labels),
+    `All-row coverage` = percent(expected_interval_coverage, accuracy = 0.1),
+    `Severe-row coverage` = percent(
+      severe_expected_interval_coverage, accuracy = 0.1
+    ),
+    `Mean width` = round(mean_expected_interval_width, 3)
+  ) |>
+  select(
+    Programme, Assessment, n,
+    `All-row coverage`, severe_n, `Severe-row coverage`, `Mean width`
+  ) |>
+  kable(
+    caption = paste(
+      'Empirical coverage of nominal BRMS 90% intervals for expected mortality.',
+      'These are not posterior predictive intervals.'
+    )
+  )
+```
+
+Low coverage is expected when parameter uncertainty is presented as if it also
+contained observation noise, unmeasured event mechanisms, and model-form error.
+Renaming these limits is not cosmetic; it prevents overconfident maps.
+
+# Cross-fitted predictive intervals
+
+For each outer assessment fold, the interval radius is the finite-sample 90th
+percentile of absolute residuals from *other* outer folds of the same programme
+and validation scheme. No assessment outcome calibrates its own interval.
+
+The severe upper guardrail is calibrated the same way using only mortality of
+at least 20% in the other folds. It is intentionally conservative and should be
+shown as a high-loss risk bound, not as another central interval.
+
+```{r calibrated-table}
+coverage |>
+  filter(
+    scheme == 'leave_one_event_out',
+    subgroup %in% c('all', 'positive', 'severe')
+  ) |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Subgroup = recode(
+      subgroup,
+      all = 'All observations',
+      positive = 'Positive mortality',
+      severe = 'Mortality >= 20%'
+    ),
+    `Marginal coverage` = percent(empirical_coverage, accuracy = 0.1),
+    `Severe upper guard coverage` = percent(
+      severe_upper_guard_coverage, accuracy = 0.1
+    ),
+    `Mean interval width` = round(mean_interval_width, 3),
+    `Mean BRMS-BRT disagreement` = round(mean_model_disagreement, 3)
+  ) |>
+  select(
+    Programme, Subgroup, n, `Marginal coverage`,
+    `Severe upper guard coverage`, `Mean interval width`,
+    `Mean BRMS-BRT disagreement`
+  ) |>
+  kable(caption = 'Event-held-out uncertainty performance')
+```
+
+```{r calibrated-plot, fig.width=10, fig.height=5.5}
+intervals |>
+  filter(scheme == 'leave_one_event_out') |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    severe = observed_mortality >= 0.2
+  ) |>
+  ggplot(aes(x = predicted_mortality, y = observed_mortality)) +
+  geom_segment(
+    aes(
+      x = interval_lower_90, xend = interval_upper_90,
+      y = observed_mortality, yend = observed_mortality
+    ),
+    alpha = 0.18, colour = '#4393C3'
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, colour = 'grey55') +
+  geom_point(aes(colour = severe), alpha = 0.7, size = 1.3) +
+  facet_wrap(~ Programme) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  scale_colour_manual(
+    values = c('FALSE' = 'grey45', 'TRUE' = '#B2182B'),
+    labels = c('No', 'Yes')
+  ) +
+  labs(
+    x = 'Selected-route prediction',
+    y = 'Observed mortality',
+    colour = 'Observed >= 20%',
+    title = 'Marginal intervals still under-cover severe event outcomes'
+  )
+```
+
+The event-held-out results are the relevant test for a future or unusually
+intense bleaching event. Reef-blocked coverage is generally better because it
+interpolates within events already represented in training. MMP temporal
+guardrail failure is retained as a formal limitation; three event years are not
+enough to calibrate the 2024 severity shift from previous MMP events.
+
+# Framework disagreement
+
+```{r disagreement-plot, fig.width=10, fig.height=4.8}
+intervals |>
+  filter(scheme == 'leave_one_event_out') |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    absolute_error = abs(observed_mortality - predicted_mortality)
+  ) |>
+  ggplot(aes(x = model_disagreement, y = absolute_error)) +
+  geom_point(alpha = 0.35, size = 1.1, colour = '#762A83') +
+  geom_smooth(method = 'loess', se = FALSE, colour = 'black') +
+  facet_wrap(~ Programme, scales = 'free_x') +
+  labs(
+    x = 'Absolute BRMS-BRT prediction disagreement',
+    y = 'Absolute held-out error',
+    title = 'Framework disagreement is a local epistemic warning, not an interval'
+  )
+```
+
+Disagreement should accompany future prediction rows, but it is not a complete
+uncertainty measure: learners can agree and still share the same missing event
+mechanism.
+
+# 2024 environmental support
+
+Environmental support uses the 15 predictors available consistently in the
+full registry. For each programme, values are standardised with its formal
+training rows. A nearest-training-row distance is compared with leave-one-row-
+out 95th and 99th percentiles, while individual predictors are also checked
+against training ranges.
+
+```{r support-table}
+support |>
+  count(programme_key, environmental_support_class, name = 'Features') |>
+  group_by(programme_key) |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    Percent = percent(Features / sum(Features), accuracy = 0.1)
+  ) |>
+  ungroup() |>
+  select(Programme, `Environmental support` = environmental_support_class,
+         Features, Percent) |>
+  arrange(Programme, `Environmental support`) |>
+  kable()
+```
+
+```{r support-map, fig.width=10, fig.height=7}
+support |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    environmental_support_class = factor(
+      environmental_support_class,
+      levels = c(
+        'within environmental support', 'caution',
+        'extreme extrapolation', 'missing environmental input'
+      )
+    )
+  ) |>
+  ggplot(aes(x = lon, y = lat, colour = environmental_support_class)) +
+  geom_point(size = 0.65, alpha = 0.85) +
+  coord_equal() +
+  facet_wrap(~ Programme, nrow = 1) +
+  scale_colour_manual(values = c(
+    'within environmental support' = '#1B7837',
+    'caution' = '#FDB863',
+    'extreme extrapolation' = '#B2182B',
+    'missing environmental input' = 'grey30'
+  )) +
+  labs(
+    x = 'Longitude', y = 'Latitude', colour = 'Support class',
+    title = 'A model can be well calibrated at survey reefs and unsupported elsewhere'
+  ) +
+  theme(legend.position = 'bottom')
+```
+
+MMP is an inshore programme with a narrow environmental training domain; only
+18 of 7,063 registry features lie within its environmental support. MMP should
+therefore not be extrapolated as a general GBR-wide surface. It is a distinct
+inshore prediction target.
+
+```{r predictor-table}
+predictor_support |>
+  mutate(
+    outside_features = below_training_range + above_training_range,
+    Programme = recode(programme_key, !!!programme_labels)
+  ) |>
+  group_by(programme_key) |>
+  slice_max(outside_features, n = 5, with_ties = FALSE) |>
+  ungroup() |>
+  select(
+    Programme, Predictor = predictor,
+    `Outside training range` = outside_features,
+    `Missing features` = missing_features,
+    `Training minimum` = training_min,
+    `Training maximum` = training_max
+  ) |>
+  mutate(across(c(`Training minimum`, `Training maximum`), ~ round(.x, 3))) |>
+  kable(caption = 'Largest univariate support gaps in the 2024 registry')
+```
+
+# Production contract
+
+Before a reef-level prediction is publishable, it must carry:
+
+- the BRMS and BRT component predictions and their absolute disagreement;
+- the selected programme route and fixed cross-fitted production weights;
+- a cross-calibrated marginal interval and severe-event upper guardrail;
+- environmental support class and the predictors outside training range;
+- provenance and uncertainty for interpolated pre-event Acropora and total
+  coral cover, plus depth for MMP; and
+- a suppression flag when required inputs are missing or the target is outside
+  the intended programme domain.
+
+The immediate implementation gap is the full-registry community layer. The old
+Acropora interpolation supplies a proportion but does not provide a fully
+audited, past-only absolute pre-event Acropora cover for all registry features.
+Using a median community value would produce a clean-looking map while removing
+one of the most influential ecological predictors. The pipeline therefore stops
+at environmental support rather than silently making that substitution.
