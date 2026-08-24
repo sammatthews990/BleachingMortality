@@ -9,6 +9,109 @@ suppressPackageStartupMessages({
     library(readr)
 })
 
+reef_reference_file <- 'data/AIMS-Reef_Reference.csv'
+disturbance_file <- 'data/aims_ltmp/reef_disturbance.csv'
+
+collapse_source_text <- function(x) {
+    x <- trimws(as.character(x))
+    x <- unique(x[!is.na(x) & nzchar(x) & toupper(x) != 'NA'])
+    if (length(x) == 0L) NA_character_ else paste(x, collapse = ' | ')
+}
+
+# Recover survey identity from the raw observation ID and use an exact AIMS
+# reference-name match before accepting the exploratory workspace crosswalk.
+# Cleaned names such as MACKAY REEF/MACKAY REEFS are deliberately not used.
+attach_exact_survey_lineage <- function(data, raw_surveys, sample_type) {
+    reference <- read_csv(reef_reference_file, show_col_types = FALSE) |>
+        transmute(
+            raw_reef_name_key = toupper(trimws(AIMS_REEF_NAME)),
+            exact_ReefName = ReefName,
+            exact_ReefID = ReefID,
+            exact_SECTOR = SECTOR
+        ) |>
+        add_count(raw_reef_name_key, name = 'reference_matches') |>
+        filter(reference_matches == 1L) |>
+        select(-reference_matches)
+
+    survey_keys <- raw_surveys |>
+        transmute(
+            source_id_key = as.character(id),
+            raw_reef_name_key = toupper(trimws(Reef_Name))
+        ) |>
+        distinct()
+    if (anyDuplicated(survey_keys$source_id_key)) {
+        stop('A raw survey ID maps to more than one reef name')
+    }
+
+    disturbance <- read_csv(disturbance_file, show_col_types = FALSE) |>
+        mutate(
+            raw_reef_name_key = toupper(trimws(aims_reef_name)),
+            report_year = as.integer(year),
+            sample_type = toupper(sample_type)
+        ) |>
+        filter(sample_type == .env$sample_type) |>
+        group_by(raw_reef_name_key, report_year) |>
+        summarise(
+            exact_DISTURBANCE_TYPE = collapse_source_text(disturbance),
+            exact_storm_name = collapse_source_text(storm_name),
+            exact_description = collapse_source_text(description),
+            tooltip = collapse_source_text(tooltip),
+            .groups = 'drop'
+        ) |>
+        mutate(
+            disturbance_text = paste(
+                coalesce(exact_description, ''),
+                coalesce(exact_storm_name, ''),
+                coalesce(tooltip, '')
+            ),
+            disturbance_has_bleaching = grepl(
+                'bleach|blch', disturbance_text, ignore.case = TRUE
+            ),
+            disturbance_has_cyclone = grepl(
+                'cyclone|storm|jasper', disturbance_text, ignore.case = TRUE
+            ),
+            disturbance_has_flood = grepl(
+                'flood|freshwater|low salinity',
+                disturbance_text, ignore.case = TRUE
+            ),
+            disturbance_has_cots = grepl(
+                'cots|crown-of-thorns', disturbance_text, ignore.case = TRUE
+            )
+        )
+
+    data |>
+        mutate(source_id_key = as.character(id)) |>
+        left_join(survey_keys, by = 'source_id_key', relationship = 'many-to-one') |>
+        left_join(reference, by = 'raw_reef_name_key', relationship = 'many-to-one') |>
+        mutate(
+            crosswalk_corrected = !is.na(exact_ReefID) &
+                (is.na(ReefID) | ReefID != exact_ReefID),
+            ReefName = coalesce(exact_ReefName, ReefName),
+            ReefID = coalesce(exact_ReefID, ReefID),
+            SECTOR = coalesce(exact_SECTOR, SECTOR)
+        ) |>
+        left_join(
+            disturbance,
+            by = c('raw_reef_name_key', 'report_year'),
+            relationship = 'many-to-one'
+        ) |>
+        mutate(
+            DISTURBANCE_TYPE = coalesce(
+                exact_DISTURBANCE_TYPE, DISTURBANCE_TYPE
+            ),
+            storm_name = coalesce(exact_storm_name, storm_name),
+            description = coalesce(exact_description, description),
+            disturbance_text = coalesce(
+                disturbance_text,
+                paste(
+                    coalesce(description, ''),
+                    coalesce(storm_name, '')
+                )
+            )
+        ) |>
+        select(-source_id_key, -starts_with('exact_'))
+}
+
 bleaching_event_years <- c(1998L, 2002L, 2016L, 2017L, 2020L, 2022L, 2024L)
 
 decimal_year_to_date <- function(x) {
@@ -122,7 +225,10 @@ select_outcome_columns <- function(data) {
         "growth_adjusted_change_pp",
         "cover_gain_clamped_to_zero", "complete_loss", "boundary_zero",
         "boundary_one", "MaxDHW.mean", "DISTURBANCE_TYPE", "storm_name",
-        "description"
+        "description", "tooltip", "disturbance_text",
+        "disturbance_has_bleaching", "disturbance_has_cyclone",
+        "disturbance_has_flood", "disturbance_has_cots",
+        "raw_reef_name_key", "crosswalk_corrected"
     )
     select(data, any_of(core))
 }
@@ -208,6 +314,9 @@ build_mortality_outcome_tables <- function(
             c("Reef_Name", "depth", "reef_zone", "reefpage_category")
         )
     }
+
+    dat_manta <- attach_exact_survey_lineage(dat_manta, raw_manta, 'MANTA')
+    dat_benthic <- attach_exact_survey_lineage(dat_benthic, raw_benthic, 'PPOINT')
 
     all_tables <- list(
         manta = prepare_mortality_outcomes(dat_manta, "LTMP manta tow"),

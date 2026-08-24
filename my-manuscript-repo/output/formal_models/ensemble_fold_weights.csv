@@ -1,0 +1,73 @@
+programme_key,scheme,fold,learner,meta_analysis_rows,weight_brms,weight_brt,weight_benchmark
+ltmp,leave_one_event_out,2016,formal_ensemble,177,0.6591565472189442,0.34084345278105577,0
+ltmp,leave_one_event_out,2016,stacked_ensemble,177,0.28740447527439644,0.23364535496268796,0.4789501697629156
+ltmp,leave_one_event_out,2017,formal_ensemble,180,0.5751424637571525,0.4248575362428475,0
+ltmp,leave_one_event_out,2017,stacked_ensemble,180,0.33227734603074277,0.29652969889498026,0.37119295507427696
+ltmp,leave_one_event_out,2020,formal_ensemble,152,0.6799124508454242,0.3200875491545758,0
+ltmp,leave_one_event_out,2020,stacked_ensemble,152,0.25051312172094736,0.11193519832079259,0.6375516799582601
+ltmp,leave_one_event_out,2022,formal_ensemble,163,0.6537745414862621,0.34622545851373787,0
+ltmp,leave_one_event_out,2022,stacked_ensemble,163,0.30319278755629436,0.16871205288529795,0.5280951595584077
+ltmp,leave_one_event_out,2024,formal_ensemble,124,0.6019521285320975,0.39804787146790255,0
+ltmp,leave_one_event_out,2024,stacked_ensemble,124,0.2793048555395313,0.09427927240773927,0.6264158720527294
+manta,leave_one_event_out,2016,formal_ensemble,228,1,0,0
+manta,leave_one_event_out,2016,stacked_ensemble,228,0.9996584130144305,0,3.415869855695181e-4
+manta,leave_one_event_out,2017,formal_ensemble,225,1,0,0
+manta,leave_one_event_out,2017,stacked_ensemble,225,0.9998521605780584,0,1.4783942194158029e-4
+manta,leave_one_event_out,2020,formal_ensemble,185,1,0,0
+manta,leave_one_event_out,2020,stacked_ensemble,185,0.9993559483693035,0,6.440516306964258e-4
+manta,leave_one_event_out,2022,formal_ensemble,195,1,0,0
+manta,leave_one_event_out,2022,stacked_ensemble,195,0.9998473524964143,0,1.5264750358566907e-4
+manta,leave_one_event_out,2024,formal_ensemble,159,1,0,0
+manta,leave_one_event_out,2024,stacked_ensemble,159,0.9998324869069702,0,1.6751309302971422e-4
+mmp,leave_one_event_out,2017,formal_ensemble,58,1,0,0
+mmp,leave_one_event_out,2017,stacked_ensemble,58,3.038882400286927e-5,0,0.9999696111759971
+mmp,leave_one_event_out,2022,formal_ensemble,86,1,0,0
+mmp,leave_one_event_out,2022,stacked_ensemble,86,0.48275700220092815,4.2731261870660796e-7,0.5172425704864532
+mmp,leave_one_event_out,2024,formal_ensemble,36,0.6454196812847542,0.35458031871524576,0
+mmp,leave_one_event_out,2024,stacked_ensemble,36,0.3593020727840436,0.5007629152348678,0.1399350119810886
+ltmp,reef_blocked_5fold,1,formal_ensemble,159,0.30789849501852756,0.6921015049814725,0
+ltmp,reef_blocked_5fold,1,stacked_ensemble,159,0.10722558533821669,0.61573876519770665,0.27703564946407666
+ltmp,reef_blocked_5fold,2,formal_ensemble,159,0.5333971146952377,0.46660288530476235,0
+ltmp,reef_blocked_5fold,2,stacked_ensemble,159,0.39848045799104254,0.41109874974545424,0.19042079226350328
+ltmp,reef_blocked_5fold,3,formal_ensemble,159,0.5116623187192613,0.48833768128073873,0
+ltmp,reef_blocked_5fold,3,stacked_ensemble,159,0.41561858543549873,0.42917136141274115,0.15521005315176017
+ltmp,reef_blocked_5fold,4,formal_ensemble,159,0.4752818455848496,0.5247181544151505,0
+ltmp,reef_blocked_5fold,4,stacked_ensemble,159,0.4377351611423881,0.49497836832495,0.0672864705326619
+ltmp,reef_blocked_5fold,5,formal_ensemble,160,0.48775780166500415,0.5122421983349958,0
+ltmp,reef_blocked_5fold,5,stacked_ensemble,160,0.38599935030777066,0.41198656985342236,0.20201407983880704
+manta,reef_blocked_5fold,1,formal_ensemble,198,0.37281462532011556,0.6271853746798844,0
+manta,reef_blocked_5fold,1,stacked_ensemble,198,0.3728012697284592,0.6271983159062071,4.1436533371186357e-7
+manta,reef_blocked_5fold,2,formal_ensemble,198,0.40674885234066693,0.5932511476593331,0
+manta,reef_blocked_5fold,2,stacked_ensemble,198,0.40669555540932745,0.5932056958869258,9.874870374670941e-5
+manta,reef_blocked_5fold,3,formal_ensemble,198,0.3766608329285249,0.6233391670714751,0
+manta,reef_blocked_5fold,3,stacked_ensemble,198,0.37676377797274,0.6232360043701677,2.1765709234955466e-7
+manta,reef_blocked_5fold,4,formal_ensemble,199,0.4400773650918333,0.5599226349081667,0
+manta,reef_blocked_5fold,4,stacked_ensemble,199,0.43991241822606986,0.5600743917935399,1.3189980390237999e-5
+manta,reef_blocked_5fold,5,formal_ensemble,199,0.5483212023008827,0.45167879769911734,0
+manta,reef_blocked_5fold,5,stacked_ensemble,199,0.5483643796973534,0.45163540288413206,2.1741851452539152e-7
+mmp,reef_blocked_5fold,1,formal_ensemble,72,0.8644890205409715,0.13551097945902846,0
+mmp,reef_blocked_5fold,1,stacked_ensemble,72,0.5854116643198061,0,0.4145883356801939
+mmp,reef_blocked_5fold,2,formal_ensemble,72,0.7953362465070253,0.20466375349297472,0
+mmp,reef_blocked_5fold,2,stacked_ensemble,72,0.758719272992362,0.10808376630771854,0.1331969606999195
+mmp,reef_blocked_5fold,3,formal_ensemble,72,1,0,0
+mmp,reef_blocked_5fold,3,stacked_ensemble,72,0.651925145559789,0,0.34807485444021097
+mmp,reef_blocked_5fold,4,formal_ensemble,72,0.8301012549140648,0.16989874508593517,0
+mmp,reef_blocked_5fold,4,stacked_ensemble,72,0.5546835920678496,0,0.4453164079321505
+mmp,reef_blocked_5fold,5,formal_ensemble,72,0.9044763211213721,0.0955236788786279,0
+mmp,reef_blocked_5fold,5,stacked_ensemble,72,0.6007657219332617,0,0.3992342780667382
+ltmp,region_blocked,Central GBR,formal_ensemble,101,0.3940959829048118,0.6059040170951882,0
+ltmp,region_blocked,Central GBR,stacked_ensemble,101,0.2645997261824501,0.41556400116034775,0.31983627265720216
+ltmp,region_blocked,Northern GBR,formal_ensemble,143,0.4999397643455955,0.5000602356544045,0
+ltmp,region_blocked,Northern GBR,stacked_ensemble,143,0.2308389479220993,0.19685466363334767,0.5723063884445531
+ltmp,region_blocked,Southern GBR,formal_ensemble,154,0.5334305541552574,0.4665694458447426,0
+ltmp,region_blocked,Southern GBR,stacked_ensemble,154,0.3101013860768227,0.024949358112437633,0.6649492558107397
+manta,region_blocked,Central GBR,formal_ensemble,136,0.6429774841698676,0.35702251583013245,0
+manta,region_blocked,Central GBR,stacked_ensemble,136,0.4696056357677328,8.883504937876193e-5,0.5303055291828885
+manta,region_blocked,Northern GBR,formal_ensemble,189,0.5185091824543318,0.48149081754566825,0
+manta,region_blocked,Northern GBR,stacked_ensemble,189,0.29774898310676046,0,0.7022510168932395
+manta,region_blocked,Southern GBR,formal_ensemble,171,0.4638016678723609,0.5361983321276391,0
+manta,region_blocked,Southern GBR,stacked_ensemble,171,0.34414212482015333,0.14263333467499592,0.5132245405048508
+mmp,region_blocked,Central GBR,formal_ensemble,22,1,0,0
+mmp,region_blocked,Central GBR,stacked_ensemble,22,4.5918940025082384e-7,0,0.9999995408105997
+mmp,region_blocked,Southern GBR,formal_ensemble,68,1,0,0
+mmp,region_blocked,Southern GBR,stacked_ensemble,68,0.24228261854051145,0,0.7577173814594885

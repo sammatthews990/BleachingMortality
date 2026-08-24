@@ -21,9 +21,13 @@ class EReefsSalinityTests(unittest.TestCase):
             result['freshwater_exposure_28'][:2], [4.0, 9.0]
         )
         np.testing.assert_allclose(
+            result['freshwater_exposure_30'][:2], [9.0, 15.0]
+        )
+        np.testing.assert_allclose(
             result['freshwater_exposure_26'][:2], [1.0, 4.0]
         )
         np.testing.assert_allclose(result['days_below_28'][:2], [2.0, 3.0])
+        np.testing.assert_allclose(result['days_below_30'][:2], [3.0, 3.0])
         self.assertTrue(np.isnan(result['freshwater_exposure_28'][2]))
         self.assertEqual(result['salinity_n_days'][2], 0)
 

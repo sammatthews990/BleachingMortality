@@ -2178,6 +2178,7 @@ vertical-align: -.125em;
 <h1>Decision</h1>
 <p>This analysis asks a narrow question: can a consistent, full-quarter IMOS optical metric reconstruct the salinity information that is absent after 17 January 2024 in the public eReefs GBR4 v2 aggregation?</p>
 <p>The answer is assessed by holding out one <em>complete event year</em> at a time. The analysis is not allowed to call an imputation successful merely because it fits the many normal-salinity cells. It must identify the rare cells exposed below 28 PSU and predict their minimum salinity with useful accuracy.</p>
+<p>This report retains 28 PSU as its severe optical-only test. The expanded rainfall analysis uses exposure below 30 PSU as the primary screening outcome to increase the positive training set, while retaining 28 and 26 PSU as nested severity checks.</p>
 <p>The 2022 eReefs values are shown for transparency but excluded from calibration because AIMS documents a river-forcing error spanning December 2021 with carry-over into January 2022. The 2024 eReefs values cover only 1–17 January and are descriptive, not a validation target for the full January–March IMOS metric.</p>
 </section>
 <section id="data-coverage" class="level1">
@@ -2188,14 +2189,15 @@ vertical-align: -.125em;
 <caption>Surface salinity coverage and low-salinity tail. Exposure is accumulated daily deficit in PSU-days.</caption>
 <colgroup>
 <col style="width: 3%">
-<col style="width: 9%">
-<col style="width: 10%">
 <col style="width: 8%">
+<col style="width: 9%">
+<col style="width: 7%">
+<col style="width: 9%">
 <col style="width: 11%">
-<col style="width: 13%">
-<col style="width: 13%">
 <col style="width: 11%">
-<col style="width: 18%">
+<col style="width: 11%">
+<col style="width: 10%">
+<col style="width: 16%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -2204,6 +2206,7 @@ vertical-align: -.125em;
 <th style="text-align: right;">Available days</th>
 <th style="text-align: left;">Complete Q1</th>
 <th style="text-align: left;">Forcing warning</th>
+<th style="text-align: right;">Cells below 30 PSU</th>
 <th style="text-align: right;">Cells below 28 PSU</th>
 <th style="text-align: right;">Cells below 26 PSU</th>
 <th style="text-align: right;">Minimum salinity</th>
@@ -2217,6 +2220,7 @@ vertical-align: -.125em;
 <td style="text-align: right;">91</td>
 <td style="text-align: left;">TRUE</td>
 <td style="text-align: left;">FALSE</td>
+<td style="text-align: right;">15</td>
 <td style="text-align: right;">9</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: right;">21.49</td>
@@ -2228,6 +2232,7 @@ vertical-align: -.125em;
 <td style="text-align: right;">90</td>
 <td style="text-align: left;">TRUE</td>
 <td style="text-align: left;">FALSE</td>
+<td style="text-align: right;">26</td>
 <td style="text-align: right;">16</td>
 <td style="text-align: right;">12</td>
 <td style="text-align: right;">14.03</td>
@@ -2239,6 +2244,7 @@ vertical-align: -.125em;
 <td style="text-align: right;">91</td>
 <td style="text-align: left;">TRUE</td>
 <td style="text-align: left;">FALSE</td>
+<td style="text-align: right;">13</td>
 <td style="text-align: right;">2</td>
 <td style="text-align: right;">1</td>
 <td style="text-align: right;">23.59</td>
@@ -2250,6 +2256,7 @@ vertical-align: -.125em;
 <td style="text-align: right;">90</td>
 <td style="text-align: left;">TRUE</td>
 <td style="text-align: left;">TRUE</td>
+<td style="text-align: right;">4</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: right;">2</td>
 <td style="text-align: right;">20.95</td>
@@ -2261,6 +2268,7 @@ vertical-align: -.125em;
 <td style="text-align: right;">17</td>
 <td style="text-align: left;">FALSE</td>
 <td style="text-align: left;">FALSE</td>
+<td style="text-align: right;">4</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: right;">23.41</td>

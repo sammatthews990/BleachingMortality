@@ -48,8 +48,10 @@ cell_year <- salinity |>
     salinity_mean = first(salinity_mean),
     freshwater_exposure_26 = first(freshwater_exposure_26),
     freshwater_exposure_28 = first(freshwater_exposure_28),
+    freshwater_exposure_30 = first(freshwater_exposure_30),
     days_below_26 = first(days_below_26),
     days_below_28 = first(days_below_28),
+    days_below_30 = first(days_below_30),
     salinity_available_days = first(salinity_available_days),
     salinity_complete_q1 = first(salinity_complete_q1),
     salinity_forcing_warning = first(salinity_forcing_warning),
@@ -58,6 +60,7 @@ cell_year <- salinity |>
   ) |>
   mutate(
     flood28 = freshwater_exposure_28 > 0,
+    flood30 = freshwater_exposure_30 > 0,
     log_kd = log(k490_q90)
   )
 
@@ -77,6 +80,7 @@ coverage <- cell_year |>
     `Available days` = first(salinity_available_days),
     `Complete Q1` = first(salinity_complete_q1),
     `Forcing warning` = first(salinity_forcing_warning),
+    `Cells below 30 PSU` = sum(flood30, na.rm = TRUE),
     `Cells below 28 PSU` = sum(flood28, na.rm = TRUE),
     `Cells below 26 PSU` = sum(freshwater_exposure_26 > 0, na.rm = TRUE),
     `Minimum salinity` = min(salinity_min, na.rm = TRUE),
@@ -95,6 +99,11 @@ The answer is assessed by holding out one *complete event year* at a time. The
 analysis is not allowed to call an imputation successful merely because it
 fits the many normal-salinity cells. It must identify the rare cells exposed
 below 28 PSU and predict their minimum salinity with useful accuracy.
+
+This report retains 28 PSU as its severe optical-only test. The expanded
+rainfall analysis uses exposure below 30 PSU as the primary screening outcome
+to increase the positive training set, while retaining 28 and 26 PSU as nested
+severity checks.
 
 The 2022 eReefs values are shown for transparency but excluded from calibration
 because AIMS documents a river-forcing error spanning December 2021 with

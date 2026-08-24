@@ -2147,6 +2147,7 @@ vertical-align: -.125em;
   <li><a href="#what-is-available" id="toc-what-is-available" class="nav-link" data-scroll-target="#what-is-available">What is available</a></li>
   <li><a href="#sentinel-1-coverage-audit" id="toc-sentinel-1-coverage-audit" class="nav-link" data-scroll-target="#sentinel-1-coverage-audit">Sentinel-1 coverage audit</a></li>
   <li><a href="#metop-b-coverage-at-modelling-reefs" id="toc-metop-b-coverage-at-modelling-reefs" class="nav-link" data-scroll-target="#metop-b-coverage-at-modelling-reefs">Metop-B coverage at modelling reefs</a></li>
+  <li><a href="#continuous-era5-extraction-and-validation" id="toc-continuous-era5-extraction-and-validation" class="nav-link" data-scroll-target="#continuous-era5-extraction-and-validation">Continuous ERA5 extraction and validation</a></li>
   <li><a href="#continuous-ereefs-historical-metrics" id="toc-continuous-ereefs-historical-metrics" class="nav-link" data-scroll-target="#continuous-ereefs-historical-metrics">Continuous eReefs historical metrics</a></li>
   <li><a href="#ereefs-versus-metop-b" id="toc-ereefs-versus-metop-b" class="nav-link" data-scroll-target="#ereefs-versus-metop-b">eReefs versus Metop-B</a></li>
   <li><a href="#implementation-recommendation" id="toc-implementation-recommendation" class="nav-link" data-scroll-target="#implementation-recommendation">Implementation recommendation</a></li>
@@ -2158,7 +2159,7 @@ vertical-align: -.125em;
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
 <h1 class="title">Wind and doldrum-like conditions for GBR bleaching mortality</h1>
-<p class="subtitle lead">Coverage audit and source decision for eReefs, Sentinel-1 SAR, and Metop-B</p>
+<p class="subtitle lead">Coverage audit and source decision for ERA5, eReefs, Sentinel-1 SAR, and Metop-B</p>
 </div>
 
 
@@ -2178,7 +2179,7 @@ vertical-align: -.125em;
 <section id="decision" class="level1">
 <h1>Decision</h1>
 <p>The linked Sentinel-1 SAR product should <strong>not</strong> be used to count calm days or reconstruct a full Q1 wind history. The eReefs daily wind forcing is retained for historical sensitivity analyses, but its 2024 value is explicitly partial. Metop-B is a useful independent offshore comparison, not a GBR-wide replacement.</p>
-<p>Wind should enter the formal BRMS/BRT candidate set only after a continuous, single-source 2016–2024 reanalysis extraction (ERA5 or the corresponding ACCESS product) passes comparison against eReefs and good-QC Metop observations.</p>
+<p>The continuous AWS ERA5 extraction now passes the prespecified eReefs product check for both mean wind and the low-wind tail. ERA5 provides complete Q1 coverage for every event, including 2024, and should enter the formal BRMS/BRT candidate set as a compact mean-plus-calm pair. Predictive promotion still depends on the fixed outer folds; product agreement alone is not evidence that wind improves mortality prediction.</p>
 </section>
 <section id="what-is-available" class="level1">
 <h1>What is available</h1>
@@ -2255,6 +2256,143 @@ vertical-align: -.125em;
 </div>
 </div>
 <p>The zero coverage for MMP is a hard ecological limitation: replacing inshore conditions with the nearest distant offshore pixel would erase the very coastal wind and flood context that matters.</p>
+</section>
+<section id="continuous-era5-extraction-and-validation" class="level1">
+<h1>Continuous ERA5 extraction and validation</h1>
+<p>ERA5 was extracted from the public AWS Open Data temporal archive at the exact 0.25-degree reef grid cells. Wind speed was calculated hourly from the 10-m eastward and northward components before daily aggregation. Unlike eReefs, the series covers all 91 days of Q1 2024.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<caption>Complete ERA5 Q1 wind metrics at GBR registry features</caption>
+<colgroup>
+<col style="width: 3%">
+<col style="width: 6%">
+<col style="width: 17%">
+<col style="width: 24%">
+<col style="width: 21%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: right;">Year</th>
+<th style="text-align: right;">Q1 days</th>
+<th style="text-align: right;">Median mean wind (m/s)</th>
+<th style="text-align: right;">Median lower-decile wind (m/s)</th>
+<th style="text-align: left;">Median fraction below 3 m/s</th>
+<th style="text-align: right;">Median longest spell below 3 m/s</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">2016</td>
+<td style="text-align: right;">91</td>
+<td style="text-align: right;">4.92</td>
+<td style="text-align: right;">2.23</td>
+<td style="text-align: left;">25.3%</td>
+<td style="text-align: right;">6</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2017</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">4.42</td>
+<td style="text-align: right;">2.34</td>
+<td style="text-align: left;">26.7%</td>
+<td style="text-align: right;">6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">2020</td>
+<td style="text-align: right;">91</td>
+<td style="text-align: right;">5.63</td>
+<td style="text-align: right;">2.62</td>
+<td style="text-align: left;">16.5%</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2022</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">5.03</td>
+<td style="text-align: right;">2.41</td>
+<td style="text-align: left;">20.0%</td>
+<td style="text-align: right;">5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">2024</td>
+<td style="text-align: right;">91</td>
+<td style="text-align: right;">5.61</td>
+<td style="text-align: right;">2.63</td>
+<td style="text-align: left;">16.5%</td>
+<td style="text-align: right;">5</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<caption>ERA5 against complete-Q1 eReefs forcing at unique 4-km cells</caption>
+<colgroup>
+<col style="width: 5%">
+<col style="width: 6%">
+<col style="width: 15%">
+<col style="width: 11%">
+<col style="width: 21%">
+<col style="width: 14%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: right;">Year</th>
+<th style="text-align: right;">Cells</th>
+<th style="text-align: right;">Mean Spearman</th>
+<th style="text-align: right;">Mean RMSE</th>
+<th style="text-align: right;">ERA5 - eReefs bias</th>
+<th style="text-align: right;">Q10 Spearman</th>
+<th style="text-align: right;">Calm-fraction Spearman</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">2016</td>
+<td style="text-align: right;">3707</td>
+<td style="text-align: right;">0.938</td>
+<td style="text-align: right;">0.442</td>
+<td style="text-align: right;">-0.013</td>
+<td style="text-align: right;">0.911</td>
+<td style="text-align: right;">0.903</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2017</td>
+<td style="text-align: right;">3707</td>
+<td style="text-align: right;">0.945</td>
+<td style="text-align: right;">0.483</td>
+<td style="text-align: right;">0.206</td>
+<td style="text-align: right;">0.860</td>
+<td style="text-align: right;">0.902</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">2020</td>
+<td style="text-align: right;">3707</td>
+<td style="text-align: right;">0.913</td>
+<td style="text-align: right;">0.413</td>
+<td style="text-align: right;">0.108</td>
+<td style="text-align: right;">0.851</td>
+<td style="text-align: right;">0.851</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2022</td>
+<td style="text-align: right;">3707</td>
+<td style="text-align: right;">0.941</td>
+<td style="text-align: right;">0.436</td>
+<td style="text-align: right;">-0.001</td>
+<td style="text-align: right;">0.803</td>
+<td style="text-align: right;">0.837</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Across 2016, 2017, 2020, and 2022, mean-wind Spearman correlations are 0.91–0.95, lower-decile correlations are 0.80–0.91, and calm-fraction correlations are 0.84–0.90. Mean-wind RMSE is 0.41–0.48 m/s. These results are substantially stronger than the sparse satellite comparisons and support ERA5 as the temporally consistent predictor source.</p>
 </section>
 <section id="continuous-ereefs-historical-metrics" class="level1">
 <h1>Continuous eReefs historical metrics</h1>
@@ -2417,8 +2555,7 @@ vertical-align: -.125em;
 <ol type="1">
 <li>Preserve the extracted eReefs variables as historical sensitivity inputs: Q1 mean, Q10, minimum, fractions and days below 3/5 m/s, and longest calm spells. Do not label the 2024 record complete.</li>
 <li>Preserve Sentinel-1 and Metop coverage fields and never interpret missing satellite pixels as calm conditions.</li>
-<li>Extract hourly ERA5 or the matched ACCESS 10-m <code>u</code>/<code>v</code> winds for every event from one source, compute speed before daily aggregation, and use the same reef matching and Q1 definitions in all years.</li>
-<li>Validate reanalysis mean and low-wind tails against complete eReefs years and good-QC Metop cells. Only then add a compact wind set to candidate models: mean speed plus either calm fraction or longest calm spell, avoiding several highly collinear threshold variants at once.</li>
+<li>Use the completed AWS ERA5 extraction as the continuous source for formal modelling. Retain mean speed plus calm fraction below 3 m/s; keep Q10 and longest spells as sensitivity variables rather than adding all correlated metrics simultaneously.</li>
 <li>Re-run the fixed outer validation folds before promoting wind into the production BRMS/BRT ensemble. The ecological hypothesis is strong, but the predictor still has to improve temporal transfer, severe-event error, or interval calibration.</li>
 </ol>
 </section>

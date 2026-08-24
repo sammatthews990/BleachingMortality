@@ -1,0 +1,3 @@
+# Additional readers for the public AWS Open Data ERA5 temporal archive.
+icechunk==2.1.2
+pcodec==1.0.3

@@ -110,10 +110,32 @@ environment_by_id <- environment |>
 # the baseline year or earlier so temporal assessment never sees future data.
 load(acropora_workspace_file)
 set.seed(202408L)
-required_acropora_objects <- c('df.AIMS.full', 'dat.Ref.Clean')
+required_acropora_objects <- c('df.AIMS.full')
 if (!all(required_acropora_objects %in% ls())) {
     stop('The exploratory workspace lacks the AIMS composition objects')
 }
+
+reef_reference <- read_csv(
+    'data/AIMS-Reef_Reference.csv', show_col_types = FALSE
+)
+reef_reference_exact <- reef_reference |>
+    transmute(
+        raw_reef_name_key = toupper(trimws(AIMS_REEF_NAME)),
+        ReefName_exact = ReefName
+    ) |>
+    add_count(raw_reef_name_key, name = 'matches') |>
+    filter(matches == 1L) |>
+    select(-matches)
+reef_reference_clean <- reef_reference |>
+    transmute(
+        reef_name_clean = gsub(
+            ' REEF(S)?| ISLAND| IS', '', toupper(AIMS_REEF_NAME)
+        ),
+        ReefName_clean = ReefName
+    ) |>
+    add_count(reef_name_clean, name = 'matches') |>
+    filter(matches == 1L) |>
+    select(-matches)
 
 acropora_depth <- df.AIMS.full |>
     filter(
@@ -121,14 +143,21 @@ acropora_depth <- df.AIMS.full |>
         purpose == 'COMPOSITION', variable == 'HARD CORAL'
     ) |>
     mutate(
+        raw_reef_name_key = toupper(trimws(domain_name)),
         reef_name_clean = gsub(
             ' REEF(S)?| ISLAND| IS', '', toupper(domain_name)
         )
     ) |>
     left_join(
-        dat.Ref.Clean |>
-            select(AIMS_REEF_NAME_Clean, ReefName),
-        by = c('reef_name_clean' = 'AIMS_REEF_NAME_Clean')
+        reef_reference_exact,
+        by = 'raw_reef_name_key', relationship = 'many-to-one'
+    ) |>
+    left_join(
+        reef_reference_clean,
+        by = 'reef_name_clean', relationship = 'many-to-one'
+    ) |>
+    mutate(
+        ReefName = coalesce(ReefName_exact, ReefName_clean)
     ) |>
     filter(!is.na(ReefName)) |>
     group_by(ReefName, report_year, depth) |>

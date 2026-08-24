@@ -1,0 +1,304 @@
+---
+title: 'Does freshwater-event context explain severe mortality misses?'
+subtitle: 'Joint observation model and 2024 rainfall/calm-weather sensitivity'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+input_dir <- '../output/joint_compound_models'
+metrics <- read_csv(file.path(input_dir, 'comparison_metrics.csv'), show_col_types = FALSE)
+events <- read_csv(file.path(input_dir, 'event_metrics.csv'), show_col_types = FALSE)
+ablation <- read_csv(file.path(input_dir, 'weather_ablation.csv'), show_col_types = FALSE)
+effects <- read_csv(file.path(input_dir, 'brms_weather_effects.csv'), show_col_types = FALSE)
+reefs <- read_csv(file.path(input_dir, 'manta_2024_severe_reefs.csv'), show_col_types = FALSE)
+regions <- read_csv(file.path(input_dir, 'manta_2024_regions.csv'), show_col_types = FALSE)
+diagnostics <- read_csv(file.path(input_dir, 'joint_brms_diagnostics.csv'), show_col_types = FALSE)
+decision <- read_csv(file.path(input_dir, 'model_decision.csv'), show_col_types = FALSE)
+
+programme_labels <- c(ltmp = 'LTMP benthic', manta = 'Manta tow', mmp = 'MMP inshore')
+model_labels <- c(
+  routed_benchmark = 'Current routed benchmark',
+  formal_spatial_benchmark = 'Formal spatial benchmark',
+  joint_core_brt = 'Joint BRT without weather',
+  joint_compound_brt = 'Joint BRT with weather',
+  joint_compound_brms = 'Joint BRMS with weather'
+)
+```
+
+# Decision
+
+The freshwater hypothesis receives **qualified rather than production-grade
+support**. ERA5 rainfall and calm conditions improve the joint BRT's 2024
+spatial predictions for manta tow, particularly at wet northern and central
+reefs. They do not improve transfer to a completely unseen event, do not help
+MMP, and the Bayesian model does not support a positive DHW--rainfall synergy.
+
+```{r decision-table}
+decision |>
+  kable(caption = 'Model promotion decision by prediction target')
+```
+
+The existing programme-specific production route is therefore unchanged. The
+joint weather BRT is retained as a 2024 reconstruction sensitivity, not as the
+GBR-wide future-event predictor.
+
+# What was tested
+
+The joint dataset contains 537 observations and 306 unique reef-events. Of
+these, 152 reef-events are observed by two programmes. The Bayesian model uses
+shared ecological effects, a shared reef-event deviation, and
+programme-specific mean offsets, boundary probabilities, complete-loss
+probabilities, and precision.
+
+The compact weather addition is deliberately limited to:
+
+- ERA5 nearest-coastal maximum 30-day rainfall;
+- ERA5 reef mean wind and fraction of calm hours below 3 m/s;
+- distance to the coastal ERA5 cell;
+- DHW by rainfall and DHW by calm-fraction interactions.
+
+The partial January 2024 eReefs salinity record is not used as a predictor.
+Disturbance codes and descriptions are retained for interpretation but do not
+affect fitting or inclusion.
+
+# Forecasting an unseen bleaching event
+
+```{r event-performance}
+metrics |>
+  filter(scheme == 'leave_one_event_out') |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner],
+    across(c(rmse, mae, predictive_r2, severe_mae, severe_bias), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, Model, n, `Severe n` = severe_n,
+    RMSE = rmse, MAE = mae, `Predictive R2` = predictive_r2,
+    `Severe MAE` = severe_mae,
+    `Severe observed - predicted` = severe_bias
+  ) |>
+  arrange(Programme, RMSE) |>
+  kable(caption = 'Leave-one-event-out performance')
+```
+
+The current routed benchmark remains best. In manta tow, the weather BRT has
+RMSE 0.152 versus 0.141 for the benchmark, while severe MAE increases from
+0.221 to 0.251. The joint BRMS is poorer again. Freshwater context therefore
+cannot yet be used to forecast the severity of a novel event from historical
+events alone.
+
+```{r event-calibration, fig.width=10, fig.height=6}
+events |>
+  filter(learner %in% c('routed_benchmark', 'joint_compound_brt', 'joint_compound_brms')) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner]
+  ) |>
+  ggplot(aes(event_year, observed_mean - predicted_mean, colour = Model)) +
+  geom_hline(yintercept = 0, colour = 'grey45') +
+  geom_line() +
+  geom_point(size = 2.3) +
+  facet_wrap(~ Programme) +
+  scale_colour_manual(values = c(
+    'Current routed benchmark' = '#4D4D4D',
+    'Joint BRT with weather' = '#1B9E77',
+    'Joint BRMS with weather' = '#D95F02'
+  )) +
+  labs(
+    x = 'Held-out event', y = 'Observed - predicted event mean',
+    colour = NULL,
+    title = 'New-event calibration remains the limiting test',
+    subtitle = 'Positive values indicate event-wide underprediction'
+  ) +
+  theme(legend.position = 'top')
+```
+
+# Mapping 2024 after the event is represented
+
+```{r spatial-performance}
+metrics |>
+  filter(scheme == 'reef_blocked_2024') |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner],
+    across(c(rmse, mae, predictive_r2, severe_mae, severe_bias), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, Model, n, `Severe n` = severe_n,
+    RMSE = rmse, MAE = mae, `Predictive R2` = predictive_r2,
+    `Severe MAE` = severe_mae,
+    `Severe observed - predicted` = severe_bias,
+    `Non-severe MAE` = nonsevere_mae
+  ) |>
+  arrange(Programme, RMSE) |>
+  kable(caption = 'Strict reef-blocked reconstruction of 2024')
+```
+
+For manta tow, adding weather to the joint BRT reduces spatial RMSE from 0.161
+to 0.151 and severe MAE from 0.179 to 0.165. It also reduces LTMP severe MAE,
+but slightly worsens its overall error. MMP does not benefit.
+
+```{r ablation-table}
+ablation |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Target = recode(
+      scheme,
+      leave_one_event_out = 'Unseen event',
+      reef_blocked_2024 = '2024 spatial reconstruction'
+    ),
+    across(starts_with('delta_'), ~ round(.x, 3))
+  ) |>
+  select(
+    Target, Programme,
+    `Delta RMSE` = delta_rmse_compound_minus_core,
+    `Delta severe MAE` = delta_severe_mae_compound_minus_core,
+    `Delta non-severe MAE` = delta_nonsevere_mae_compound_minus_core
+  ) |>
+  kable(caption = 'Weather BRT minus core BRT; negative values are improvements')
+```
+
+# Is the effect a DHW interaction?
+
+```{r weather-effects}
+effects |>
+  mutate(
+    across(c(estimate, q025, q975, probability_ecological_direction), ~ round(.x, 3))
+  ) |>
+  select(
+    Effect = effect, Estimate = estimate,
+    `2.5%` = q025, `97.5%` = q975,
+    `P(ecological direction)` = probability_ecological_direction
+  ) |>
+  kable(caption = 'All-event joint BRMS weather posterior')
+```
+
+Rainfall has a clear positive **main effect** on positive mortality. It also
+tends to reduce zero inflation, making some mortality more likely. In contrast,
+the positive DHW--rainfall synergy has posterior probability only 0.118 in the
+magnitude component and 0.102 in the boundary component. Calm conditions show
+the same broad pattern but with much greater uncertainty.
+
+```{r effect-plot, fig.width=9, fig.height=5.5}
+effects |>
+  mutate(effect = factor(effect, levels = rev(effect))) |>
+  ggplot(aes(estimate, effect)) +
+  geom_vline(xintercept = 0, colour = 'grey45') +
+  geom_errorbarh(aes(xmin = q025, xmax = q975), height = 0.15) +
+  geom_point(aes(colour = ecological_direction), size = 2.5) +
+  scale_colour_manual(values = c(positive = '#B2182B', negative = '#2166AC')) +
+  labs(
+    x = 'Standardised logit-scale coefficient', y = NULL,
+    colour = 'Expected direction',
+    title = 'The supported rainfall signal is additive, not synergistic'
+  )
+```
+
+# Which severe manta reefs respond to weather?
+
+```{r manta-regions}
+regions |>
+  mutate(
+    Model = model_labels[learner],
+    across(c(observed_mean, predicted_mean, severe_mae, severe_bias), ~ round(.x, 3))
+  ) |>
+  select(
+    Model, Region = region_block, n,
+    Observed = observed_mean, Predicted = predicted_mean,
+    `Severe MAE` = severe_mae,
+    `Observed - predicted` = severe_bias
+  ) |>
+  kable(caption = '2024 severe manta mortality by region and model')
+```
+
+```{r manta-gain-plot, fig.width=10, fig.height=6}
+reefs |>
+  ggplot(aes(coastal_rain30_mm, weather_gain_vs_core)) +
+  geom_hline(yintercept = 0, colour = 'grey45') +
+  geom_point(
+    aes(colour = region_block, size = era5_wind_calm_fraction), alpha = 0.8
+  ) +
+  geom_text(
+    data = ~ head(.x, 8), aes(label = ReefID),
+    nudge_y = 0.012, size = 3, show.legend = FALSE
+  ) +
+  scale_x_log10() +
+  scale_size_continuous(labels = percent, name = 'Calm fraction') +
+  labs(
+    x = 'ERA5 coastal maximum 30-day rainfall (mm)',
+    y = 'Reduction in absolute error after adding weather',
+    colour = 'Region',
+    title = 'Weather helps most at several wet and calm manta reefs',
+    subtitle = 'Positive values favour the compound-weather BRT'
+  )
+```
+
+```{r manta-reef-table}
+reefs |>
+  transmute(
+    Reef = ReefName, Region = region_block,
+    DHW = round(ann_maxdhw, 2),
+    Observed = round(observed_mortality, 3),
+    `Formal spatial` = round(predicted_mortality_formal_spatial_benchmark, 3),
+    `Core joint BRT` = round(predicted_mortality_joint_core_brt, 3),
+    `Weather joint BRT` = round(predicted_mortality_joint_compound_brt, 3),
+    `Joint BRMS` = round(predicted_mortality_joint_compound_brms, 3),
+    `Rain 30d (mm)` = round(coastal_rain30_mm),
+    `Calm fraction` = percent(era5_wind_calm_fraction, accuracy = 1),
+    `Weather error reduction` = round(weather_gain_vs_core, 3),
+    Disturbance = DISTURBANCE_TYPE,
+    Notes = description
+  ) |>
+  head(25) |>
+  kable(caption = 'Severe manta reefs ranked by weather-related error reduction')
+```
+
+Weather improves several northern and central reefs, including MacGillivray,
+Swinger, South Direction, Hastings, Lizard Island NW, St Crispin, Mackay and
+Eyrie. Hastings is explicitly associated with Jasper. The gain is not confined
+to recorded multiple disturbances, and substantial underprediction remains.
+
+# Sampling diagnostics and interpretation boundary
+
+```{r diagnostics}
+diagnostics |>
+  mutate(
+    `Pass gate` = max_rhat <= 1.01 & min_bulk_ess >= 100 &
+      min_tail_ess >= 100 & divergences == 0 & max_treedepth_hits == 0,
+    across(c(max_rhat, min_bulk_ess, min_tail_ess), ~ round(.x, 3))
+  ) |>
+  select(
+    Target = scheme, Fold = fold,
+    `Maximum R-hat` = max_rhat,
+    `Minimum bulk ESS` = min_bulk_ess,
+    `Minimum tail ESS` = min_tail_ess,
+    Divergences = divergences,
+    `Tree-depth hits` = max_treedepth_hits,
+    `Pass gate`
+  ) |>
+  kable(caption = 'Joint BRMS screening-fold diagnostics')
+```
+
+Several two-chain screening folds exceed the strict R-hat gate, although none
+has divergences or tree-depth failures and the four-chain production fit passes.
+Because the candidate fails predictive promotion regardless, targeted refits
+would not change the decision and are not warranted at this stage.
+
+The evidence currently supports rainfall/calm weather as an additive 2024
+reconstruction sensitivity. It does not yet support calling the inferred
+effect measured salinity, imposing a positive DHW interaction, or changing the
+GBR-wide production route.

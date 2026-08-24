@@ -1,0 +1,5 @@
+candidate,prediction_target,status,reason
+Joint compound BRMS,Future unseen event,Reject,Worse RMSE and severe MAE for all programmes; positive DHW-rainfall synergy not supported.
+Joint compound BRT,Future unseen event,Reject,Weather improves some average errors but worsens severe-tail error and does not beat the routed benchmark.
+Joint compound BRMS,2024 spatial reconstruction,Reject,Does not improve manta or MMP severe spatial error over the formal benchmark.
+Joint compound BRT,2024 spatial reconstruction,Sensitivity only,"Weather ablation improves manta spatial RMSE and severe MAE, but the gain is framework- and programme-specific."

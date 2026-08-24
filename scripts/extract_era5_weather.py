@@ -24,7 +24,6 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
-from shapely import contains_xy
 
 
 EVENT_YEARS = (2016, 2017, 2020, 2022, 2024)
@@ -39,9 +38,13 @@ NATURAL_EARTH_FILE = Path(
 ENVIRONMENT_FILE = Path('data/processed/cheung_recreated_gbr_full.csv')
 OUTPUT_FILE = Path('data/processed/era5_weather_reef_year.csv')
 PART_DIR = Path('data/processed/era5_weather_parts')
-SOURCE = (
+OPEN_METEO_SOURCE = (
     'ECMWF ERA5 0.25-degree hourly reanalysis accessed through the '
     'Open-Meteo Historical Weather API with models=era5'
+)
+AWS_SOURCE = (
+    'ECMWF ERA5 0.25-degree hourly reanalysis; public Earthmover Icechunk '
+    'temporal layout on AWS Open Data'
 )
 SOURCE_DOI = '10.24381/cds.adbb2d47'
 
@@ -109,6 +112,50 @@ def summarise_hourly_weather(hourly):
     return summary
 
 
+def summarise_api_response(response):
+    '''Summarise compact daily rainfall/temperature and hourly wind output.'''
+    wind = pd.DataFrame(response['hourly'])
+    wind['time'] = pd.to_datetime(wind['time'], utc=True)
+    wind = wind.set_index('time').sort_index()
+    daily = pd.DataFrame(response['daily']).rename(
+        columns={
+            'precipitation_sum': 'precipitation',
+            'temperature_2m_mean': 'temperature_mean',
+            'temperature_2m_max': 'temperature_max',
+        }
+    )
+    daily['time'] = pd.to_datetime(daily['time'], utc=True)
+    daily = daily.set_index('time').sort_index()
+    event_year = int(daily.index.max().year)
+    q1_daily = daily.loc[daily.index.year == event_year]
+    december = daily.loc[daily.index.year == event_year - 1]
+    q1_wind = wind.loc[wind.index.year == event_year, 'wind_speed_10m'].dropna()
+    wind_daily = q1_wind.resample('1D').mean().dropna()
+    rolling_7 = q1_daily['precipitation'].rolling(7, min_periods=1).sum()
+    rolling_30 = daily['precipitation'].rolling(30, min_periods=1).sum()
+    return {
+        'period_start': daily.index.min().date().isoformat(),
+        'period_end': daily.index.max().date().isoformat(),
+        'n_hours': int(q1_wind.notna().sum()),
+        'q1_n_days': int(wind_daily.notna().sum()),
+        'rain_december_total': float(december['precipitation'].sum()),
+        'rain_q1_total': float(q1_daily['precipitation'].sum()),
+        'rain_q1_max_1day': float(q1_daily['precipitation'].max()),
+        'rain_q1_max_7day': float(rolling_7.max()),
+        'rain_dec_mar_max_30day': float(rolling_30.max()),
+        'rain_q1_days_ge_20mm': int((q1_daily['precipitation'] >= 20).sum()),
+        'wind_q1_mean': float(q1_wind.mean()),
+        'wind_q1_q10': float(q1_wind.quantile(0.10)),
+        'wind_q1_min': float(q1_wind.min()),
+        'wind_q1_fraction_below_3': float((q1_wind < 3).mean()),
+        'wind_q1_fraction_below_5': float((q1_wind < 5).mean()),
+        'wind_q1_longest_spell_below_3': longest_true_run(wind_daily < 3),
+        'wind_q1_longest_spell_below_5': longest_true_run(wind_daily < 5),
+        'temperature_q1_mean': float(q1_daily['temperature_mean'].mean()),
+        'temperature_q1_max': float(q1_daily['temperature_max'].max()),
+    }
+
+
 def unit_sphere_coordinates(latitude, longitude):
     lat = np.deg2rad(np.asarray(latitude, dtype=float))
     lon = np.deg2rad(np.asarray(longitude, dtype=float))
@@ -128,19 +175,27 @@ def build_land_grid(reef_grid):
         NATURAL_EARTH_FILE.parent.mkdir(parents=True, exist_ok=True)
         print(f'Downloading Natural Earth land mask: {NATURAL_EARTH_URL}')
         urllib.request.urlretrieve(NATURAL_EARTH_URL, NATURAL_EARTH_FILE)
-    land = gpd.read_file(f'zip://{NATURAL_EARTH_FILE.resolve()}')
-    land_geometry = land.geometry.union_all()
-
+    land = gpd.read_file(
+        f'zip://{NATURAL_EARTH_FILE.resolve()}',
+        bbox=(139.0, -27.0, 155.25, -7.75),
+    )
     latitude = np.arange(-27.0, -7.75, ERA5_STEP)
     longitude = np.arange(139.0, 155.25, ERA5_STEP)
     lon_grid, lat_grid = np.meshgrid(longitude, latitude)
-    on_land = contains_xy(land_geometry, lon_grid.ravel(), lat_grid.ravel())
-    land_grid = pd.DataFrame(
+    candidate_grid = gpd.GeoDataFrame(
         {
-            'grid_lat': lat_grid.ravel()[on_land],
-            'grid_lon': lon_grid.ravel()[on_land],
-        }
+            'grid_lat': lat_grid.ravel(),
+            'grid_lon': lon_grid.ravel(),
+        },
+        geometry=gpd.points_from_xy(lon_grid.ravel(), lat_grid.ravel()),
+        crs='EPSG:4326',
     )
+    land_grid = gpd.sjoin(
+        candidate_grid,
+        land[['geometry']],
+        predicate='within',
+        how='inner',
+    )[['grid_lat', 'grid_lon']].drop_duplicates().reset_index(drop=True)
     if land_grid.empty:
         raise RuntimeError('Natural Earth mask produced no land cells near GBR')
 
@@ -157,7 +212,7 @@ def build_land_grid(reef_grid):
     return mapping
 
 
-def fetch_open_meteo_batch(coordinates, event_year, attempts=5):
+def fetch_open_meteo_batch(coordinates, event_year, attempts=8):
     '''Fetch a batch of exact ERA5 grid-cell time series.'''
     start_date = f'{event_year - 1}-12-01'
     end_date = f'{event_year}-03-31'
@@ -166,7 +221,10 @@ def fetch_open_meteo_batch(coordinates, event_year, attempts=5):
         'longitude': ','.join(f'{lon:.2f}' for _, lon in coordinates),
         'start_date': start_date,
         'end_date': end_date,
-        'hourly': 'precipitation,wind_speed_10m,temperature_2m',
+        'hourly': 'wind_speed_10m',
+        'daily': (
+            'precipitation_sum,temperature_2m_mean,temperature_2m_max'
+        ),
         'models': 'era5',
         'cell_selection': 'nearest',
         'wind_speed_unit': 'ms',
@@ -189,14 +247,40 @@ def fetch_open_meteo_batch(coordinates, event_year, attempts=5):
         except (urllib.error.URLError, TimeoutError) as error:
             if attempt == attempts - 1:
                 raise
-            wait_seconds = 2 ** attempt
+            retry_after = None
+            if isinstance(error, urllib.error.HTTPError):
+                retry_after = error.headers.get('Retry-After')
+            if isinstance(error, urllib.error.HTTPError) and error.code == 429:
+                wait_seconds = max(
+                    int(retry_after) if retry_after else 0,
+                    min(15 * (attempt + 1), 120),
+                )
+            else:
+                wait_seconds = min(2 ** attempt, 60)
             print(f'  API retry after {error}: {wait_seconds}s')
             time.sleep(wait_seconds)
     raise RuntimeError('ERA5 request exhausted retries')
 
 
-def extract_grid_year(grid, event_year, batch_size=20):
+def extract_grid_year(
+    grid, event_year, batch_size=20, checkpoint_path=None
+):
     records = []
+    completed = set()
+    if checkpoint_path is not None and checkpoint_path.exists():
+        checkpoint = pd.read_csv(checkpoint_path)
+        records = checkpoint.to_dict('records')
+        completed = set(zip(checkpoint['grid_lat'], checkpoint['grid_lon']))
+        print(
+            f'  Resuming {event_year} with {len(completed)} cells cached',
+            flush=True,
+        )
+    grid = grid.loc[
+        [
+            (lat, lon) not in completed
+            for lat, lon in zip(grid['grid_lat'], grid['grid_lon'])
+        ]
+    ].reset_index(drop=True)
     coordinates = list(zip(grid['grid_lat'], grid['grid_lon']))
     for start in range(0, len(coordinates), batch_size):
         batch = coordinates[start:start + batch_size]
@@ -207,8 +291,7 @@ def extract_grid_year(grid, event_year, batch_size=20):
         )
         responses = fetch_open_meteo_batch(batch, event_year)
         for requested, response in zip(batch, responses):
-            hourly = pd.DataFrame(response['hourly'])
-            summary = summarise_hourly_weather(hourly)
+            summary = summarise_api_response(response)
             summary.update(
                 {
                     'year': event_year,
@@ -216,12 +299,93 @@ def extract_grid_year(grid, event_year, batch_size=20):
                     'grid_lon': requested[1],
                     'returned_lat': response['latitude'],
                     'returned_lon': response['longitude'],
-                    'source': SOURCE,
+                    'source': OPEN_METEO_SOURCE,
                     'source_doi': SOURCE_DOI,
                     'access_route': 'open-meteo-era5-mirror',
                 }
             )
             records.append(summary)
+        if checkpoint_path is not None:
+            pd.DataFrame(records).to_csv(checkpoint_path, index=False)
+        time.sleep(1)
+    return pd.DataFrame(records)
+
+
+def open_aws_era5():
+    '''Open the anonymous temporal ERA5 layout on AWS Open Data.'''
+    try:
+        import icechunk
+        import pcodec  # noqa: F401: import registers the lossless codec
+        import xarray as xr
+    except ImportError as error:
+        raise RuntimeError(
+            'AWS backend requires icechunk and pcodec: '
+            'python -m pip install icechunk pcodec'
+        ) from error
+    storage = icechunk.s3_storage(
+        bucket='earthmover-icechunk-era5',
+        prefix='icechunkV2',
+        region='us-east-1',
+        anonymous=True,
+    )
+    repository = icechunk.Repository.open(storage)
+    session = repository.readonly_session('main')
+    return xr.open_zarr(
+        session.store,
+        group='single/temporal',
+        consolidated=False,
+        chunks=None,
+    )
+
+
+def extract_aws_grid_year(dataset, grid, event_year):
+    '''Extract paired ERA5 cells from the AWS time-series-optimised layout.'''
+    import xarray as xr
+
+    latitude = xr.DataArray(grid['grid_lat'].to_numpy(), dims='cell')
+    longitude = xr.DataArray(grid['grid_lon'].to_numpy(), dims='cell')
+    start = f'{event_year - 1}-12-01T00:00'
+    end = f'{event_year}-03-31T23:00'
+    print(
+        f'  Loading {len(grid)} AWS ERA5 cells for {start}--{end}',
+        flush=True,
+    )
+    subset = dataset[['u10', 'v10', 't2m', 'tp']].sel(
+        valid_time=slice(start, end),
+        latitude=latitude,
+        longitude=longitude,
+    ).load()
+    times = pd.to_datetime(subset['valid_time'].values)
+    u10 = subset['u10'].values
+    v10 = subset['v10'].values
+    t2m = subset['t2m'].values
+    precipitation = subset['tp'].values
+    records = []
+    for cell in range(len(grid)):
+        hourly = pd.DataFrame(
+            {
+                'time': times,
+                'precipitation': precipitation[:, cell] * 1000,
+                'wind_speed_10m': np.hypot(
+                    u10[:, cell], v10[:, cell]
+                ),
+                'temperature_2m': t2m[:, cell] - 273.15,
+            }
+        )
+        summary = summarise_hourly_weather(hourly)
+        summary.update(
+            {
+                'year': event_year,
+                'grid_lat': grid.iloc[cell]['grid_lat'],
+                'grid_lon': grid.iloc[cell]['grid_lon'],
+                'returned_lat': grid.iloc[cell]['grid_lat'],
+                'returned_lon': grid.iloc[cell]['grid_lon'],
+                'source': AWS_SOURCE,
+                'source_doi': SOURCE_DOI,
+                'access_route': 'aws-public-icechunk-temporal',
+            }
+        )
+        records.append(summary)
     return pd.DataFrame(records)
 
 
@@ -232,7 +396,7 @@ def prefix_summary(summary, prefix):
     )
 
 
-def main(batch_size=20):
+def main(batch_size=20, backend='aws'):
     environment = pd.read_csv(ENVIRONMENT_FILE)
     reef_columns = ['LABEL_ID', 'LOC_NAME_S', 'lon', 'lat']
     reefs = environment[reef_columns].drop_duplicates().reset_index(drop=True)
@@ -263,14 +427,40 @@ def main(batch_size=20):
 
     PART_DIR.mkdir(parents=True, exist_ok=True)
     grid_years = []
+    aws_dataset = open_aws_era5() if backend == 'aws' else None
+    expected_route = (
+        'aws-public-icechunk-temporal'
+        if backend == 'aws' else 'open-meteo-era5-mirror'
+    )
     for year in EVENT_YEARS:
         part_path = PART_DIR / f'era5_grid_{year}.csv'
+        cached_route = None
         if part_path.exists():
+            cached_header = pd.read_csv(
+                part_path, usecols=['access_route'], nrows=1
+            )
+            if len(cached_header):
+                cached_route = cached_header['access_route'].iloc[0]
+        if part_path.exists() and cached_route == expected_route:
             print(f'Loading cached ERA5 summaries: {part_path}')
             grid_years.append(pd.read_csv(part_path))
             continue
-        extracted = extract_grid_year(all_grid, year, batch_size=batch_size)
+        if backend == 'aws':
+            extracted = extract_aws_grid_year(
+                aws_dataset, all_grid, year
+            )
+            checkpoint_path = None
+        else:
+            checkpoint_path = part_path.with_suffix('.partial.csv')
+            extracted = extract_grid_year(
+                all_grid,
+                year,
+                batch_size=batch_size,
+                checkpoint_path=checkpoint_path,
+            )
         extracted.to_csv(part_path, index=False)
+        if checkpoint_path is not None and checkpoint_path.exists():
+            checkpoint_path.unlink()
         grid_years.append(extracted)
     grid_summary = pd.concat(grid_years, ignore_index=True)
 
@@ -312,5 +502,8 @@ def main(batch_size=20):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', type=int, default=20)
+    parser.add_argument(
+        '--backend', choices=('aws', 'open-meteo'), default='aws'
+    )
     arguments = parser.parse_args()
-    main(batch_size=arguments.batch_size)
+    main(batch_size=arguments.batch_size, backend=arguments.backend)

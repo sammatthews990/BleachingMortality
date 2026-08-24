@@ -3,7 +3,8 @@
 The source ends on 17 January 2024. Values for 2024 are therefore retained as
 partial-period observations and are never labelled complete Q1 exposure.
 Freshwater exposure follows the AIMS definition: daily salinity deficit below
-26 or 28 PSU, accumulated in PSU-days.
+26, 28, or 30 PSU, accumulated in PSU-days. Thirty PSU is the primary
+screening threshold; 28 and 26 PSU retain the more severe sensitivity levels.
 '''
 
 from pathlib import Path
@@ -37,7 +38,7 @@ def summarise_salinity(salinity_daily):
         observed, 0.10, axis=0
     )
     result['salinity_min'][valid_columns] = np.nanmin(observed, axis=0)
-    for threshold in (26.0, 28.0):
+    for threshold in (26.0, 28.0, 30.0):
         deficit = np.where(valid, np.maximum(threshold - salinity, 0), np.nan)
         exposure = np.nansum(deficit, axis=0)
         exposure[n_days == 0] = np.nan
@@ -93,7 +94,14 @@ def main():
     outputs = []
     for year in EVENT_YEARS:
         part_path = part_dir / f'ereefs_salinity_{year}.csv'
-        if part_path.exists():
+        required_cached_columns = {
+            'freshwater_exposure_30', 'days_below_30'
+        }
+        cached_columns = (
+            set(pd.read_csv(part_path, nrows=0).columns)
+            if part_path.exists() else set()
+        )
+        if part_path.exists() and required_cached_columns <= cached_columns:
             print(f'Loading cached salinity for {year}: {part_path}', flush=True)
             outputs.append(pd.read_csv(part_path))
             continue
@@ -176,6 +184,7 @@ def main():
         salinity_days=('salinity_available_days', 'first'),
         complete_q1=('salinity_complete_q1', 'first'),
         mean_salinity=('salinity_mean', 'mean'),
+        reefs_exposed_30=('freshwater_exposure_30', lambda x: int((x > 0).sum())),
         reefs_exposed_28=('freshwater_exposure_28', lambda x: int((x > 0).sum())),
     )
     print(coverage)

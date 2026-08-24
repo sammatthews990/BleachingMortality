@@ -294,10 +294,16 @@ load("Data/aims_ltmp/aims_ltmp.RData")
 dat.AIMSRef <- read.csv("Data/AIMS-Reef_Reference.csv") %>%
     rename(Reef_Name = AIMS_REEF_NAME)
 
+dat.Ref.Exact <- dat.AIMSRef %>%
+    mutate(AIMS_REEF_NAME_Exact = toupper(trimws(Reef_Name))) %>%
+    add_count(AIMS_REEF_NAME_Exact, name = "exact_matches") %>%
+    filter(exact_matches == 1) %>%
+    ungroup()
+
 dat.Ref.Clean <- dat.AIMSRef %>%
     mutate(AIMS_REEF_NAME_Clean = gsub(" REEF(S)?| ISLAND(S)?| IS", "", toupper(Reef_Name))) %>%
-    group_by(AIMS_REEF_NAME_Clean) %>%
-    slice(1) %>%
+    add_count(AIMS_REEF_NAME_Clean, name = "clean_matches") %>%
+    filter(clean_matches == 1) %>%
     ungroup()
 
 # Load complete unified disturbance dataset (from AIMS API)
@@ -305,12 +311,26 @@ Disturbances_raw <- read.csv("data/aims_ltmp/reef_disturbance.csv")
 
 Disturbances_clean <- Disturbances_raw %>%
     mutate(
+        Reef_Exact = toupper(trimws(aims_reef_name)),
         Reef_Clean = gsub(" REEF(S)?| ISLAND(S)?| IS", "", toupper(aims_reef_name))
     ) %>%
-    left_join(select(dat.Ref.Clean, AIMS_REEF_NAME_Clean, ReefName, ReefID),
+    left_join(
+        dat.Ref.Exact %>% transmute(
+            AIMS_REEF_NAME_Exact,
+            ReefName_exact = ReefName, ReefID_exact = ReefID
+        ),
+        by = c("Reef_Exact" = "AIMS_REEF_NAME_Exact")
+    ) %>%
+    left_join(
+        dat.Ref.Clean %>% transmute(
+            AIMS_REEF_NAME_Clean,
+            ReefName_clean = ReefName, ReefID_clean = ReefID
+        ),
         by = c("Reef_Clean" = "AIMS_REEF_NAME_Clean")
     ) %>%
     mutate(
+        ReefName = coalesce(ReefName_exact, ReefName_clean),
+        ReefID = coalesce(ReefID_exact, ReefID_clean),
         ReefName = case_when(
             toupper(aims_reef_name) == "FRANKLAND ISLANDS" & reef_zone == "East" ~ "Normanby-Mabel Reef (17-012)",
             toupper(aims_reef_name) == "FRANKLAND ISLANDS" & reef_zone == "West" ~ "Round-Russell Reef (17-013)",
@@ -1137,7 +1157,7 @@ reefs_join <- st_join(reefs_centroids, gbr)
 
 dat.mod.mant <- df.MANT %>%
     filter(Lag < 3, project_code != "MMP") %>%
-    left_join(select(Disturbances_mant, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description),
+    left_join(select(Disturbances_mant, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description, tooltip),
         by = c("ReefName", "report_year")
     ) %>%
     filter(
@@ -1542,18 +1562,43 @@ df.AIMS.Bent <- df.AIMS.full |>
     ) |>
     select(Reef_Name, Reef_Name_Clean, project_code, report_year, date, depth, lower:median, mean, reef_zone, id, shelf, reefpage_category)
 
-# Create a cleaned version of the reference for matching, ensuring uniqueness
+# Use exact names first. Cleaned names are only eligible when the cleaned key
+# is unique, so MACKAY REEF and MACKAY REEFS can never collapse silently.
+dat.Ref.Exact <- dat.AIMSRef %>%
+    mutate(AIMS_REEF_NAME_Exact = toupper(trimws(Reef_Name))) %>%
+    add_count(AIMS_REEF_NAME_Exact, name = "exact_matches") %>%
+    filter(exact_matches == 1) %>%
+    ungroup()
+
 dat.Ref.Clean <- dat.AIMSRef %>%
     mutate(AIMS_REEF_NAME_Clean = gsub(" REEF(S)?| ISLAND| IS", "", toupper(Reef_Name))) %>%
-    group_by(AIMS_REEF_NAME_Clean) %>%
-    slice(1) %>% # Take the first match to avoid many-to-many explosion
+    add_count(AIMS_REEF_NAME_Clean, name = "clean_matches") %>%
+    filter(clean_matches == 1) %>%
     ungroup()
 
 df.BENT.HC <- df.AIMS.Bent |>
-    left_join(select(dat.Ref.Clean, AIMS_REEF_NAME_Clean, ReefID, ReefName, SECT_NAME, SECTOR),
+    mutate(Reef_Name_Exact = toupper(trimws(Reef_Name))) %>%
+    left_join(
+        dat.Ref.Exact %>% transmute(
+            AIMS_REEF_NAME_Exact,
+            ReefID_exact = ReefID, ReefName_exact = ReefName,
+            SECT_NAME_exact = SECT_NAME, SECTOR_exact = SECTOR
+        ),
+        by = c("Reef_Name_Exact" = "AIMS_REEF_NAME_Exact")
+    ) %>%
+    left_join(
+        dat.Ref.Clean %>% transmute(
+            AIMS_REEF_NAME_Clean,
+            ReefID_clean = ReefID, ReefName_clean = ReefName,
+            SECT_NAME_clean = SECT_NAME, SECTOR_clean = SECTOR
+        ),
         by = c("Reef_Name_Clean" = "AIMS_REEF_NAME_Clean")
     ) %>%
     mutate(
+        ReefID = coalesce(ReefID_exact, ReefID_clean),
+        ReefName = coalesce(ReefName_exact, ReefName_clean),
+        SECT_NAME = coalesce(SECT_NAME_exact, SECT_NAME_clean),
+        SECTOR = coalesce(SECTOR_exact, SECTOR_clean),
         ReefName = case_when(
             Reef_Name == "FRANKLAND ISLANDS" & reef_zone == "East" ~ "Normanby-Mabel Reef (17-012)",
             Reef_Name == "FRANKLAND ISLANDS" & reef_zone == "West" ~ "Round-Russell Reef (17-013)",
@@ -1649,7 +1694,7 @@ df.BENT.HC <- df.BENT.HC |>
 
 dat.mod.bent.hc <- df.BENT.HC %>%
     filter(Lag < 3) %>%
-    left_join(select(Disturbances_bent, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description),
+    left_join(select(Disturbances_bent, ReefName, report_year, DISTURBANCE_TYPE, storm_name, description, tooltip),
         by = c("ReefName", "report_year")
     ) %>%
     filter(

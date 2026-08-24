@@ -1,0 +1,9 @@
+predictor,n,spearman_with_residual
+sst_maxdhw,53,0.32893730741214705
+prop_acropora_pre,53,0.2589919388526527
+wqc_freqcc12,53,-0.2316610210579966
+wqc_prior10_percentile,53,-0.1489438682248402
+log_coastal_rain30,53,-0.2830204277849916
+era5_wind_calm_fraction,53,-0.39585915727276655
+cyc_maxHrs4mw,53,0.2900424344707327
+cot_idwmeanpertow,49,-0.09662122004666482

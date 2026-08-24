@@ -1,0 +1,523 @@
+---
+title: 'Where do the mortality models fail?'
+subtitle: 'Formal event-held-out reef-year residual assessment'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+input_dir <- '../output/prediction_outliers'
+primary <- read_csv(
+  file.path(input_dir, 'formal_ensemble_residuals.csv'),
+  show_col_types = FALSE
+)
+priority <- read_csv(
+  file.path(input_dir, 'priority_reef_years.csv'),
+  show_col_types = FALSE
+)
+event_summary <- read_csv(
+  file.path(input_dir, 'event_outlier_summary.csv'),
+  show_col_types = FALSE
+)
+event_weather <- read_csv(
+  '../data/processed/era5_weather_reef_year.csv',
+  show_col_types = FALSE
+) |>
+  group_by(year) |>
+  summarise(
+    `Median coastal Q1 rain` = median(era5_coastal_rain_q1_total),
+    `Median max 30d rain` = median(era5_coastal_rain_dec_mar_max_30day),
+    `Median reef wind` = median(era5_reef_wind_q1_mean),
+    `Median calm fraction` = median(era5_reef_wind_q1_fraction_below_3),
+    .groups = 'drop'
+  )
+family_comparison <- read_csv(
+  file.path(input_dir, 'beta_binomial_family_comparison.csv'),
+  show_col_types = FALSE
+)
+binomial_diagnostics <- read_csv(
+  '../output/formal_models/binomial_diagnostics.csv',
+  show_col_types = FALSE
+)
+family_rows <- read_csv(
+  file.path(input_dir, 'all_cross_fitted_residuals.csv'),
+  show_col_types = FALSE
+) |>
+  filter(learner %in% c('brms', 'brms_binomial_olre')) |>
+  mutate(
+    family = recode(
+      learner,
+      brms = 'Primary beta-family BRMS',
+      brms_binomial_olre = 'Binomial-OLRE sensitivity'
+    )
+  )
+family_overall <- family_rows |>
+  group_by(programme_key, family) |>
+  summarise(
+    n = n(),
+    MAE = mean(absolute_error),
+    RMSE = sqrt(mean(residual^2)),
+    `Predictive R2` = 1 - sum(residual^2) /
+      sum((observed_mortality - mean(observed_mortality))^2),
+    `Mean observed - predicted` = mean(residual),
+    `Severe-loss MAE` = mean(
+      absolute_error[observed_mortality >= 0.2], na.rm = TRUE
+    ),
+    `Low-DHW observed - predicted` = mean(
+      residual[ann_maxdhw < 4], na.rm = TRUE
+    ),
+    .groups = 'drop'
+  )
+
+programme_labels <- c(
+  ltmp = 'LTMP benthic', manta = 'Manta tow', mmp = 'MMP inshore'
+)
+primary <- primary |>
+  mutate(
+    programme = factor(
+      programme_labels[programme_key], levels = unname(programme_labels)
+    ),
+    direction = if_else(
+      residual >= 0, 'Underestimated mortality', 'Overestimated mortality'
+    )
+  )
+priority <- priority |>
+  mutate(programme = programme_labels[programme_key])
+```
+
+# Interpretation
+
+Residuals are calculated from predictions made when the reef-year's entire
+bleaching event was excluded from model fitting. A positive residual means the
+model underestimated mortality; a negative residual means it overestimated
+mortality. This is intentionally stricter than examining fitted residuals.
+
+For each programme, learner, and held-out event, the 5th and 95th percentile
+thresholds come only from cross-fitted residuals for the other events. A row is
+therefore unusual relative to errors the same model made in other bleaching
+events. Flags identify cases for ecological diagnosis and do **not** remove
+them from model fitting.
+
+# Event calibration
+
+```{r event-calibration-table}
+event_summary |>
+  mutate(
+    programme = programme_labels[programme_key],
+    across(
+      c(
+        observed_mean, predicted_mean, bias_observed_minus_predicted, mae,
+        soi_dec_mar_mean
+      ),
+      ~ round(.x, 3)
+    ),
+    roni_bleaching_summer_mean = round(roni_bleaching_summer_mean, 2),
+    soi_dec_mar_mean = round(soi_dec_mar_mean, 1)
+  ) |>
+  select(
+    Programme = programme, Event = event_year, n,
+    `Unique reefs` = unique_reefs,
+    ENSO = enso_category,
+    RONI = roni_bleaching_summer_mean,
+    SOI = soi_dec_mar_mean,
+    `Observed mean` = observed_mean,
+    `Predicted mean` = predicted_mean,
+    `Observed - predicted` = bias_observed_minus_predicted,
+    MAE = mae,
+    `Underestimated outliers` = underestimated_outliers,
+    `Overestimated outliers` = overestimated_outliers,
+    `Severe 2024 misses` = severe_2024_underpredictions,
+    `Severe 2024 reefs` = severe_2024_unique_reefs,
+    `Low-DHW overpredictions` = low_dhw_overpredictions,
+    `Low-DHW reefs` = low_dhw_unique_reefs
+  ) |>
+  kable(caption = 'Event-held-out calibration of the formal BRMS--BRT ensemble')
+```
+
+```{r enso-event-error, fig.width=9.5, fig.height=5.5}
+event_summary |>
+  mutate(programme = programme_labels[programme_key]) |>
+  ggplot(
+    aes(
+      roni_bleaching_summer_mean,
+      bias_observed_minus_predicted,
+      colour = factor(event_year)
+    )
+  ) +
+  geom_hline(yintercept = 0, colour = 'grey40') +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = 3, colour = 'grey60') +
+  geom_point(size = 3) +
+  geom_text(aes(label = event_year), nudge_y = 0.012, show.legend = FALSE) +
+  facet_wrap(~ programme) +
+  scale_colour_viridis_d(option = 'C', guide = 'none') +
+  labs(
+    x = 'Mean DJF--FMA Relative Oceanic Nino Index',
+    y = 'Event mean observed - predicted mortality',
+    title = 'ENSO state and held-out event calibration',
+    subtitle = paste(
+      'Dashed lines mark +/-0.5 phase thresholds;',
+      'no trend is fitted to only five events'
+    )
+  )
+```
+
+The event sequence does not reduce to one ENSO gradient: 2020 is neutral and
+2022 is Moderate La Nina, although both have lower mortality than predicted,
+while 2024 is Weak El Nino with much higher-than-predicted mortality in manta
+and MMP. RONI is therefore a candidate context modifier, not a replacement for
+local rainfall, wind, community composition, or thermal history.
+
+```{r enso-weather-context}
+event_summary |>
+  distinct(
+    event_year, enso_category, roni_bleaching_summer_mean, soi_dec_mar_mean
+  ) |>
+  left_join(event_weather, by = c('event_year' = 'year')) |>
+  mutate(
+    across(where(is.numeric), ~ round(.x, 2)),
+    `Median calm fraction` = percent(`Median calm fraction`, accuracy = 1)
+  ) |>
+  select(
+    Event = event_year, ENSO = enso_category,
+    RONI = roni_bleaching_summer_mean, SOI = soi_dec_mar_mean,
+    everything()
+  ) |>
+  kable(caption = 'ENSO and GBR-wide ERA5 weather context by event')
+```
+
+GBR-wide rainfall is not a monotonic proxy for ENSO in these five events. For
+example, 2022 is the only Moderate La Nina bleaching summer, but its median Q1
+coastal rainfall is lower than in neutral 2017 and 2020 and Weak El Nino 2024.
+This supports keeping local rainfall and basin-scale ENSO as distinct candidate
+variables rather than using one to stand in for the other.
+
+```{r observed-predicted, fig.width=10, fig.height=5.5}
+ggplot(primary, aes(predicted_mortality, observed_mortality)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey40', linetype = 2) +
+  geom_point(aes(colour = factor(event_year)), alpha = 0.7, size = 1.8) +
+  facet_wrap(~ programme) +
+  coord_equal(xlim = c(0, 0.8), ylim = c(0, 0.8)) +
+  scale_colour_viridis_d(option = 'C', name = 'Event') +
+  labs(
+    x = 'Event-held-out predicted mortality',
+    y = 'Observed mortality',
+    title = 'Points above the diagonal are underestimated'
+  )
+```
+
+```{r spatial-2024-errors, fig.width=10, fig.height=6.5}
+primary |>
+  filter(event_year == 2024) |>
+  ggplot(aes(lon, lat)) +
+  geom_point(
+    aes(colour = residual, size = observed_mortality),
+    alpha = 0.78
+  ) +
+  facet_wrap(~ programme) +
+  coord_quickmap() +
+  scale_colour_gradient2(
+    low = '#2166AC', mid = 'grey90', high = '#B2182B', midpoint = 0,
+    name = 'Observed -\npredicted'
+  ) +
+  scale_size_continuous(
+    range = c(1.2, 5.5), labels = label_percent(), name = 'Observed\nmortality'
+  ) +
+  labs(
+    x = 'Longitude', y = 'Latitude',
+    title = 'Spatial pattern of held-out 2024 errors',
+    subtitle = 'Red sites have more mortality than the model predicted'
+  )
+```
+
+# Does error depend on DHW?
+
+```{r residual-dhw, fig.width=10, fig.height=6}
+ggplot(primary, aes(ann_maxdhw, residual)) +
+  geom_hline(yintercept = 0, colour = 'grey35') +
+  geom_hline(yintercept = c(-0.1, 0.1), linetype = 3, colour = 'grey55') +
+  geom_vline(xintercept = 4, linetype = 2, colour = '#2166AC') +
+  geom_point(aes(colour = factor(event_year)), alpha = 0.72, size = 1.8) +
+  facet_wrap(~ programme, scales = 'free_x') +
+  scale_colour_viridis_d(option = 'C', name = 'Event') +
+  labs(
+    x = 'Annual maximum DHW',
+    y = 'Observed - predicted mortality',
+    title = 'Signed prediction errors across thermal stress',
+    subtitle = 'Positive: mortality underestimated; dashed vertical line: 4 DHW'
+  )
+```
+
+# Priority ecological diagnoses
+
+Two prespecified flags target the concerns motivating this assessment:
+
+- **Severe 2024 miss:** observed mortality at least 20%, underestimated by at
+  least 10 percentage points and beyond the other-event upper residual tail.
+- **Low-DHW overprediction:** DHW below 4 and mortality overestimated by at
+  least 10 percentage points and beyond the other-event lower residual tail.
+
+```{r priority-counts}
+priority |>
+  summarise(
+    `Severe 2024 reef-years` = sum(severe_2024_underprediction),
+    `Low-DHW reef-years` = sum(low_dhw_overprediction),
+    `All core models underestimate` = sum(
+      core_model_consensus == 'all_three_underestimate'
+    ),
+    `All core models overestimate` = sum(
+      core_model_consensus == 'all_three_overestimate'
+    )
+  ) |>
+  pivot_longer(everything(), names_to = 'Flag', values_to = 'Reef-years') |>
+  kable()
+```
+
+```{r severe-table}
+priority |>
+  filter(severe_2024_underprediction) |>
+  arrange(desc(residual)) |>
+  transmute(
+    Programme = programme,
+    Reef = ReefName,
+    Region = region_block,
+    DHW = round(ann_maxdhw, 1),
+    Observed = round(observed_mortality, 3),
+    Predicted = round(predicted_mortality, 3),
+    `Observed - predicted` = round(residual, 3),
+    `% Acropora before` = percent(prop_acropora_pre, accuracy = 0.1),
+    `Freshwater-risk percentile` = percent(
+      freshwater_risk30_percentile, accuracy = 0.1
+    ),
+    `Partial eReefs <30 PSU` = partial_ereefs_flood30,
+    `Coastal rain max 30d` = round(era5_coastal_rain_max_30day),
+    `ERA5 mean wind` = round(era5_wind_mean, 2),
+    `Calm-day fraction` = percent(era5_wind_calm_fraction, accuracy = 1),
+    Disturbance = DISTURBANCE_TYPE,
+    `Core-model agreement` = core_model_consensus
+  ) |>
+  head(30) |>
+  kable(caption = 'Largest severe-mortality underpredictions in 2024')
+```
+
+```{r severe-region-context}
+priority |>
+  filter(severe_2024_underprediction) |>
+  group_by(programme, region_block) |>
+  summarise(
+    `Reef-years` = n(),
+    Observed = mean(observed_mortality),
+    Predicted = mean(predicted_mortality),
+    DHW = mean(ann_maxdhw),
+    `Pre-event Acropora` = mean(prop_acropora_pre, na.rm = TRUE),
+    `Coastal rain max 30d` = mean(
+      era5_coastal_rain_max_30day, na.rm = TRUE
+    ),
+    `Mean wind` = mean(era5_wind_mean, na.rm = TRUE),
+    .groups = 'drop'
+  ) |>
+  mutate(
+    across(c(Observed, Predicted, DHW, `Pre-event Acropora`), ~ round(.x, 3)),
+    `Coastal rain max 30d` = round(`Coastal rain max 30d`),
+    `Mean wind` = round(`Mean wind`, 2)
+  ) |>
+  kable(caption = 'Environmental context of severe 2024 misses by region')
+```
+
+These summaries separate two candidate failure modes without treating either
+as proven causation: northern and central misses coincide with high coastal
+rainfall, whereas southern misses combine higher DHW with high pre-event
+Acropora composition. Both mechanisms should therefore be tested in the next
+blocked refit rather than represented by a single steeper DHW curve.
+
+```{r low-dhw-table}
+priority |>
+  filter(low_dhw_overprediction) |>
+  arrange(residual) |>
+  transmute(
+    Programme = programme,
+    Event = event_year,
+    Reef = ReefName,
+    Region = region_block,
+    DHW = round(ann_maxdhw, 1),
+    Observed = round(observed_mortality, 3),
+    Predicted = round(predicted_mortality, 3),
+    `Observed - predicted` = round(residual, 3),
+    `% Acropora before` = percent(prop_acropora_pre, accuracy = 0.1),
+    `Coastal rain max 30d` = round(era5_coastal_rain_max_30day),
+    `ERA5 mean wind` = round(era5_wind_mean, 2),
+    `Calm-day fraction` = percent(era5_wind_calm_fraction, accuracy = 1),
+    Disturbance = DISTURBANCE_TYPE,
+    `Core-model agreement` = core_model_consensus
+  ) |>
+  head(30) |>
+  kable(caption = 'Largest overpredictions below 4 DHW')
+```
+
+The strict large-error rule identifies few individual low-DHW reefs, but the
+event-calibration table shows a broader smaller bias: the ensemble overpredicts
+mean mortality in the low-mortality 2020 and 2022 events for LTMP and manta,
+and in the very small 2022 MMP sample. This supports testing a sharper
+occurrence boundary or lower background component, while keeping that task
+separate from the missing severe-2024 mechanism.
+
+The December--March SOI separates the La Nina-like 2022 event from neutral 2020,
+so it cannot by itself explain why both events had lower mortality than
+predicted. It remains a useful atmospheric cross-check because SOI reflects the
+circulation relevant to Australian rainfall. In 2024, mean summer RONI is
+El Nino while mean SOI is neutral/mixed, so oceanic and atmospheric indicators
+should not be treated as interchangeable.
+
+# Complete hand-off table
+
+The machine-readable file
+`output/prediction_outliers/priority_reef_years.csv` contains the full context,
+including descriptions, pre-event cover, Acropora composition, individual BRMS
+and BRT residuals, and model-consensus flags. It is the appropriate table for
+adding hypothesised ecological mechanisms such as freshwater exposure,
+community susceptibility, unrecorded disturbance, or unusual prior exposure.
+The companion `priority_observation_rows.csv` retains every contributing survey
+row; `priority_reef_years.csv` selects the largest absolute error within each
+programme--reef--event and records its number of flagged observations.
+
+# Beta versus binomial response family
+
+The binomial comparison uses 100 pseudo-trials solely to put the estimated
+proportions on a common binomial scale. An observation-level random effect
+absorbs extra-binomial variation. It is therefore a response-family
+sensitivity, not a claim that every survey observed exactly 100 independent
+colonies.
+
+```{r binomial-diagnostics}
+failed_binomial_diagnostics <- binomial_diagnostics |>
+  filter(
+    max_rhat > 1.01 | min_bulk_ess < 100 | min_tail_ess < 100 |
+      divergences > 0 | max_treedepth_hits > 0
+  )
+
+failed_binomial_diagnostics |>
+  mutate(across(c(max_rhat, min_bulk_ess, min_tail_ess), ~ round(.x, 3))) |>
+  select(
+    Programme = programme_key, Event = fold,
+    `Maximum R-hat` = max_rhat,
+    `Minimum bulk ESS` = min_bulk_ess,
+    `Minimum tail ESS` = min_tail_ess,
+    Divergences = divergences,
+    `Tree-depth hits` = max_treedepth_hits
+  ) |>
+  kable(caption = 'Binomial folds that fail the prespecified diagnostic gate')
+
+if (nrow(failed_binomial_diagnostics) == 0) {
+  cat('All binomial sensitivity folds pass the diagnostic gate.')
+} else {
+  cat(paste(
+    'The binomial sensitivity is not eligible for model promotion because',
+    'at least one held-out fold remains diagnostically unresolved.'
+  ))
+}
+```
+
+```{r family-comparison}
+family_overall |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    across(where(is.numeric), ~ round(.x, 3))
+  ) |>
+  select(Programme, Family = family, n, everything(), -programme_key) |>
+  kable(caption = 'Overall event-held-out response-family comparison')
+
+family_comparison |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Family = recode(
+      learner,
+      brms = 'Primary beta-family BRMS',
+      brms_binomial_olre = 'Binomial-OLRE sensitivity'
+    ),
+    across(
+      c(
+        observed_mean, predicted_mean, bias_observed_minus_predicted,
+        mae, rmse, severe_mae, low_dhw_bias
+      ),
+      ~ round(.x, 3)
+    )
+  ) |>
+  select(
+    Programme, Family, Event = event_year,
+    `Observed mean` = observed_mean,
+    `Predicted mean` = predicted_mean,
+    `Observed - predicted` = bias_observed_minus_predicted,
+    MAE = mae, RMSE = rmse, `Severe-loss MAE` = severe_mae,
+    `Low-DHW observed - predicted` = low_dhw_bias
+  ) |>
+  kable(caption = 'Like-for-like event-held-out family sensitivity')
+```
+
+```{r family-2024-summary}
+family_comparison |>
+  filter(event_year == 2024) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Family = recode(
+      learner,
+      brms = 'Primary beta-family BRMS',
+      brms_binomial_olre = 'Binomial-OLRE sensitivity'
+    ),
+    across(
+      c(observed_mean, predicted_mean, bias_observed_minus_predicted, rmse),
+      ~ round(.x, 3)
+    )
+  ) |>
+  select(
+    Programme, Family, `Observed 2024` = observed_mean,
+    `Predicted 2024` = predicted_mean,
+    `Observed - predicted` = bias_observed_minus_predicted,
+    RMSE = rmse
+  ) |>
+  kable(caption = 'Direct comparison for the held-out 2024 event')
+```
+
+```{r family-residual-dhw, fig.width=10, fig.height=6.5}
+ggplot(
+  family_rows,
+  aes(ann_maxdhw, residual, colour = family)
+) +
+  geom_hline(yintercept = 0, colour = 'grey35') +
+  geom_vline(xintercept = 4, linetype = 2, colour = 'grey55') +
+  geom_point(alpha = 0.18, size = 1) +
+  geom_smooth(method = 'loess', se = TRUE, linewidth = 0.9) +
+  facet_grid(programme_key ~ event_year, scales = 'free_x') +
+  scale_colour_manual(values = c('#2166AC', '#B2182B')) +
+  labs(
+    x = 'Annual maximum DHW',
+    y = 'Observed - predicted mortality',
+    colour = 'Response family',
+    title = 'Response-family errors across DHW and held-out events',
+    subtitle = paste(
+      'Positive values are underprediction; smooths are diagnostics,',
+      'not fitted ecological response curves'
+    )
+  )
+```
+
+Because the response is loss relative to estimated pre-event coral cover, not
+a count of independent dead colonies, the binomial model cannot use a literal
+survey denominator. Its 100 pseudo-trials and observation-level random effect
+make this a useful shape sensitivity only. Model promotion still depends on
+held-out predictive performance and clean sampling diagnostics. The current
+manta-2022 fold has no divergences or tree-depth hits, but its reef-level
+standard-deviation parameter remains above the R-hat gate after stricter
+sampling; binomial results are therefore interpreted but not promoted.

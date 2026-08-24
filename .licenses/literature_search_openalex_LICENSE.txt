@@ -1,0 +1,3 @@
+Notification Timestamp: 2026-08-23T23:30:00Z
+
+The user has been notified to check the terms at https://developers.openalex.org/ and to always check the license of the papers retrieved by the literature-search-openalex skill for any restrictions.

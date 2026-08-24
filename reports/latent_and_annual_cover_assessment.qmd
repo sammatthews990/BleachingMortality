@@ -1,0 +1,404 @@
+---
+title: 'Shared latent mortality and annual coral-cover dynamics'
+subtitle: 'Operational validation of programme calibration and net annual change'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+latent_dir <- '../output/latent_mortality'
+change_dir <- '../output/annual_coral_change'
+
+latent_metrics <- read_csv(
+  file.path(latent_dir, 'model_comparison_metrics.csv'),
+  show_col_types = FALSE
+)
+latent_predictions <- read_csv(
+  file.path(latent_dir, 'model_comparison_predictions.csv'),
+  show_col_types = FALSE
+)
+latent_diagnostics <- read_csv(
+  file.path(latent_dir, 'latent_diagnostics.csv'),
+  show_col_types = FALSE
+)
+latent_fit <- read_csv(
+  file.path(latent_dir, 'latent_fit_summary.csv'),
+  show_col_types = FALSE
+)
+latent_effects <- read_csv(
+  file.path(latent_dir, 'latent_production_effects.csv'),
+  show_col_types = FALSE
+)
+overlap <- read_csv(
+  file.path(latent_dir, 'programme_overlap.csv'),
+  show_col_types = FALSE
+)
+agreement <- read_csv(
+  file.path(latent_dir, 'ltmp_manta_agreement.csv'),
+  show_col_types = FALSE
+)
+
+transitions <- readRDS('../data/processed/annual_coral_transitions.rds')
+transition_manifest <- read_csv(
+  '../data/processed/annual_coral_transitions_manifest.csv',
+  show_col_types = FALSE
+)
+change_metrics <- read_csv(
+  file.path(change_dir, 'annual_change_metrics.csv'),
+  show_col_types = FALSE
+)
+change_predictions <- read_csv(
+  file.path(change_dir, 'annual_change_predictions.csv'),
+  show_col_types = FALSE
+)
+importance <- read_csv(
+  file.path(change_dir, 'annual_change_importance.csv'),
+  show_col_types = FALSE
+)
+change_outliers <- read_csv(
+  file.path(change_dir, 'annual_change_outliers.csv'),
+  show_col_types = FALSE
+)
+cover_bins <- read_csv(
+  file.path(change_dir, 'change_by_initial_cover.csv'),
+  show_col_types = FALSE
+)
+
+scheme_labels <- c(
+  leave_one_event_out = 'Unseen bleaching event',
+  reef_blocked_2024 = 'Unseen reefs in 2024',
+  recent_year_holdout = 'Unseen recent year',
+  reef_blocked_5fold = 'Unseen reefs, all years',
+  forward_2024_2025 = 'Forward 2024-25'
+)
+```
+
+# Conclusions
+
+The shared latent ecological model is now implemented, but it should **not
+replace the current prediction ensemble**. It improves MMP transfer, where
+programme calibration is most needed, but worsens LTMP and manta prediction
+and trails the weather--RRN BRT overall. It is therefore retained as an MMP
+calibration and ensemble candidate.
+
+The annual coral-cover target is worth pursuing. A reproducible dataset now
+contains 3,089 approximately annual transitions, including both gains and
+losses. Predicting change avoids the denominator instability of relative
+mortality at low cover and provides post-season coral cover directly. The
+initial models are useful benchmarks, not yet a production state model:
+
+- a growth/environment linear model slightly improves temporal and forward
+  cover RMSE over persistence;
+- a change BRT improves transfer to completely unseen reefs;
+- the change BRT captures much of the GBR-wide mean 2024 decline but not its
+  reef-level extremes.
+
+The next dynamic model should separate expected growth from disturbance loss
+instead of fitting one unrestricted change surface.
+
+# Shared latent mortality model
+
+## What was implemented
+
+One latent ecological logit-mortality state is estimated per reef-event. DHW,
+thermal history, cover, Acropora, optical environment, rainfall, winds, WQC and
+cyclone waves enter that state once. Manta tow anchors the ecological scale.
+LTMP and MMP have separate observation bias, beta precision, and zero/one
+probabilities.
+
+Programme-specific ecological response loadings were tested and rejected:
+MMP has only one reef-event paired with another benthic programme, so its
+loading was not identifiable. The final candidate uses a common ecological
+scale and regularised programme biases.
+
+```{r overlap-table}
+overlap |>
+  mutate(
+    Pattern = paste0(
+      if_else(ltmp == 1, 'LTMP ', ''),
+      if_else(manta == 1, 'manta ', ''),
+      if_else(mmp == 1, 'MMP', '')
+    )
+  ) |>
+  select(Pattern, `Reef-events` = reef_events) |>
+  kable(caption = 'Programme overlap available to identify observation layers')
+```
+
+There are 153 paired LTMP--manta reef-events. Their mortality correlation is
+0.619, with a median absolute difference of 1.5 percentage points. MMP is
+mostly unpaired, which limits direct identification of its observation bias.
+
+## Predictive comparison
+
+```{r latent-overall-plot, fig.width=10, fig.height=5.5}
+latent_metrics |>
+  filter(programme_key == 'all') |>
+  mutate(Scheme = scheme_labels[scheme]) |>
+  ggplot(aes(learner, rmse, fill = learner)) +
+  geom_col(width = 0.72) +
+  facet_wrap(~ Scheme, scales = 'free_x') +
+  scale_fill_brewer(palette = 'Set2', guide = 'none') +
+  labs(
+    x = NULL, y = 'Mortality RMSE',
+    title = 'The latent model does not beat the BRT overall'
+  ) +
+  theme(axis.text.x = element_text(angle = 22, hjust = 1))
+```
+
+```{r latent-programme-table}
+latent_metrics |>
+  filter(programme_key != 'all') |>
+  mutate(
+    Scheme = scheme_labels[scheme],
+    Programme = toupper(programme_key),
+    RMSE = round(rmse, 3),
+    MAE = round(mae, 3),
+    `Severe MAE` = round(severe_mae, 3)
+  ) |>
+  select(Scheme, Programme, Model = learner, RMSE, MAE, `Severe MAE`) |>
+  kable(caption = 'Blocked mortality prediction by programme')
+```
+
+For unseen events, latent MMP RMSE falls from 0.324 in the previous pooled
+BRMS to 0.271. LTMP worsens from 0.150 to 0.165 and manta from 0.158 to
+0.163. For unseen 2024 reefs, MMP improves only slightly (0.251 to 0.247),
+while LTMP and manta worsen. The weather--RRN BRT remains best overall at
+0.180 unseen-event RMSE and 0.174 unseen-reef RMSE.
+
+The four-chain production fit passes its diagnostic gate (maximum R-hat 1.01,
+no divergences), but the two-chain screening folds reach R-hat 1.027. The
+production Bayesian R2 is 0.123. Nineteen PSIS-LOO observations have Pareto
+`k > 0.7`, so blocked validation is the primary decision evidence.
+
+The production MMP observation bias is negative on the manta-anchored logit
+scale (-0.677, 95% interval -1.26 to -0.11). LTMP bias is small and uncertain
+(-0.171, interval -0.38 to 0.06). This explains why calibration helps MMP but
+adds little for the already well-paired LTMP--manta data.
+
+## Operational use
+
+The production object includes a programme-free prediction path. For any GBR
+reef-event with the required covariates it returns:
+
+- the population ecological mortality mean, excluding fitted reef effects;
+- a process-marginalised mean for a new reef-event;
+- 5%, 50% and 95% process intervals generated from a new reef-event effect.
+
+This prevents fitted historical random effects from leaking into GBR-wide
+maps. Because overall blocked performance is weaker, these predictions should
+enter ensemble testing rather than being issued alone.
+
+# Annual coral-cover change
+
+## Transition estimand
+
+The annual dataset uses consecutive surveys 240--550 days apart. The response
+is both next coral cover and absolute percentage-point change:
+
+\[
+\Delta C = 100(C_{t+1} - C_t).
+\]
+
+Unlike the bleaching-mortality table, gains are retained and no observations
+are removed because another disturbance is recorded. Current cover, previous
+change, interval duration, Acropora composition, DHW, WQC, cyclone waves and
+COTS are all available as candidate predictors. Acropora fallbacks use only
+the baseline year or the preceding two years.
+
+```{r transition-manifest}
+transition_manifest |>
+  mutate(
+    `Positive changes` = positive_changes,
+    `Negative changes` = negative_changes,
+    `Median interval (days)` = median_interval_days
+  ) |>
+  select(
+    Programme = programme_key, transitions, reefs,
+    `Positive changes`, `Negative changes`, `Median interval (days)`
+  ) |>
+  kable(caption = 'Annual coral-cover transition dataset')
+```
+
+```{r change-distribution, fig.width=10, fig.height=5.5}
+transitions |>
+  mutate(
+    display_change = pmin(pmax(cover_change_pp, -35), 25),
+    Programme = toupper(programme_key)
+  ) |>
+  ggplot(aes(display_change, fill = Programme)) +
+  geom_histogram(binwidth = 2, position = 'identity', alpha = 0.48) +
+  geom_vline(xintercept = 0, colour = 'grey35') +
+  facet_wrap(~ Programme, scales = 'free_y') +
+  labs(
+    x = 'Annual coral-cover change (percentage points; tails clipped for display)',
+    y = 'Transitions',
+    title = 'Annual change retains both recovery and loss'
+  )
+```
+
+Of the 3,089 transitions, 54.2% increase and 45.7% decline. The median change
+is +0.44 percentage points, with a 5th--95th percentile range of approximately
+-12.9 to +9.8 points.
+
+## Why absolute change is complementary
+
+```{r low-cover-table}
+cover_bins |>
+  mutate(
+    across(starts_with('relative_change_'), ~ round(.x, 2)),
+    median_absolute_change_pp = round(median_absolute_change_pp, 2)
+  ) |>
+  kable(caption = 'Change distribution by starting coral cover')
+```
+
+Below 5% initial cover, the 5th--95th percentile relative-change range is
+approximately -48% to +143%. Absolute change remains on the interpretable
+percentage-point scale. Absolute change should therefore complement, not
+replace, event-attributable relative mortality: the two answer different
+ecological questions.
+
+## Initial predictive benchmarks
+
+```{r change-metric-plot, fig.width=11, fig.height=6}
+change_metrics |>
+  filter(programme_key == 'all') |>
+  mutate(Scheme = scheme_labels[scheme]) |>
+  ggplot(aes(learner, post_cover_rmse_pp, fill = learner)) +
+  geom_col(width = 0.72) +
+  facet_wrap(~ Scheme, scales = 'free_x') +
+  scale_fill_brewer(palette = 'Set2', guide = 'none') +
+  labs(
+    x = NULL, y = 'Next-cover RMSE (percentage points)',
+    title = 'No single annual-change model wins every transfer problem'
+  ) +
+  theme(axis.text.x = element_text(angle = 22, hjust = 1))
+```
+
+```{r change-metric-table}
+change_metrics |>
+  filter(programme_key == 'all') |>
+  mutate(
+    Scheme = scheme_labels[scheme],
+    across(
+      c(post_cover_rmse_pp, change_mae_pp, change_bias_pp,
+        severe_loss_mae_pp),
+      ~ round(.x, 2)
+    ),
+    direction_accuracy = percent(direction_accuracy, accuracy = 0.1)
+  ) |>
+  select(
+    Scheme, Model = learner,
+    `Cover RMSE (pp)` = post_cover_rmse_pp,
+    `Change MAE (pp)` = change_mae_pp,
+    `Change bias (pp)` = change_bias_pp,
+    `Direction accuracy` = direction_accuracy,
+    `Severe-loss MAE (pp)` = severe_loss_mae_pp
+  ) |>
+  kable(caption = 'Annual transition validation')
+```
+
+For forward prediction of 2024--25, the growth/environment model improves
+next-cover RMSE from 11.13 points under persistence to 10.62. For recent
+leave-one-year-out prediction it improves 8.66 to 8.54. For reefs withheld
+from every year, the change BRT is best at 6.98 points versus 7.61 for
+persistence.
+
+```{r event-mean-plot, fig.width=10, fig.height=5.5}
+change_predictions |>
+  filter(scheme == 'forward_2024_2025') |>
+  group_by(learner, event_year) |>
+  summarise(
+    Observed = mean(cover_change_pp),
+    Predicted = mean(predicted_change_pp),
+    .groups = 'drop'
+  ) |>
+  tidyr::pivot_longer(
+    c(Observed, Predicted), names_to = 'Series', values_to = 'Change'
+  ) |>
+  ggplot(aes(factor(event_year), Change, fill = Series)) +
+  geom_col(position = 'dodge') +
+  facet_wrap(~ learner) +
+  geom_hline(yintercept = 0, colour = 'grey35') +
+  labs(
+    x = 'Survey event year', y = 'Mean coral-cover change (percentage points)',
+    title = 'The change BRT captures the mean 2024 loss but not reef-level extremes'
+  )
+```
+
+Observed mean change in 2024 is -5.89 points. The forward change BRT predicts
+-4.71, compared with -1.60 for the growth model and zero for persistence.
+Nevertheless, its individual 2024 RMSE is 13.4 points; the growth model is
+better at 11.6. The model recognises an event-wide loss but allocates it poorly
+among reefs.
+
+## Influential predictors and residual priorities
+
+```{r importance-plot, fig.width=10, fig.height=6}
+importance |>
+  group_by(learner) |>
+  slice_max(influence, n = 8) |>
+  ungroup() |>
+  mutate(variable = reorder(variable, influence)) |>
+  ggplot(aes(influence, variable, fill = learner)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ learner, scales = 'free_y') +
+  labs(
+    x = 'Relative influence', y = NULL,
+    title = 'Current cover dominates next cover; change uses a broader process set'
+  )
+```
+
+Current cover contributes 82% of post-cover BRT influence. In the change BRT,
+current cover (21%), previous change (18%), DHW (17%), cyclone waves (9%) and
+interval length (9%) dominate. Acropora contributes 4.4%, WQC 3.8% and COTS
+3.8%. These are predictive influences, not causal partitions.
+
+```{r outlier-table}
+change_outliers |>
+  filter(learner == 'Change BRT') |>
+  transmute(
+    Reef = ReefName, Programme = toupper(programme_key),
+    Year = event_year, DHW = round(sst_maxdhw, 2),
+    `Starting cover` = percent(pre_cover, accuracy = 0.1),
+    `Observed change (pp)` = round(cover_change_pp, 1),
+    `Predicted change (pp)` = round(predicted_change_pp, 1),
+    `Error (pp)` = round(change_error_pp, 1),
+    Disturbance = disturbance_text
+  ) |>
+  head(15) |>
+  kable(caption = 'Largest forward 2024-25 change-BRT misses')
+```
+
+Snapper, North Direction, One Tree Island, Linnet, Broomfield and corrected
+Mackay are among the large 2024 misses. Some reefs also show observed gains
+where the model predicts event loss. This is the correct residual set for
+examining fine-scale exposure, taxonomic recovery state, survey timing and
+unrecorded disturbance.
+
+# Pipeline decision
+
+1. Keep the shared latent model as an MMP calibration/ensemble candidate, not
+   the sole operational mortality model.
+2. Retain both relative bleaching mortality and annual absolute cover change.
+3. Use the annual transition table as the input to a formal dynamic model with
+   separate growth and disturbance-loss components.
+4. Constrain growth by current cover and available space; allow DHW,
+   freshwater/WQC, cyclone waves, COTS and community composition to affect
+   losses.
+5. Preserve programme observation layers and integrate unknown reef/year
+   effects for GBR-wide forecasts.
+6. Require improvement over persistence in forward years and over the change
+   BRT for unseen reefs before operational promotion.
