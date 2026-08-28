@@ -17,7 +17,8 @@ output/model_validation/
 scratch/
 
 output/formal_models/
-
+output/inla_spatiotemporal
+tmp
 output/prediction_uncertainty/
 
 output/salinity_kd490_loyo_minimum_metrics.csv

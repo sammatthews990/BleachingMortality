@@ -60,6 +60,8 @@ make_model_formula <- function(programme_key, predictors) {
     boundary_terms <- ~ 1 + ann_maxdhw_z + cloudp_90_z + secc3m_z +
         histmDHW6_z + prop_acropora_pre_z + acropora_cover_pre_z +
         dhw10_load4_z + dhw_novelty10_z + secc3m_p10_z +
+        dhw_events_since2016_n6_z + dhw_years_since_last_n6_capped8_z +
+        dhw_no_prior_n6_z +
         (1 | event_effect) + (1 | region_effect)
 
     if (programme_key == "mmp") {

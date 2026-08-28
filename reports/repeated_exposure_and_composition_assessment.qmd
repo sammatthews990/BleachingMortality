@@ -1,0 +1,170 @@
+---
+title: "Repeated heat exposure and susceptible coral composition"
+subtitle: "Implications of McWilliam et al. (2026) for the GBR mortality models"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+theme_set(theme_minimal(base_size = 12))
+
+exposure <- read_csv(
+  '../data/processed/repeated_dhw_exposure_audit.csv',
+  show_col_types = FALSE
+)
+composition <- read_csv(
+  '../data/processed/acropora_resolution_audit.csv',
+  show_col_types = FALSE
+)
+```
+
+## Decision summary
+
+McWilliam et al. (2026) strengthens the case that present DHW is not enough.
+Two pre-event histories need to remain distinct:
+
+1. **Years since the last >6-DHW event** represents the interval available for
+   coral recovery and reassembly of susceptible taxa.
+2. **Number of prior >6-DHW events since 2016** represents repeated exposure
+   and selective loss of susceptible communities.
+
+The pipeline previously had a leakage-safe years-since variable and a ten-year
+thermal-load summary, but it did not use an explicit fixed-origin event count.
+That count is now reconstructed for every operational reef feature. A rolling
+eight-year count is also retained as a future-facing sensitivity metric, but it
+should not enter the same small BRMS formula as the fixed count unless blocked
+validation shows that both add independent information.
+
+The paper also shows that total *Acropora* is an incomplete susceptibility
+measure. Tabular and staghorn *Acropora* carry much of the signal. The local
+AIMS workspace only resolves the relevant field to total *Acropora*; it does
+not contain a tabular/staghorn split. Total *Acropora* remains the operational
+fallback, but the missing morphology layer is now explicit rather than hidden.
+
+## What the paper shows
+
+The 2024 response was shaped by ecological memory. Reefs with repeated severe
+heat exposure since 2016 often had depleted heat-sensitive taxa and lower 2024
+bleaching or mortality. Reefs with a seven-to-eight-year recovery interval had
+rebuilt fast-growing branching and tabular *Acropora* and could suffer severe
+loss when exposed again. At a given DHW, high tabular/staghorn *Acropora* and
+low massive or branching *Porites* were associated with positive bleaching
+residuals.
+
+This is best treated as a mechanism and prior expectation, not as a coefficient
+to copy directly. The paper's intensive 2024 community analysis covers 23 reefs
+and immediate bleaching/mortality, whereas this pipeline predicts broader
+programme observations and annual cover change across multiple events.
+
+## Leakage-safe exposure reconstruction
+
+All history fields stop at 31 December of the year before the response. The
+current event's DHW remains a separate predictor. This matters most for 2024:
+including the 2024 event in the event-frequency count would leak the response
+year's thermal exposure into a variable described as ecological history.
+
+The new fields are:
+
+| Field | Definition | Default role |
+|---|---|---|
+| `dhw_events_since2016_n6` | Count of annual maxima >6 DHW from 2016 through target year minus one | Primary repeated-exposure predictor |
+| `dhw_years_since_last_n6` | Uncapped years since the last pre-event annual maximum >6 DHW | Audit and interpretation |
+| `dhw_years_since_last_n6_capped8` | Years since last event, capped at eight; no previous event also maps to eight and is identified separately | Primary recovery-interval predictor |
+| `dhw_no_prior_n6` | Censoring flag where no previous >6-DHW year exists | Keeps “no event observed” distinct from a long known interval |
+| `dhw_events_prior8_n6` | Count in the preceding eight complete years | Operational sensitivity after the fixed 2016 origin ages |
+| `dhw_history_years_since2016` | Number of observed historical years contributing to the fixed count | Provenance/coverage, not an ecological effect |
+
+```{r}
+exposure_2024 <- exposure |> filter(year == 2024)
+
+exposure_2024 |>
+  count(dhw_events_since2016_n6) |>
+  mutate(proportion = n / sum(n)) |>
+  ggplot(aes(factor(dhw_events_since2016_n6), proportion)) +
+  geom_col(fill = '#2166ac') +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = 'Prior >6-DHW event frequency varies strongly across the GBR',
+    subtitle = 'History is 2016--2023; the 2024 response year is excluded',
+    x = 'Prior events since 2016', y = 'GBR reef features'
+  )
+```
+
+In 2024, `r percent(mean(exposure_2024$dhw_events_since2016_n6 >= 3), accuracy = 0.1)`
+of operational reef features had at least three prior >6-DHW years, while
+`r percent(mean(exposure_2024$dhw_events_since2016_n6 == 0), accuracy = 0.1)`
+had none.
+
+```{r}
+target_history <- exposure_2024 |>
+  filter(grepl('Mackay|Linnet|Lizard|Eyrie|Swinger', LOC_NAME_S,
+               ignore.case = TRUE)) |>
+  transmute(
+    Reef = LOC_NAME_S, DHW_2024 = round(ann_maxdhw, 2),
+    `Prior events since 2016` = dhw_events_since2016_n6,
+    `Years since last >6 DHW` = dhw_years_since_last_n6,
+    `No prior >6 DHW` = as.logical(dhw_no_prior_n6)
+  ) |>
+  arrange(Reef)
+kable(target_history, caption = 'Exposure history at reefs under review')
+```
+
+## Composition resolution
+
+```{r}
+composition |>
+  select(composition_field, available, rows, reefs, first_year, last_year,
+         source_categories, source_variables) |>
+  kable(caption = 'Resolution available in the local AIMS community workspace')
+```
+
+The audit finds total *Acropora* observations but no category or source
+variable identifying tabular, staghorn or branching *Acropora*. Those values
+must come from a more resolved image/transect product or a separately validated
+community model. They must not be inferred by setting a fixed fraction of total
+*Acropora* or by filling missing values with zero.
+
+For operational GBR-wide predictions, the staged composition contract is:
+
+- retain past-only total *Acropora* and total coral cover everywhere;
+- add observed tabular/staghorn cover when a taxonomically resolved source is
+  recovered;
+- if a GBR-wide morphology model is later built, carry its prediction and
+  uncertainty separately from observed composition; and
+- report performance for observed-morphology and imputed-morphology subsets.
+
+## Model comparison to run next
+
+The paper implies both direct history and composition-mediated pathways. The
+next blocked comparison should therefore be deliberately small:
+
+1. current production history (`yrsince6`, chronic load and novelty);
+2. add prior event count plus its DHW interaction;
+3. add total *Acropora* plus DHW--*Acropora* interaction;
+4. add tabular/staghorn *Acropora* only when a defensible source exists.
+
+BRMS should prespecify the DHW interactions and use regularising priors; BRT can
+learn the corresponding nonlinear interactions. Evaluation must retain
+leave-one-event-out, unseen-reef and reef-blocked-2024 views, with severe-case
+bias and calibration alongside RMSE, MAE, predictive R2 and information
+criteria for comparable likelihood models.
+
+The key diagnostic is whether repeated exposure reduces predicted response at
+a fixed DHW because susceptible communities have been filtered, while a long
+recovery interval and high susceptible composition increase it. If the history
+effect disappears after resolved composition is added, that is scientifically
+informative mediation rather than a failed predictor.

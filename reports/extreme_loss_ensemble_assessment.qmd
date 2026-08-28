@@ -1,0 +1,343 @@
+---
+title: "Predicting extreme annual coral loss"
+subtitle: "A gated specialist, beta/binomial benchmark, and data priorities"
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(scales)
+library(knitr)
+library(tidyr)
+theme_set(theme_minimal(base_size = 12))
+
+extreme_dir <- '../output/extreme_loss_ensemble'
+beta_dir <- '../output/beta_binomial_annual'
+
+extreme_predictions <- read_csv(
+  file.path(extreme_dir, 'extreme_ensemble_predictions.csv'),
+  show_col_types = FALSE
+)
+extreme_metrics <- read_csv(
+  file.path(extreme_dir, 'extreme_ensemble_metrics.csv'),
+  show_col_types = FALSE
+)
+beta_predictions <- read_csv(
+  file.path(beta_dir, 'beta_binomial_predictions.csv'),
+  show_col_types = FALSE
+)
+beta_metrics <- read_csv(
+  file.path(beta_dir, 'beta_binomial_metrics.csv'),
+  show_col_types = FALSE
+)
+
+validation_labels <- c(
+  recent_year_holdout = 'Recent year held out',
+  reef_blocked_5fold = 'Unseen reefs',
+  forward_2024_2025 = 'Forward 2024–2025'
+)
+
+all_metrics <- bind_rows(
+  extreme_metrics |> select(
+    learner, scheme, transitions, severe_n, rmse_pp, mae_pp,
+    predictive_r2, severe_mae_pp, severe_bias_pp, nonsevere_mae_pp
+  ),
+  beta_metrics
+) |>
+  mutate(Validation = recode(scheme, !!!validation_labels))
+
+reef_blocked_2024 <- extreme_predictions |>
+  filter(scheme == 'reef_blocked_5fold', event_year == 2024) |>
+  group_by(learner) |>
+  summarise(
+    transitions = n(),
+    observed_mean_pp = mean(cover_change_pp),
+    predicted_mean_pp = mean(predicted_change_pp),
+    rmse_pp = sqrt(mean(error_pp^2)),
+    severe_n = sum(cover_change_pp <= -10),
+    severe_observed_pp = mean(cover_change_pp[cover_change_pp <= -10]),
+    severe_predicted_pp = mean(predicted_change_pp[cover_change_pp <= -10]),
+    severe_mae_pp = mean(abs(error_pp[cover_change_pp <= -10])),
+    false_extreme_rate = mean(
+      predicted_change_pp <= -10 & cover_change_pp > -10
+    ),
+    .groups = 'drop'
+  )
+```
+
+## Decision
+
+The extreme-loss specialist is useful, but it should not replace the general
+annual-change model.
+
+- The **soft-gated ensemble** is the current candidate for estimating a known
+  event after early observations are available. In reef-blocked 2024
+  validation it reduces RMSE from 8.59 to 8.14 percentage points and severe
+  loss MAE from 11.43 to 9.67 points.
+- The **aggressive ensemble** estimates the severe tail more strongly: severe
+  2024 MAE falls to 8.47 points. Its non-severe false-extreme rate rises from
+  5.5% for the base to 18.2%, so it is better retained as an upper-risk
+  scenario than used as the sole prediction.
+- When 2024 and 2025 are completely excluded from training, both gated models
+  improve severe-loss error, but the base remains better for ordinary cases.
+  This confirms that the gate is a complementary expert, not a universal
+  winner.
+
+The binomial + beta hurdle GAM below is a distributionally appropriate
+benchmark. It
+separates gain and loss occurrence from their bounded magnitudes and preserves
+the same bleaching modifiers and restricted-mortality transfer. It is not yet
+the full Bayesian latent programme-observation model.
+
+Across unseen reefs it is competitive (RMSE 6.89 points; predictive R2 0.178)
+but does not repair the severe 2024 tail. In reef-blocked 2024 predictions,
+RMSE is 9.48 and severe transitions average -21.58 points observed versus
+-10.29 predicted. The underprediction is therefore not simply an artefact of
+an unbounded Gaussian response; the severe-event gate contributes additional
+predictive information.
+
+## What the extreme specialist does
+
+The model first estimates the probability that a transition loses at least 10
+percentage points of coral cover. A second model is trained on severe annual
+losses plus source-balanced, bleaching-attributed relative-mortality records.
+It then blends that tail estimate with the mortality-augmented annual-change
+prediction:
+
+$$
+\hat\Delta_{soft} = \hat\Delta_{base} + p_{severe}
+(\hat\Delta_{tail}-\hat\Delta_{base}).
+$$
+
+The aggressive sensitivity substitutes $\sqrt{p_{severe}}$ for
+$p_{severe}$. It therefore acts earlier and more strongly, which improves
+large-loss estimates at the cost of more false alarms.
+
+The threshold is a modelling device, not a claim that ecological response is
+discontinuous at 10 points. All reported performance is from held-out years,
+reefs, or future events; the specialist is never assessed on the observations
+used to fit it.
+
+## Validation trade-off
+
+```{r}
+all_metrics |>
+  transmute(
+    Model = learner,
+    Validation,
+    `RMSE (pp)` = round(rmse_pp, 2),
+    `Predictive R2` = round(predictive_r2, 3),
+    `Severe MAE (pp)` = round(severe_mae_pp, 2),
+    `Severe underprediction (pp)` = round(severe_bias_pp, 2),
+    `Non-severe MAE (pp)` = round(nonsevere_mae_pp, 2)
+  ) |>
+  kable()
+```
+
+```{r}
+all_metrics |>
+  ggplot(aes(nonsevere_mae_pp, severe_mae_pp, colour = learner)) +
+  geom_point(size = 3) +
+  geom_text(aes(label = Validation), hjust = -0.08, size = 3,
+            check_overlap = TRUE) +
+  facet_wrap(~Validation, scales = 'free') +
+  labs(
+    x = 'MAE for other transitions (percentage points)',
+    y = 'MAE for severe losses (percentage points)',
+    colour = 'Model',
+    title = 'Improving the severe tail has a measurable ordinary-case cost',
+    subtitle = 'The lower-left corner is preferred'
+  ) +
+  theme(legend.position = 'bottom')
+```
+
+## The 2024 event
+
+```{r}
+reef_blocked_2024 |>
+  transmute(
+    Model = learner,
+    N = transitions,
+    `Observed mean (pp)` = round(observed_mean_pp, 2),
+    `Predicted mean (pp)` = round(predicted_mean_pp, 2),
+    `RMSE (pp)` = round(rmse_pp, 2),
+    `Severe observed (pp)` = round(severe_observed_pp, 2),
+    `Severe predicted (pp)` = round(severe_predicted_pp, 2),
+    `Severe MAE (pp)` = round(severe_mae_pp, 2),
+    `False extreme` = percent(false_extreme_rate, accuracy = 0.1)
+  ) |>
+  kable()
+```
+
+```{r}
+extreme_predictions |>
+  filter(scheme == 'reef_blocked_5fold', event_year == 2024) |>
+  ggplot(aes(cover_change_pp, predicted_change_pp,
+             colour = programme_key)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey45') +
+  geom_hline(yintercept = -10, linetype = 3, colour = 'grey55') +
+  geom_vline(xintercept = -10, linetype = 3, colour = 'grey55') +
+  geom_point(alpha = 0.65, size = 1.6) +
+  facet_wrap(~learner) +
+  coord_equal(xlim = c(-65, 35), ylim = c(-65, 35)) +
+  labs(
+    x = 'Observed annual change (percentage points)',
+    y = 'Predicted annual change (percentage points)',
+    colour = 'Programme',
+    title = 'The gate deepens predicted 2024 losses',
+    subtitle = 'Snapper and several other severe cases remain underestimated'
+  ) +
+  theme(legend.position = 'bottom')
+```
+
+### Largest remaining misses
+
+```{r}
+extreme_predictions |>
+  filter(
+    scheme == 'reef_blocked_5fold', event_year == 2024,
+    learner == 'Soft-gated extreme ensemble'
+  ) |>
+  mutate(absolute_error_pp = abs(error_pp)) |>
+  arrange(desc(absolute_error_pp)) |>
+  slice_head(n = 18) |>
+  transmute(
+    Reef = ReefName, Programme = programme_key,
+    Observed = round(cover_change_pp, 1),
+    Predicted = round(predicted_change_pp, 1),
+    Error = round(error_pp, 1),
+    `Severe probability` = percent(severe_probability, accuracy = 1),
+    DHW = round(sst_maxdhw, 1),
+    Acropora = percent(prop_acropora_pre, accuracy = 1),
+    WQC = round(wqc_freqcc12, 2),
+    `Cyclone wave h` = round(cyc_maxHrs4mw, 1),
+    Annotation = disturbance_text
+  ) |>
+  kable()
+```
+
+The most informative errors now fall into two groups:
+
+1. Large observed losses still predicted too mildly, especially where a short,
+   event-timed freshwater or cyclone exposure is poorly represented by a
+   wet-season mean.
+2. False severe predictions where heat, community and pressure covariates look
+   hazardous but mortality did not occur. These reefs are essential controls
+   for learning resistance, refuge and observation differences.
+
+## Binomial + beta annual-change benchmark
+
+The benchmark uses four components: binomial gain occurrence, beta gain
+magnitude conditional on gain, Bernoulli loss occurrence, and beta loss
+magnitude conditional on loss. Expected change is bounded by both current
+cover and available space:
+
+$$
+C_{t+1}=C_t+(1-C_t)P(G)E(G\mid G)-C_tP(L)E(L\mid L).
+$$
+
+This is a hurdle construction, not a beta-binomial count distribution. A true
+count-binomial observation layer requires the number of scored colonies or
+points, which is not consistently available in the harmonised annual data.
+
+```{r}
+beta_metrics |>
+  mutate(Validation = recode(scheme, !!!validation_labels)) |>
+  transmute(
+    Validation,
+    N = transitions,
+    `RMSE (pp)` = round(rmse_pp, 2),
+    `Predictive R2` = round(predictive_r2, 3),
+    `Severe MAE (pp)` = round(severe_mae_pp, 2),
+    `Severe underprediction (pp)` = round(severe_bias_pp, 2),
+    `Non-severe MAE (pp)` = round(nonsevere_mae_pp, 2)
+  ) |>
+  kable()
+```
+
+```{r}
+beta_predictions |>
+  filter(scheme == 'reef_blocked_5fold', event_year == 2024) |>
+  ggplot(aes(cover_change_pp, predicted_change_pp,
+             colour = programme_key)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey45') +
+  geom_point(alpha = 0.65, size = 1.7) +
+  coord_equal(xlim = c(-65, 35), ylim = c(-65, 35)) +
+  labs(
+    x = 'Observed annual change (percentage points)',
+    y = 'Predicted annual change (percentage points)',
+    colour = 'Programme',
+    title = 'Distributionally appropriate GAM: reef-blocked 2024'
+  ) +
+  theme(legend.position = 'bottom')
+```
+
+## Data most likely to explain the misses
+
+| Priority | Data and immediate use | Mechanism or ambiguity addressed | Operational note |
+|---|---|---|---|
+| 1 | **MMP event salinity, TSS, CDOM, Secchi and logger time series**; use measured events to calibrate a daily freshwater-exposure reconstruction | Distinguishes genuine low-salinity stress from merely coloured or turbid water. The 2023–24 observations include extreme Jasper freshwater conditions | Direct observations are spatially sparse but uniquely valuable for calibration |
+| 1 | **Queensland river discharge and catchment runoff**, routed to reefs using plume travel time/connectivity | Captures short freshwater pulses that a seasonal WQC frequency or coastal rainfall total can miss | Available quickly enough for operational event prediction once the reef–catchment linkage is built |
+| 1 | **Raw AIMS manta, LTMP and MMP records**: dominant lifeform/genera, disease, Drupella, unknown scars, visibility, sea state, wind and tide | Tests whether severe losses reflect community susceptibility, unrecorded biological disturbance, or observation conditions | The downloaded local manta summary omits these fields; raw tow/transect data need to be requested or acquired |
+| 2 | **BoM cyclone best tracks plus event rainfall/wind**, converted to distance, intensity, storm-side and duration metrics | Detects Jasper/Kirrily/Debbie exposure when the RRN 4 m-wave variable is zero or spatially mismatched | Retain RRN wave hours; this adds complementary wind/rain/freshwater exposure |
+| 2 | **2024 aerial bleaching severity** as an early-event gate covariate | Provides spatial evidence that physiological damage occurred before later mortality surveys | Use for within-event nowcasting, not as a timeless pre-event predictor or mortality label |
+| 2 | **GBR10 habitat, reef zone, slope, depth, exposure and hard substrate** | Represents refuge, hydrodynamic flushing, habitat-specific community structure and the attainable cover ceiling | Static and suitable for all-GBR prediction |
+| 2 | **Functional community composition**: branching/tabular Acropora, other fast-growing taxa, massive/slow-growing taxa and recent recovery trajectory | `% Acropora` alone cannot distinguish highly susceptible assemblages or weedy post-disturbance recovery states | Derive from image/transect data where available; spatial imputation will be required elsewhere |
+| 3 | **Daily plume trajectory metrics** from ocean colour and rainfall: anomaly, percentile, consecutive exposure days, timing relative to peak DHW and recovery time | A wet-season mean can hide brief compound freshwater–heat episodes | Preserve raw products because chlorophyll can be confounded by sediment/CDOM after cyclones |
+| 3 | **In-situ temperature extremes and diurnal variability** | Satellite DHW may miss shallow lagoon heat, cold/freshwater coincidence and local mixing | Logger coverage is sparse; use for calibration and local correction rather than blanket replacement |
+
+The RRN workbook contributes all of its acute pressure series to the current
+pipeline: DHW, cyclone-wave exposure, COTS and water colour. Coral-sink
+connectivity was the only unused individual-pressure field and has now been
+added for modelling recovery. The workbook's composite metrics recombine these
+components and can mix temporal windows, so they are not preferable predictors
+for diagnosing acute 2024 loss.
+
+Useful source entry points are the
+[GBRMPA Reef Recovery Network tool](https://reefknowledgesystem.gbrmpa.gov.au/node/426),
+[AIMS eReefs freshwater-exposure portal](https://ereefs.aims.gov.au/gbr1/fresh-water-exposure/),
+[AIMS MMP water-quality observations](https://apps.aims.gov.au/metadata/view/a5a02dc8-16b4-4b50-abad-af4a1c1e9c49),
+[Queensland water monitoring](https://www.qld.gov.au/environment/water/quality/monitoring),
+[BoM tropical-cyclone history](https://www.bom.gov.au/cyclone/history/),
+[AIMS agents-of-mortality records](https://apps.aims.gov.au/metadata/view/5b6f05b0-4ade-11dc-8f56-00008a07204e),
+[AIMS manta-tow metadata](https://apps.aims.gov.au/metadata/view/5bb9a340-4ade-11dc-8f56-00008a07204e),
+[2024 aerial bleaching observations](https://apps.aims.gov.au/metadata/view/3fd37e52-12cf-4b59-8873-96b82bc955c9),
+and the [GBR10 benthic habitat map](https://researchdata.edu.au/great-barrier-reef-gbrmp-benthic/3921909/).
+
+## Recommended operational ensemble
+
+Do not choose a single model by global RMSE alone. Carry three outputs into the
+next stage:
+
+1. **Central estimate:** the general decomposed/latent model, optionally blended
+   with the soft-gated specialist after its weight is selected strictly within
+   validation folds.
+2. **Severe-risk estimate:** the aggressive gate, reported as a risk-sensitive
+   scenario rather than silently replacing the mean.
+3. **Uncertainty and trigger:** the gate probability plus disagreement between
+   general and tail experts. Large disagreement identifies reefs requiring
+   field confirmation or scenario widening.
+
+The blend weight and severe threshold should next be tuned with nested
+reef/year validation against an explicit cost function. That function should
+penalise missed severe losses more than ordinary error while retaining a hard
+report on false severe alarms. A reasonable starting rule is to minimise
+overall MAE plus twice the severe-loss MAE, subject to a maximum false-extreme
+rate agreed for the operational product. The threshold, weight and loss ratio
+must be locked before the final untouched event assessment.
+
+The next formal modelling step remains a Bayesian latent annual-cover model
+with programme-specific observation layers. Its shared ecological state should
+retain the gain/loss decomposition, the best modifiers, and a mixture or
+heavy-tailed disturbance component. The tree specialist can then be stacked
+with its out-of-fold predictions rather than being substituted for it.

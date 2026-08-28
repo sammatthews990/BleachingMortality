@@ -79,6 +79,12 @@ modern event, including 2024. The ensemble step retains a BRMS--BRT framework
 blend and an accuracy-focused benchmark--BRMS--BRT stack; region-blocked stress
 tests do not determine production weights.
 
+Thermal history is leakage-safe: event counts since 2016, an eight-year rolling
+count and years since the last >6-DHW event use only years preceding the target
+event. A no-prior-event flag distinguishes true censoring from a long observed
+recovery interval. Current DHW interacts with event frequency and recovery
+interval in the formal, shape-aware and shared-latent candidates.
+
 Prediction modes are explicit. Leave-one-event-out is a future-event forecast
 and excludes event/region random effects. Reef-blocked validation represents
 mapping a known event to unsurveyed reefs and includes known event/region
@@ -178,6 +184,20 @@ Rscript scripts/summarise_decomposed_annual_change.R
 quarto render reports/decomposed_annual_change_assessment.qmd
 ```
 
+Fit the severe-loss specialist and the beta/binomial annual-change benchmark,
+then render their matched comparison and data-acquisition priorities:
+
+```powershell
+Rscript scripts/fit_extreme_loss_ensemble.R
+Rscript scripts/fit_beta_binomial_annual_gam.R
+quarto render reports/extreme_loss_ensemble_assessment.qmd
+```
+
+The specialist is an additional gated ensemble member, not a replacement for
+the general annual-change model. The report keeps its soft central blend and
+aggressive severe-risk scenario separate and shows both severe misses and false
+extreme alarms.
+
 Austral summer `202324` is aligned to the 2024 mortality event. Water colour
 is evaluated as a delayed freshwater/plume proxy; cyclone wave-hours remain a
 separate mechanical-disturbance predictor. The report compares both against
@@ -206,3 +226,43 @@ observed from interpolated Acropora estimates, avoids using RRN metrics that
 include summer 2024--25 to explain 2024 mortality, and reports the remaining
 miss after an Acropora counterfactual rather than treating composition as a
 complete explanation.
+
+## Building measured freshwater and cyclone predictors
+
+Extract the public AIMS water-quality records, link observations to the GBR
+prediction grid, build the BoM best-track exposure layer, and render the
+assessment with:
+
+```powershell
+Rscript scripts/extract_aims_water_quality.R
+Rscript scripts/extract_aims_logger_hourly.R
+Rscript scripts/extract_bom_cyclone_exposure.R
+Rscript scripts/build_aims_freshwater_calibration.R
+Rscript scripts/fit_aims_freshwater_proxy.R
+quarto render reports/aims_cyclone_upwelling_assessment.qmd
+```
+
+The AIMS observations are calibration targets rather than a direct spatial
+interpolation. The training table retains each sample's distance to the nearest
+reef, and the all-reef predictor grid combines RRN water colour, ERA5 rainfall,
+IMOS optics, eReefs salinity and BoM cyclone exposure. Continuous AIMS logger
+files currently end in October 2023; 2024 is represented by discrete
+all-programme water samples and proxy fields. The report also specifies the next surface and
+subsurface upwelling-relief extraction without adding a habitat-map dependency.
+
+## Auditing repeated heat exposure and Acropora resolution
+
+Rebuild the leakage-safe exposure history, audit community resolution and
+render the paper-driven assessment with:
+
+```powershell
+python scripts/add_repeated_dhw_exposure.py
+Rscript scripts/audit_acropora_resolution.R
+Rscript scripts/build_validation_splits.R
+Rscript scripts/build_annual_coral_transitions.R
+quarto render reports/repeated_exposure_and_composition_assessment.qmd
+```
+
+The primary history fields count prior >6-DHW events since 2016 and encode the
+recovery interval with an explicit no-prior-event flag. The local community
+workspace supports total Acropora but not a tabular or staghorn split.

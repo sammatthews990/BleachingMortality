@@ -15,6 +15,8 @@ joint_core_predictors <- c(
     'ann_maxdhw', 'dhw_excess4', 'dhw_excess8',
     'prop_acropora_pre', 'observed_pre_cover',
     'histmDHW6', 'yrsince6', 'dhw10_load4', 'dhw_novelty10',
+    'dhw_events_since2016_n6', 'dhw_years_since_last_n6_capped8',
+    'dhw_no_prior_n6',
     'secc3m_p10', 'cloudp_90', 'depth_within_programme'
 )
 
@@ -55,6 +57,8 @@ joint_all_predictors <- unique(c(
 joint_interactions <- c(
     'dhw_excess4_z:prop_acropora_pre_z',
     'dhw_excess8_z:prop_acropora_pre_z',
+    'ann_maxdhw_z:dhw_events_since2016_n6_z',
+    'ann_maxdhw_z:dhw_years_since_last_n6_capped8_z',
     'ann_maxdhw_z:log_coastal_rain30_z',
     'ann_maxdhw_z:era5_wind_calm_fraction_z'
 )
@@ -107,6 +111,7 @@ load_joint_compound_rows <- function() {
             LABEL_ID, event_year, source_summer,
             wqc_freqcc12, wqc_prior10_n,
             wqc_prior10_percentile, wqc_prior10_delta,
+            wqc_excess50, wqc_excess50_10yr_sum,
             cyc_maxHrs4mw, log1p_cyc_maxHrs4mw,
             cot_meanpertow, cot_idwmeanpertow,
             log1p_cot_idwmeanpertow

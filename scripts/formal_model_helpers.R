@@ -24,7 +24,9 @@ environmental_predictors <- c(
 )
 environmental_predictors <- c(
     environmental_predictors,
-    'dhw10_load4', 'dhw_novelty10', 'secc3m_p10'
+    'dhw10_load4', 'dhw_novelty10', 'secc3m_p10',
+    'dhw_events_since2016_n6', 'dhw_years_since_last_n6_capped8',
+    'dhw_no_prior_n6'
 )
 
 selection_schemes <- c("leave_one_event_out", "reef_blocked_5fold")
@@ -149,7 +151,9 @@ brms_rhs <- function(predictors) {
         interactions,
         'ann_maxdhw_z:dhw10_load4_z',
         'ann_maxdhw_z:dhw_novelty10_z',
-        'ann_maxdhw_z:secc3m_p10_z'
+        'ann_maxdhw_z:secc3m_p10_z',
+        'ann_maxdhw_z:dhw_events_since2016_n6_z',
+        'ann_maxdhw_z:dhw_years_since_last_n6_capped8_z'
     )
     paste(
         c(

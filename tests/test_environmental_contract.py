@@ -50,6 +50,12 @@ def valid_frame() -> pd.DataFrame:
     frame['dhw10_n4'] = 3
     frame['dhw10_n6'] = 1
     frame['dhw_novelty10'] = 1.0
+    frame['dhw_events_since2016_n6'] = 1
+    frame['dhw_events_prior8_n6'] = 1
+    frame['dhw_history_years_since2016'] = 4
+    frame['dhw_years_since_last_n6'] = 2
+    frame['dhw_years_since_last_n6_capped8'] = 2
+    frame['dhw_no_prior_n6'] = 0
     frame['k490_q90'] = 0.2
     frame['secc3m_p10'] = 8.5
     return frame

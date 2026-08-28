@@ -1,0 +1,462 @@
+event_year,site,lat,lon,discrepancy,logger_series,median_depth_m,position_rule
+2016,19-131 Reef,-19.7641,149.3786,2.4881428483989625,1,,shallow_preferred
+2016,19-138 Reef,-19.8024,149.4199,1.615120950831018,1,,shallow_preferred
+2016,19-159 Reef,-19.6661,149.9146,-3.01,1,,shallow_preferred
+2016,20-104 Reef,-20.0286,149.6933,1.2862792410082275,1,,shallow_preferred
+2016,21-062 Reef,-21.028,150.8534,-0.47,1,,shallow_preferred
+2016,21-139 Reef,-21.4552,151.4654,-0.64,1,,shallow_preferred
+2016,21-187 Reef,-21.4072,151.6414,-0.31,1,,shallow_preferred
+2016,21-245 Reef,-21.298,152.4425,0.0,1,,shallow_preferred
+2016,21-550 Reef,-21.9471,152.3069,0.0921533394028272,1,,shallow_preferred
+2016,21-591 Reef,-21.0266,150.3807,-1.14,1,,all_available
+2016,Agincourt Reef Number 1,-16.0398,145.8652,0.6706690019749448,1,,shallow_preferred
+2016,Arlington Reef,-16.6891,146.0871,1.8697210938847693,1,,shallow_preferred
+2016,Barren Island,-23.1578,151.0707,0.3594048150164696,1,,all_available
+2016,Border Island,-20.171,149.0319,-1.1542022049138567,1,,shallow_preferred
+2016,Boult Reef,-23.747,152.2725,-0.15,1,,shallow_preferred
+2016,Cattle Bay,-18.5691,146.4823,-0.6118180509479609,1,,shallow_preferred
+2016,Centipede Reef,-18.7324,147.554,-1.864780516451196,1,,all_available
+2016,Chicken Reef,-18.6534,147.7199,-1.9926378104458151,1,,shallow_preferred
+2016,Chinaman Reef,-21.9973,152.664,-0.0185903126361312,1,,shallow_preferred
+2016,Davies Reef,-18.8065,147.6688,-1.1285137776708165,1,,shallow_preferred
+2016,Daydream Island,-20.2557,148.8122,2.6965346641335963,1,,shallow_preferred
+2016,Dent Island,-20.345,148.9382,2.8108011389618843,1,,shallow_preferred
+2016,Dip Reef,-18.3999,147.4519,-4.222305870596005,1,,all_available
+2016,Double Cone,-20.1046,148.7218,0.4252579264263967,1,,shallow_preferred
+2016,Dunk Island,-17.9263,146.1461,-1.417138406452865,1,,shallow_preferred
+2016,East Cay,-21.4727,152.5662,0.0,1,,shallow_preferred
+2016,Erskine Island,-23.498800000000003,151.7748,0.0,2,6.25,shallow_preferred
+2016,Farquharson Reef,-17.79,146.5315,2.174716284413961,1,,shallow_preferred
+2016,Feather Reef,-17.51845,146.3896,-0.4887138188329878,2,1.1,shallow_preferred
+2016,Frankland Islands,-17.227,146.0904,-0.6161032549995185,1,,shallow_preferred
+2016,Gannet Cay Reef,-21.9784,152.4742,-0.35,1,,shallow_preferred
+2016,Geoffrey Bay,-19.1549,146.8685,13.548800298159325,1,,all_available
+2016,"Green Island, Qld",-16.7755,145.9803,-0.3151215766624777,1,,all_available
+2016,Hastings Reef,-16.5013,146.017,2.161549404886196,1,,shallow_preferred
+2016,Havannah Island,-18.8472,146.5428,1.2404488095497328,1,,shallow_preferred
+2016,Hayman Island,-20.0413,148.8819,-0.4657770304710102,1,,shallow_preferred
+2016,Hedley Reef,-17.2235,146.4754,0.2598472693507516,1,,shallow_preferred
+2016,Helix Reef,-18.6201,147.2976,-0.3794971308614112,1,,all_available
+2016,High Island,-17.1622,146.007,-0.051167761052802,1,,shallow_preferred
+2016,Horseshoe Reef,-22.0227,152.6166,-0.53,1,,shallow_preferred
+2016,Humpy Island,-23.2162,150.9638,-0.0253816807258292,1,,shallow_preferred
+2016,Hyde Reef,-19.7457,150.0822,-3.13,1,,shallow_preferred
+2016,John Brewer,-18.6189,147.0813,-0.3312680887880521,2,4.0,shallow_preferred
+2016,Knife Reef,-18.5711,147.5772,-0.9066023963914605,1,,all_available
+2016,Lady Musgrave,-23.8884,152.422,-0.611715588038071,1,,shallow_preferred
+2016,Langford Island,-20.0877,148.8848,-1.231077688911029,1,,shallow_preferred
+2016,Linnet Reef,-14.7811,145.3474,7.626145269299075,1,,shallow_preferred
+2016,Lizard Island,-14.694067,145.45705,-0.683264140547168,1,0.6,shallow_preferred
+2016,Low Isles,-16.3831,145.5619,3.328373418627904,1,,shallow_preferred
+2016,Mackay Reef,-16.0399,145.6506,3.142228224810014,1,,shallow_preferred
+2016,Martin,-14.7553,145.3722,3.718709690722728,1,,all_available
+2016,Mast Head Reef,-23.5341,151.7497,0.0,1,,all_available
+2016,McCulloch Reef,-17.2834,146.4777,-0.1369223508137507,1,,shallow_preferred
+2016,Michaelmas Reef,-16.5528,146.0454,2.5921159963802545,1,,shallow_preferred
+2016,Moore Reef,-16.8519,146.2336,1.393790788382177,1,,shallow_preferred
+2016,North Keppel Island,-23.0864,150.9052,0.4119327808008783,1,,shallow_preferred
+2016,North Reef,-23.1775,151.9041,0.0,1,5.5,shallow_preferred
+2016,One Tree Island,-23.4833,152.0739,0.0746192843859103,2,,all_available
+2016,Opal Reef,-16.2034,145.9065,-0.870952350315747,1,,all_available
+2016,Orpheus Island,-18.601750000000003,146.48829999999998,0.14085842937082727,2,,all_available
+2016,Pandora Reef,-18.8164,146.4341,-1.230475505080305,1,,shallow_preferred
+2016,Peak Island,-23.3413,150.9369,0.7980236209381337,1,,shallow_preferred
+2016,Peart Reef,-17.46705,146.40255,-0.7899533874370499,2,2.4,shallow_preferred
+2016,Pelican Island,-23.2397,150.8742,0.8965753957673843,1,,shallow_preferred
+2016,Pelorus Island,-18.5406,146.4888,-0.4118532764787783,1,,shallow_preferred
+2016,Penrith Reef,-21.0032,149.8875,-1.99,1,,all_available
+2016,Pine Island,-20.378,148.8884,2.758559077194137,1,,shallow_preferred
+2016,Pompey Reef (No 1),-20.9201,150.5582,-0.8300000000000001,1,,shallow_preferred
+2016,Rebe Reef,-19.795,150.1499,-2.99,1,,shallow_preferred
+2016,Rib Reef,-18.473,146.8774,-0.1772024504667313,1,,shallow_preferred
+2016,Seaforth Island,-20.4685,149.0389,1.428689279780309,1,,shallow_preferred
+2016,Shute and Tancred Islands,-20.3009,148.7983,5.099828531280933,1,,shallow_preferred
+2016,Small Lagoon Reef,-21.8678,152.5239,0.1231167317810061,1,,shallow_preferred
+2016,Snake Reef,-22.0232,152.1928,0.3360573961696979,1,,shallow_preferred
+2016,Snapper Island North,-16.2924,145.4969,5.2608957298267205,1,13.6,shallow_preferred
+2016,St Crispin Reef,-16.0733,145.8438,0.8079247213057474,1,,shallow_preferred
+2016,Taylor Reef,-17.8121,146.5703,2.0139693667363594,1,,shallow_preferred
+2016,Tern Reef,-20.9023,150.0264,-1.95,1,,shallow_preferred
+2016,Thetford Reef,-16.7995,146.1951,1.7851117645284935,1,,shallow_preferred
+2016,Turner Cay,-21.7031,152.5605,-0.16,1,,all_available
+2016,Woiz Reef,-10.1741,143.226,9.436863183715728,1,,all_available
+2016,Yonge Reef,-14.5731,145.6147,-1.8764307465645336,1,,shallow_preferred
+2017,19-131 Reef,-19.7641,149.3786,0.1648669316651334,1,,shallow_preferred
+2017,19-138 Reef,-19.8024,149.4199,-0.6955989138045973,1,,shallow_preferred
+2017,19-159 Reef,-19.6661,149.9146,-0.47,1,,shallow_preferred
+2017,20-104 Reef,-20.0286,149.6933,-0.2948143010351345,1,,shallow_preferred
+2017,21-062 Reef,-21.028,150.8534,-1.3030360356554327,1,,shallow_preferred
+2017,21-139 Reef,-21.4552,151.4654,-0.8370985853263284,1,,shallow_preferred
+2017,21-187 Reef,-21.4072,151.6414,-0.6164626088503855,1,,shallow_preferred
+2017,21-245 Reef,-21.298,152.4425,0.0679673369730013,1,,shallow_preferred
+2017,21-550 Reef,-21.9471,152.3069,0.3405297474348194,1,,shallow_preferred
+2017,21-591 Reef,-21.0266,150.3807,-2.930230544831029,1,,all_available
+2017,Agincourt Reef Number 1,-16.0384,145.8688,-3.146731387263813,1,,all_available
+2017,Arlington Reef,-16.6891,146.0871,0.8026286572687749,1,,shallow_preferred
+2017,Barren Island,-23.1578,151.0707,0.6004196062900613,1,,all_available
+2017,Bedarra Island,-18.0094,146.148,3.5504139827964547,1,,shallow_preferred
+2017,Border Island,-20.171,149.0319,-0.5385739067167545,1,,shallow_preferred
+2017,Boult Reef,-23.747,152.2725,-1.5204336353105217,1,,shallow_preferred
+2017,Camp Island East,-19.8508,147.9052,6.633293001799257,1,,shallow_preferred
+2017,Carter,-14.5238,145.5817,-5.795992916884115,1,,all_available
+2017,Cattle Bay,-18.5691,146.4823,-0.2121164498235934,1,5.6,shallow_preferred
+2017,Cherepo,-10.6893,142.2799,0.9537529396181982,1,,shallow_preferred
+2017,Chicken Reef,-18.6534,147.7199,-1.3663101188473838,1,,shallow_preferred
+2017,Chinaman Reef,-21.9973,152.664,0.076558152790821,1,,shallow_preferred
+2017,Davies Reef,-18.8065,147.6688,-0.460888870782222,1,,shallow_preferred
+2017,Dent Island,-20.345,148.9382,2.042098752777987,1,,shallow_preferred
+2017,Dip Reef,-18.3999,147.4519,-4.333377514241236,1,,all_available
+2017,Double Cone,-20.1046,148.7218,0.2690576907372026,1,,shallow_preferred
+2017,Dugong Island,-10.518,143.0997,-0.3522696767022557,1,,shallow_preferred
+2017,Dunk Island,-17.9263,146.1461,0.2751631929575673,1,,shallow_preferred
+2017,East Cay,-21.4727,152.5662,0.160089970195385,1,,shallow_preferred
+2017,Erskine Island,-23.498800000000003,151.7748,-0.038515396352895456,2,6.25,shallow_preferred
+2017,Farquharson Reef,-17.79,146.5315,1.465914024900595,1,,shallow_preferred
+2017,Feather Reef,-17.519,146.3887,0.6378752502221996,1,,shallow_preferred
+2017,Fitzroy Island,-16.9233,145.9963,2.110728215512085,1,7.6,shallow_preferred
+2017,Frankland Islands,-17.227,146.0904,1.5541734846759017,1,,shallow_preferred
+2017,Gannet Cay Reef,-21.9784,152.4742,-0.1627587981511653,1,,shallow_preferred
+2017,Geoffrey Bay,-19.1548,146.8685,5.926048371480657,1,,shallow_preferred
+2017,"Green Island, Qld",-16.7583,145.97,2.340191435615312,1,,shallow_preferred
+2017,Hastings Reef,-16.5013,146.017,0.4853243896715344,1,,shallow_preferred
+2017,Havannah Island,-18.8472,146.5428,0.0869171131405899,1,,shallow_preferred
+2017,Hayman Island,-20.0413,148.8819,0.1848600545097944,1,,shallow_preferred
+2017,Hedley Reef,-17.2235,146.4754,1.5130401055442544,1,,shallow_preferred
+2017,Helix Reef,-18.6203,147.2958,-1.0224455431706163,1,,shallow_preferred
+2017,Heron Island,-23.4384,151.9182,1.4967732072370152,1,,shallow_preferred
+2017,High Island,-17.1622,146.007,0.670128926553808,1,,shallow_preferred
+2017,Holbourne Island East,-19.7333,148.3644,-3.374739542342464,1,,all_available
+2017,Horseshoe Reef,-22.0227,152.6166,-0.2975069033353643,1,,shallow_preferred
+2017,Humpy Island,-23.2162,150.9638,1.8548445110707927,1,,shallow_preferred
+2017,Hyde Reef,-19.7457,150.0822,-0.8,1,,shallow_preferred
+2017,John Brewer,-18.6189,147.0813,-0.19977371658930343,2,4.0,shallow_preferred
+2017,Knife Reef,-18.5711,147.5772,-4.635100374605694,1,,all_available
+2017,Kubin Island,-10.2388,142.2176,-0.1928151333613488,1,,all_available
+2017,Lady Elliot Reef,-18.6798,146.3325,5.367763141106728,1,,shallow_preferred
+2017,Lady Musgrave,-23.8884,152.422,-1.75598395577755,1,,shallow_preferred
+2017,Langford Island,-20.0877,148.8848,-1.0806375377260815,1,,shallow_preferred
+2017,Linnet Reef,-14.7852,145.3554,3.206928576833631,1,,all_available
+2017,Lizard Island,-14.6884,145.4422,3.4645279972952707,1,,shallow_preferred
+2017,Low Isles,-16.3831,145.5619,2.0405781380827364,1,,shallow_preferred
+2017,Macgillivray,-14.6485,145.4915,-0.9683515096486346,1,,all_available
+2017,Mackay Reef,-16.0399,145.6506,2.2522848881274307,1,,shallow_preferred
+2017,Manning Island,-23.854,151.3533,3.6855037764959153,1,2.0,shallow_preferred
+2017,Martin,-14.7553,145.3722,2.925004485266232,1,,all_available
+2017,Mast Head Reef,-23.5341,151.7497,0.2643198653873018,1,,all_available
+2017,McCulloch Reef,-17.2834,146.4777,1.6562348400435951,1,,shallow_preferred
+2017,Michaelmas Reef,-16.5528,146.0454,2.5909335644133407,1,,shallow_preferred
+2017,Moore Reef,-16.8519,146.2336,-0.1839636080845217,1,,shallow_preferred
+2017,No Name,-14.6279,145.6453,-6.923401607784927,1,,all_available
+2017,North Direction Island,-14.7435,145.5136,1.654546928877684,1,,shallow_preferred
+2017,North Keppel Island,-23.0864,150.9052,1.558054564812532,1,,shallow_preferred
+2017,North Reef,-23.1775,151.9041,-1.6125873014673375,1,5.5,shallow_preferred
+2017,Northeast Reef,-18.5718,146.4947,1.081957224109642,1,2.0,shallow_preferred
+2017,One Tree Island,-23.4833,152.0739,-2.369160070150796,3,,all_available
+2017,Opal Reef,-16.2042,145.9005,4.085801976706115,1,,shallow_preferred
+2017,Orpheus Island,-18.601750000000003,146.48829999999998,0.5985243157258839,2,,all_available
+2017,Pandora Reef,-18.8164,146.4341,0.4563194908363481,1,,shallow_preferred
+2017,Peak Island,-23.3413,150.9369,2.5338963002932164,1,,shallow_preferred
+2017,Peart Reef,-17.4676,146.402,0.2564586963575834,1,,shallow_preferred
+2017,Pelican Island,-23.2397,150.8742,5.076861281952688,1,,shallow_preferred
+2017,Pelorus Island,-18.5406,146.4888,0.2443588332417867,1,,shallow_preferred
+2017,Penrith Reef,-21.0032,149.8875,-3.2164805609812284,1,,all_available
+2017,Pine Island,-20.378,148.8884,2.267680691159056,1,,shallow_preferred
+2017,Pompey Reef (No 1),-20.9201,150.5582,-1.4256318177575098,1,,shallow_preferred
+2017,Rat Island,-23.767,151.3185,5.937374202789373,1,,shallow_preferred
+2017,Rebe Reef,-19.795,150.1499,-3.61,1,,shallow_preferred
+2017,Repulse,-20.5779,148.8625,-1.5644129148914745,1,,all_available
+2017,Rib Reef,-18.473,146.8774,-0.4027165745273926,1,9.4,shallow_preferred
+2017,Seaforth Island,-20.4685,149.0389,1.416027765909833,1,,shallow_preferred
+2017,Seal Rocks North,-23.9583,151.4849,3.70408024696868,1,,shallow_preferred
+2017,Shute and Tancred Islands,-20.3009,148.7983,1.4164816374178564,2,3.6,shallow_preferred
+2017,Small Lagoon Reef,-21.8678,152.5239,0.6451005694404068,1,,shallow_preferred
+2017,Snake Reef,-22.0232,152.1928,-1.8438006949277133,1,,shallow_preferred
+2017,Snapper Island North,-16.2924,145.4969,4.04035081925011,1,,shallow_preferred
+2017,St Crispin Reef,-16.0733,145.8438,0.1684520194030891,1,,shallow_preferred
+2017,Taylor Reef,-17.8121,146.5703,0.914864962408548,1,,shallow_preferred
+2017,Tern Reef,-20.9023,150.0264,-1.4831185058775374,1,,shallow_preferred
+2017,Thetford Reef,-16.7995,146.1951,0.2855790394732214,1,,shallow_preferred
+2017,Tryon Island,-23.2457,151.7739,0.2693227123175901,1,,shallow_preferred
+2017,Turner Cay,-21.7031,152.5605,-0.9409643198063032,1,,all_available
+2017,Twin Island,-10.4629,142.4358,0.144507896456286,1,,shallow_preferred
+2017,Warraber Island,-10.200800000000001,142.81900000000002,-0.5776570387070736,2,1.2,shallow_preferred
+2017,Willis Island,-16.288,149.96345,-0.004634673557972757,2,,shallow_preferred
+2017,Woiz Reef,-10.1744,143.2264,-0.0823360794803385,1,,shallow_preferred
+2017,Yonge Reef,-14.5731,145.6147,-1.6965574448576124,1,,shallow_preferred
+2020,19-131 Reef,-19.7641,149.3786,2.681231950161008,1,,shallow_preferred
+2020,19-138 Reef,-19.8024,149.4199,-0.2586793278278807,1,,shallow_preferred
+2020,20-104 Reef,-20.0286,149.6933,1.3679715009030966,1,,shallow_preferred
+2020,21-062 Reef,-21.0266,150.8538,-0.2332874208135233,1,,all_available
+2020,21-187 Reef,-21.4072,151.6414,0.8718928705099143,1,,shallow_preferred
+2020,21-245 Reef,-21.2965,152.4465,-0.4331639766129953,1,,all_available
+2020,21-296 Reef,-21.3297,152.5636,-0.338299175268177,1,,shallow_preferred
+2020,21-550 Reef,-21.9471,152.3069,0.2899349813298437,1,,shallow_preferred
+2020,Agincourt Reef Number 1,-16.0398,145.8652,-6.3761235901028375,1,,shallow_preferred
+2020,Aquila Island,-21.9611,149.5816,1.900201645273785,1,,shallow_preferred
+2020,Arlington Reef,-16.6461,146.1107,-0.5133974087988227,1,,all_available
+2020,Barren Island,-23.1578,151.0707,-1.7387467211694982,1,,shallow_preferred
+2020,Bedarra Island,-18.0094,146.148,4.73335811084036,1,,shallow_preferred
+2020,Cattle Bay,-18.5691,146.4823,-2.477269859827372,1,,shallow_preferred
+2020,Centipede Reef,-18.7341,147.5522,-0.5921616319662082,1,,shallow_preferred
+2020,Chicken Reef,-18.6534,147.7199,-1.3399441724789538,1,,shallow_preferred
+2020,Chinaman Reef,-21.9973,152.664,0.3270784856057034,1,2.5,shallow_preferred
+2020,Curd Reef,-12.5853,143.5112,4.110928124208211,1,,shallow_preferred
+2020,Davies Reef,-18.8065,147.6688,-1.096379040767636,1,,shallow_preferred
+2020,Daydream Island,-20.2557,148.8122,0.6551431759961712,1,,shallow_preferred
+2020,Dent Island,-20.345,148.9382,2.420851269963028,1,,shallow_preferred
+2020,Dip Reef,-18.3999,147.4519,-3.5408187431900267,1,,all_available
+2020,Double Cone,-20.1046,148.7218,-0.2069540241686525,1,,shallow_preferred
+2020,Dugong Island,-10.518,143.0997,-1.334900480255203,1,,shallow_preferred
+2020,Dunk Island,-17.9263,146.1461,4.646749671684462,1,,shallow_preferred
+2020,East Cay,-21.4727,152.5662,-1.3561652153503905,1,,shallow_preferred
+2020,Erskine Island,-23.4993,151.7749,0.6358016707944536,1,,shallow_preferred
+2020,Farquharson Reef,-17.79,146.5315,1.6638072792425138,1,,shallow_preferred
+2020,Feather Reef,-17.519,146.3887,1.2824785990351666,1,,shallow_preferred
+2020,Fitzroy Island,-16.9233,145.9963,3.912260745858256,1,,shallow_preferred
+2020,Flinders Reef,-17.71485,148.44805,-0.7344176355788066,2,,shallow_preferred
+2020,Frankland Islands,-17.227,146.0904,1.7410113732625885,1,,shallow_preferred
+2020,Gannet Cay Reef,-21.9758,152.4797,-0.4839372673882147,1,,all_available
+2020,Geoffrey Bay,-19.1548,146.8685,5.872039081989005,1,,shallow_preferred
+2020,"Green Island, Qld",-16.7583,145.97,4.1304421271126,1,,shallow_preferred
+2020,Grub Reef,-18.6214,147.433,-1.9438025416596412,1,,shallow_preferred
+2020,Hastings Reef,-16.5013,146.017,-0.6945687193633798,1,,shallow_preferred
+2020,Havannah Island,-18.8472,146.5428,1.5996019487396875,1,,shallow_preferred
+2020,Hayman Island,-20.0572,148.8997,-1.086136790930217,1,,all_available
+2020,Hedley Reef,-17.2235,146.4754,2.2332465574489904,1,,shallow_preferred
+2020,Helix Reef,-18.6203,147.2958,-0.0315414839450269,1,,shallow_preferred
+2020,Henderson Island,-21.4856,149.9091,1.195587940616754,1,,all_available
+2020,Heron Island,-23.4384,151.9182,-0.1325011480103937,1,,shallow_preferred
+2020,High Island,-17.1622,146.007,-4.069798420007173,1,,shallow_preferred
+2020,Hook Island,-20.1681,148.8871,-3.7770271771735215,1,,shallow_preferred
+2020,Horseshoe Reef,-22.0227,152.6166,0.5820267758588589,1,,shallow_preferred
+2020,Humpy Island,-23.2162,150.9638,-0.1949930341297481,1,,shallow_preferred
+2020,John Brewer,-18.619,147.0811,0.1904078716576975,1,,shallow_preferred
+2020,Kelso Reef,-18.4448,146.9933,-2.390825026230913,1,,shallow_preferred
+2020,Knife Reef,-18.572,147.5759,-0.8337973625298156,1,,shallow_preferred
+2020,Lady Elliot Reef,-18.6798,146.3325,7.410464728408286,1,,shallow_preferred
+2020,Lady Musgrave,-23.8884,152.422,-2.2420646583098907,1,,shallow_preferred
+2020,Lagoon Reef,-12.3923,143.74,-1.526612835689486,1,,shallow_preferred
+2020,Lizard Island,-14.68796,145.45285,0.4795624356526891,2,0.6,shallow_preferred
+2020,Low Isles,-16.3831,145.5619,1.407814282110004,1,,shallow_preferred
+2020,Macgillivray,-14.6485,145.4915,-4.299430568059551,1,,all_available
+2020,Mackay Reef,-16.0399,145.6506,2.2648477201922943,1,,shallow_preferred
+2020,Manning Island,-23.854,151.3533,2.9522047055525817,1,,shallow_preferred
+2020,Martin,-14.7553,145.3722,1.2220278261895885,1,,all_available
+2020,Mast Head Reef,-23.5341,151.7497,1.3050274284054115,1,,all_available
+2020,McCulloch Reef,-17.2834,146.4777,2.116830558170516,1,,shallow_preferred
+2020,Michaelmas Reef,-16.5528,146.0454,1.1469479944542602,1,,shallow_preferred
+2020,Moore Reef,-16.8519,146.2336,1.5139498544599743,1,,shallow_preferred
+2020,Moore Reef-Coral Sea,-15.8866,149.1516,-4.987052573988572,1,,shallow_preferred
+2020,Myrmidon Reef,-18.2585,147.3814,-0.6244883420862655,1,,shallow_preferred
+2020,No Name,-14.6308,145.6418,-4.310231988865706,1,,shallow_preferred
+2020,North Direction Island,-14.7435,145.5136,-6.57,1,,shallow_preferred
+2020,North Keppel Island,-23.0864,150.9052,-0.0437870365482258,1,,shallow_preferred
+2020,North Reef,-23.1755,151.9086,0.0,1,,all_available
+2020,Northeast Reef,-18.5718,146.4947,-2.2315763578432497,1,,shallow_preferred
+2020,Nth Barnards (Jesse Is),-17.6722,146.1742,5.556803929865103,1,,shallow_preferred
+2020,One Tree Island,-23.4833,152.0739,-3.1230587818809963,3,,all_available
+2020,Opal Reef,-16.2042,145.9005,-0.7276474892046885,1,,shallow_preferred
+2020,Pandora Reef,-18.8164,146.4341,2.415483371564374,1,,shallow_preferred
+2020,Peak Island,-23.3413,150.9369,2.0302291152499343,1,,shallow_preferred
+2020,Peart Reef,-17.4676,146.402,1.027260252243318,1,,shallow_preferred
+2020,Pelican Island,-23.2397,150.8742,2.036700049354229,1,,shallow_preferred
+2020,Pelorus Island,-18.5406,146.4888,-3.0800208505562527,1,,shallow_preferred
+2020,Penrith Reef,-21.0036,149.8882,-1.0546015138842613,1,,shallow_preferred
+2020,Pine Island,-20.378,148.8884,1.9326931379161556,1,,shallow_preferred
+2020,Pine Peak Island,-21.5145,150.2515,0.6812159480858444,1,,shallow_preferred
+2020,Pompey Reef (No 1),-20.9201,150.5582,-0.0615643802336514,1,,shallow_preferred
+2020,Rat Island,-23.767,151.3185,4.032971175530797,1,,shallow_preferred
+2020,Rebe Reef,-19.795,150.1499,-6.47,1,,shallow_preferred
+2020,Repulse,-20.5779,148.8625,3.481321265505569,1,,all_available
+2020,Rib Reef,-18.473,146.8774,0.4080477107976641,1,,shallow_preferred
+2020,Roxburgh Reef,-18.4321,147.0563,-3.331693297466966,1,,shallow_preferred
+2020,Sand Bank No7,-13.4363,143.9722,-6.03,1,,shallow_preferred
+2020,Seaforth Island,-20.4685,149.0389,2.016782735515747,1,,shallow_preferred
+2020,Seal Rocks North,-23.9583,151.4849,2.838999863593152,1,,shallow_preferred
+2020,Shute and Tancred Islands,-20.3009,148.7983,1.348653458250242,1,,shallow_preferred
+2020,Small Lagoon Reef,-21.8678,152.5239,2.2234787121065374,1,,shallow_preferred
+2020,Snake Reef,-22.0232,152.1928,-0.0755047190480606,1,,shallow_preferred
+2020,Snapper Island North,-16.2924,145.4969,5.115966535074563,1,,shallow_preferred
+2020,St Crispin Reef,-16.0733,145.8438,88.25537843400438,1,,shallow_preferred
+2020,Taylor Reef,-17.8121,146.5703,0.3831780430515588,1,,shallow_preferred
+2020,Tern Reef,-20.9023,150.0264,-1.0741594610218153,1,,shallow_preferred
+2020,Thetford Reef,-16.7995,146.1951,1.1996534608867409,1,,shallow_preferred
+2020,Tryon Island,-23.2457,151.7739,-3.263919477013788,1,,shallow_preferred
+2020,Tuesday,-10.5519,142.3265,2.989141947783424,1,,shallow_preferred
+2020,Turner Cay,-21.7031,152.5605,-1.2722601282566712,1,,all_available
+2020,Tydeman Cay,-13.9715,144.5017,-5.401408447634655,2,2.6,shallow_preferred
+2020,Warraber Island,-10.2007,142.8189,1.78781952851811,1,,all_available
+2020,Willis Island,-16.28805,149.9634,-5.210242417599298,2,,shallow_preferred
+2020,Woiz Reef,-10.1744,143.2264,1.1404435733747071,1,,shallow_preferred
+2020,Yonge Reef,-14.57695,145.61415,-4.376788490280496,2,,shallow_preferred
+2022,19-131 Reef,-19.7641,149.3786,-2.3785906080173893,1,,shallow_preferred
+2022,19-159 Reef,-19.6628,149.9152,-4.44,1,,all_available
+2022,21-062 Reef,-21.0266,150.8538,-1.045948682836028,1,,all_available
+2022,21-139 Reef,-21.4552,151.4654,-0.4091454128263019,1,,shallow_preferred
+2022,21-187 Reef,-21.4072,151.6414,-0.083471493881662,1,,shallow_preferred
+2022,21-245 Reef,-21.2965,152.4465,-0.4454734262389186,1,,all_available
+2022,21-296 Reef,-21.3283,152.5656,-1.4652746991282903,1,,all_available
+2022,21-550 Reef,-21.9471,152.3069,-0.0034301923432069,1,,shallow_preferred
+2022,Agincourt Reef Number 1,-16.0398,145.8652,-2.651844619931497,1,,shallow_preferred
+2022,Aquila Island,-21.9611,149.5816,1.9098567453975277,1,,shallow_preferred
+2022,Arlington Reef,-16.6461,146.1107,-0.5367593562922782,1,,all_available
+2022,Barren Island,-23.1578,151.0707,-0.3208671857457266,1,,shallow_preferred
+2022,Bedarra Island,-18.0094,146.148,1.133605519395835,1,,shallow_preferred
+2022,Cattle Bay,-18.5691,146.4823,-1.4469747705416411,1,,shallow_preferred
+2022,Chicken Reef,-18.6543,147.7143,-1.4657225110230736,1,,shallow_preferred
+2022,Chinaman Reef,-21.9973,152.664,0.1627848857765562,1,,shallow_preferred
+2022,Davies Reef,-18.8065,147.6688,-4.097198572006766,1,,shallow_preferred
+2022,Daydream Island,-20.2557,148.8122,2.136293212639157,1,,shallow_preferred
+2022,Dent Island,-20.345,148.9382,1.3304348506075487,1,,shallow_preferred
+2022,Dip Reef,-18.3999,147.4519,-3.4808544735666334,1,,all_available
+2022,Double Cone,-20.1046,148.7218,-1.340713240785889,1,,shallow_preferred
+2022,Dugong Island,-10.518,143.0997,-3.104144143713349,1,,shallow_preferred
+2022,Dunk Island,-17.9263,146.1461,2.6186019242209104,1,,shallow_preferred
+2022,East Cay,-21.46965,152.56664999999998,-1.408171322422771,2,,all_available
+2022,Erskine Island,-23.4993,151.7749,-0.1361484251800034,1,,shallow_preferred
+2022,Farquharson Reef,-17.79,146.5315,4.046969595776141,1,,shallow_preferred
+2022,Feather Reef,-17.519,146.3887,0.6317105884816945,1,,shallow_preferred
+2022,Fitzroy Island,-16.9233,145.9963,2.65282077204235,1,,shallow_preferred
+2022,Frankland Islands,-17.227,146.0904,-2.82,1,,shallow_preferred
+2022,Gannet Cay Reef,-21.9784,152.4742,-0.1507100538374921,1,,shallow_preferred
+2022,Geoffrey Bay,-19.1548,146.8685,5.061730904646273,1,,shallow_preferred
+2022,"Green Island, Qld",-16.7755,145.9803,-0.4121544361777092,1,,all_available
+2022,Havannah Island,-18.8472,146.5428,-7.62,1,,shallow_preferred
+2022,Hayman Island,-20.0415,148.8819,0.494145963859558,1,,shallow_preferred
+2022,Hedley Reef,-17.2235,146.4754,-1.657937384793584,1,,shallow_preferred
+2022,Helix Reef,-18.6203,147.2958,-1.1398314146952075,1,,shallow_preferred
+2022,Henderson Island,-21.4854,149.9096,-0.0543985601681202,1,,shallow_preferred
+2022,Heron Island,-23.4384,151.9182,2.1808009517332927,1,,shallow_preferred
+2022,High Island,-17.1622,146.007,-2.77,1,,shallow_preferred
+2022,Hook Island,-20.1681,148.8871,0.2107336087404583,1,,shallow_preferred
+2022,Horseshoe Reef,-22.0229,152.6192,0.0112034489833148,1,,all_available
+2022,Humpy Island,-23.2162,150.9638,0.279434735430043,1,,shallow_preferred
+2022,John Brewer,-18.619,147.0811,0.4930263576224289,1,,shallow_preferred
+2022,Kelso Reef,-18.4448,146.9933,-1.0781514652946915,1,,shallow_preferred
+2022,Knife Reef,-18.5711,147.5772,-3.2651574439186666,1,,all_available
+2022,Lady Elliot Reef,-18.6798,146.3325,3.8833344612980607,1,,shallow_preferred
+2022,Lady Musgrave,-23.8896,152.42,-0.47,1,,shallow_preferred
+2022,Lagoon Reef,-12.3923,143.74,-4.43344753368639,1,,shallow_preferred
+2022,Lizard Island,-14.68995,145.45430850000002,0.01200421625706849,2,5.0,shallow_preferred
+2022,Low Isles,-16.3831,145.5619,2.007534551996275,1,,shallow_preferred
+2022,Macgillivray,-14.6485,145.4915,-3.113379619347248,1,,all_available
+2022,Mackay Reef,-16.0399,145.6506,0.9261292605345348,1,,shallow_preferred
+2022,Manning Island,-23.854,151.3533,5.309158172425871,1,,shallow_preferred
+2022,Martin,-14.7553,145.3722,1.9154301837787944,1,,all_available
+2022,Mast Head Reef,-23.5341,151.7497,0.3320649799632625,1,,all_available
+2022,McCulloch Reef,-17.2834,146.4777,1.0634930497346478,1,,shallow_preferred
+2022,Myrmidon Reef,-18.25695,147.38115,-2.106265781265818,2,,all_available
+2022,No Name,-14.6308,145.6418,-1.705695853816663,1,,shallow_preferred
+2022,North Direction Island,-14.7435,145.5136,0.7454363748168298,1,,shallow_preferred
+2022,North Keppel Island,-23.0864,150.9052,-0.7961308644747469,1,,shallow_preferred
+2022,Northeast Reef,-18.5718,146.4947,0.1769185098647074,1,,shallow_preferred
+2022,Nth Barnards (Jesse Is),-17.6717,146.1747,1.273264460917427,1,,all_available
+2022,One Tree Island,-23.4833,152.0739,-0.32,4,,all_available
+2022,Pandora Reef,-18.8164,146.4341,-1.3308283189703358,1,,shallow_preferred
+2022,Peak Island,-23.3413,150.9369,0.5855679313135402,1,,shallow_preferred
+2022,Peart Reef,-17.4676,146.402,-0.8201420307894405,1,,shallow_preferred
+2022,Pelican Island,-23.2397,150.8742,2.87801058962431,1,,shallow_preferred
+2022,Pelorus Island,-18.5406,146.4888,-1.0987203135328016,1,,shallow_preferred
+2022,Penrith Reef,-21.0036,149.8882,-1.4836345387472027,1,,shallow_preferred
+2022,Pine Island,-20.378,148.8884,1.614351045119581,1,,shallow_preferred
+2022,Pine Peak Island,-21.5145,150.2515,-0.6866243656929498,1,,shallow_preferred
+2022,Pompey Reef (No 1),-20.9201,150.5582,-1.631415408490577,1,,shallow_preferred
+2022,Rat Island,-23.767,151.3185,6.114287463581379,1,,shallow_preferred
+2022,Rebe Reef,-19.795,150.1499,-5.96,1,,shallow_preferred
+2022,Rib Reef,-18.473,146.8774,-3.641424667151929,1,,shallow_preferred
+2022,Sand Bank No7,-13.4363,143.9722,-4.078812431810763,1,,shallow_preferred
+2022,Seaforth Island,-20.4685,149.0389,1.3896108603220183,1,,shallow_preferred
+2022,Shute and Tancred Islands,-20.3009,148.7983,1.2805066431930934,1,,shallow_preferred
+2022,Small Lagoon Reef,-21.8678,152.5239,-0.49,1,,shallow_preferred
+2022,Snake Reef,-22.0232,152.1928,0.2680475636644979,1,,shallow_preferred
+2022,Snapper Island North,-16.2924,145.4969,4.223499478603828,1,,shallow_preferred
+2022,St Crispin Reef,-16.0733,145.8438,-0.410183903401097,1,,shallow_preferred
+2022,Taylor Reef,-17.8121,146.5703,1.8551421834079156,1,,shallow_preferred
+2022,Tern Reef,-20.9023,150.0264,-1.940902751155893,1,,shallow_preferred
+2022,Thetford Reef,-16.7995,146.1951,0.6869782559540729,1,,shallow_preferred
+2022,Tryon Island,-23.2457,151.7739,0.7394298817738182,1,,shallow_preferred
+2022,Turner Cay,-21.7031,152.5605,-1.11,1,,all_available
+2022,Tydeman Cay,-13.9715,144.5017,-3.554377203886662,1,,shallow_preferred
+2022,Warraber Island,-10.2007,142.8189,-3.827378726930228,1,,all_available
+2022,Woiz Reef,-10.1744,143.2264,-0.5409761267719593,1,,shallow_preferred
+2024,19-131 Reef,-19.7641,149.3786,-0.6744511753434193,1,,shallow_preferred
+2024,19-138 Reef,-19.8024,149.4199,-1.0230412376642537,1,,shallow_preferred
+2024,19-159 Reef,-19.6661,149.9146,-7.65684152839136,1,,shallow_preferred
+2024,21-062 Reef,-21.0266,150.8538,-1.9333814204583104,1,,all_available
+2024,21-139 Reef,-21.4552,151.4654,0.0726746718180955,1,,shallow_preferred
+2024,21-187 Reef,-21.4072,151.6414,-0.4103944612504753,1,,shallow_preferred
+2024,21-296 Reef,-21.3283,152.5656,-4.404290636113286,1,,all_available
+2024,21-550 Reef,-21.9471,152.3069,-6.265088692108982,1,,shallow_preferred
+2024,Agincourt Reef Number 1,-16.0398,145.8652,-4.012516339372439,1,,shallow_preferred
+2024,Aquila Island,-21.9611,149.5816,0.4390047486318469,1,,shallow_preferred
+2024,Barren Island,-23.1578,151.0707,0.3196292238013338,1,,all_available
+2024,Bedarra Island,-18.0094,146.148,1.1625144023774636,1,,shallow_preferred
+2024,Cattle Bay,-18.5691,146.4823,-0.7300712136667187,1,,shallow_preferred
+2024,Chicken Reef,-18.6543,147.7143,-2.184520626102456,1,,shallow_preferred
+2024,Chinaman Reef,-21.9973,152.664,-0.5064200122349298,1,,shallow_preferred
+2024,Davies Reef,-18.8065,147.6688,-4.23,1,,shallow_preferred
+2024,Daydream Island,-20.2557,148.8122,0.6784482753618271,1,,shallow_preferred
+2024,Dent Island,-20.345,148.9382,2.566522705175249,1,,shallow_preferred
+2024,Double Cone,-20.1046,148.7218,1.2275266028900518,1,,shallow_preferred
+2024,Dunk Island,-17.9263,146.1461,1.9648675111953395,1,,shallow_preferred
+2024,East Cay,-21.4731,152.5661,-2.711257994167201,1,,shallow_preferred
+2024,Erskine Island,-23.4993,151.7749,-0.1237739004500273,1,,shallow_preferred
+2024,Farquharson Reef,-17.79,146.5315,-0.4620728254939896,1,,shallow_preferred
+2024,Feather Reef,-17.519,146.3887,-0.1261575783816608,1,,shallow_preferred
+2024,Fitzroy Island,-16.9233,145.9963,2.4398755607444453,1,,shallow_preferred
+2024,Frankland Islands,-17.227,146.0904,-4.0774689296026985,1,,shallow_preferred
+2024,Gannet Cay Reef,-21.9784,152.4742,-1.6855877548702187,1,,shallow_preferred
+2024,Geoffrey Bay,-19.1548,146.8685,3.1578664283643807,1,,shallow_preferred
+2024,Havannah Island,-18.8472,146.5428,-2.0044825113156497,1,,shallow_preferred
+2024,Hayman Island,-20.0572,148.8997,-1.6394145048062023,1,,all_available
+2024,Helix Reef,-18.6203,147.2958,-2.0171620859266275,1,,shallow_preferred
+2024,Henderson Island,-21.4854,149.9096,1.126334270875045,1,,shallow_preferred
+2024,Heron Island,-23.4384,151.9182,-0.181553811969767,1,,shallow_preferred
+2024,High Island,-17.1622,146.007,1.535772150210808,1,,shallow_preferred
+2024,Hook Island,-20.1681,148.8871,-3.042549039341085,1,,all_available
+2024,Horseshoe Reef,-22.0227,152.6166,-0.1809719599408747,1,,shallow_preferred
+2024,Humpy Island,-23.2162,150.9638,0.6080076396220804,1,,shallow_preferred
+2024,John Brewer,-18.619,147.0811,-2.873303413257616,1,,shallow_preferred
+2024,Kelso Reef,-18.4448,146.9933,-3.000988014471895,1,,shallow_preferred
+2024,Knife Reef,-18.5711,147.5772,-4.760525391713829,1,,all_available
+2024,Lady Elliot Reef,-18.6798,146.3325,2.6642012664764696,1,,shallow_preferred
+2024,Lady Musgrave,-23.8896,152.42,-1.9318759413607989,1,,shallow_preferred
+2024,Lagoon Reef,-12.3926,143.7398,-3.979975825951212,1,,all_available
+2024,Lizard Island,-14.68995,145.45430850000002,0.9437563272144394,2,5.0,shallow_preferred
+2024,Low Isles,-16.3831,145.5619,3.234717160448197,1,,shallow_preferred
+2024,Macgillivray,-14.6485,145.4915,0.3334817723541992,1,,all_available
+2024,Mackay Reef,-16.0399,145.6506,2.986583602448798,1,,shallow_preferred
+2024,Manning Island,-23.854,151.3533,0.8688011005989598,1,,shallow_preferred
+2024,Martin,-14.7553,145.3722,3.8351490990065393,1,,all_available
+2024,Mast Head Reef,-23.5341,151.7497,0.0469545366380899,1,,all_available
+2024,Myrmidon Reef,-18.2585,147.3814,-1.772714135542496,1,,shallow_preferred
+2024,No Name,-14.6308,145.6418,-3.1206719496112054,1,,shallow_preferred
+2024,North Direction Island,-14.7435,145.5136,5.383649436141575,1,,shallow_preferred
+2024,North Keppel Island,-23.0864,150.9052,1.0622295146220626,1,,shallow_preferred
+2024,Northeast Reef,-18.5718,146.4947,0.4083809324888072,1,,shallow_preferred
+2024,Nth Barnards (Jesse Is),-17.6717,146.1747,-2.745176977858989,1,,all_available
+2024,One Tree Island,-23.4833,152.0739,-1.8831180838731818,4,,all_available
+2024,Pandora Reef,-18.8164,146.4341,-1.2492841044856169,1,,shallow_preferred
+2024,Peart Reef,-17.4665,146.4031,-2.1103074542540026,1,,all_available
+2024,Pelican Island,-23.2397,150.8742,1.3336012499129186,1,,shallow_preferred
+2024,Pelorus Island,-18.5406,146.4888,-4.99468701852191,1,,shallow_preferred
+2024,Penrith Reef,-21.0036,149.8882,-8.25,1,,shallow_preferred
+2024,Pine Island,-20.378,148.8884,2.039983382562866,1,,shallow_preferred
+2024,Pine Peak Island,-21.5145,150.2515,-0.7875008679016648,1,,shallow_preferred
+2024,Rat Island,-23.767,151.3185,5.273399331924637,1,,shallow_preferred
+2024,Rebe Reef,-19.795,150.1499,-8.971298792288794,1,,shallow_preferred
+2024,Rib Reef,-18.473,146.8774,-0.7957262887094778,1,,shallow_preferred
+2024,Sand Bank No7,-13.4363,143.9722,-6.256932822483051,1,,shallow_preferred
+2024,Seaforth Island,-20.4685,149.0389,1.0099774032713746,1,,all_available
+2024,Seal Rocks North,-23.9583,151.4849,3.263794696516893,1,,shallow_preferred
+2024,Shute and Tancred Islands,-20.3009,148.7983,1.6179930495016066,1,,shallow_preferred
+2024,Snake Reef,-22.0232,152.1928,-1.1544690991552988,1,,shallow_preferred
+2024,Snapper Island North,-16.2924,145.4969,7.4435563247489664,1,,shallow_preferred
+2024,St Crispin Reef,-16.0733,145.8438,-2.0280244486688037,1,,shallow_preferred
+2024,Taylor Reef,-17.8121,146.5703,-0.1915376615305835,1,,shallow_preferred
+2024,Tern Reef,-20.9023,150.0264,-3.845918940878663,1,,shallow_preferred
+2024,Thetford Reef,-16.7995,146.1951,1.199482382797532,1,,shallow_preferred
+2024,Tryon Island,-23.2457,151.7739,-1.813614176405533,1,,shallow_preferred
+2024,Turner Cay,-21.7031,152.5605,-2.5344971807506527,1,,all_available
+2024,Willis Island,-16.2897,149.9649,-13.17,1,,shallow_preferred
+2024,Yonge Reef,-14.5731,145.6147,-1.8594030718308463,1,,shallow_preferred

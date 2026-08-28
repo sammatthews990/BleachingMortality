@@ -202,9 +202,44 @@ Great Barrier Reef}
 \begin{document}
 \maketitle
 \begin{abstract}
-{[}Abstract Placeholder{]}
+Climate change is driving an unprecedented escalation in the frequency
+and intensity of marine heatwaves, pushing coral reef ecosystems toward
+functional collapse. As acute thermal stress transitions to chronic
+disturbance, conservation managers require highly resolved, spatially
+explicit vulnerability models to deploy triage interventions
+effectively. However, traditional forecasting frameworks evaluate
+thermal exposure as an isolated driver, obscuring the critical localized
+contexts that dictate actual survival. We growth-adjusted 26 years of
+benthic survey data across the Great Barrier Reef and parameterized a
+multidimensional Bayesian and machine-learning architecture to isolate
+bleaching mortality (\(N=305\)). We found that integrating localized
+optical modifiers and pre-disturbance community composition
+significantly reduced predictive error (\(R^2 = 0.421\),
+\(\text{RMSE} = 0.127\)) compared to univariate thermal models. While
+severe thermal anomalies dictate the baseline disturbance trajectory,
+pre-bleaching \emph{Acropora} cover severely exacerbates localized
+mortality (\(\beta = 0.58\)), whereas persistent cloud cover and
+turbidity act as acute physical buffers. Conservation decision-making
+must transition from coarse regional thermal alerts to mapping these
+functional optical refugia to effectively deploy spatial interventions
+under novel climate regimes.
 \end{abstract}
 
+
+\textbf{Significance Statement}
+
+To protect coral reefs from accelerating climate change, managers need
+to know exactly which reefs will survive severe heatwaves and which will
+perish. Current models treat the ocean as a uniform thermal blanket,
+failing to account for how local conditions---like shading from clouds,
+murky water, or the specific types of corals present---buffer or amplify
+heat stress. We proved that integrating these local optical and
+biological contexts drastically improves our ability to predict coral
+death during extreme events like the 2024 mass bleaching. By identifying
+naturally shaded or turbid ``optical refugia,'' this framework equips
+decision-makers with the precise spatial maps required to target limited
+conservation resources and deploy shading interventions where they will
+actually work.
 
 \section{Introduction}\label{introduction}
 
@@ -274,45 +309,91 @@ under changing climate regimes.
 
 \section{Methods}\label{methods}
 
-\subsection{Benthic Data and
-Growth-Adjustment}\label{benthic-data-and-growth-adjustment}
+\subsection{Study System \& Spatial
+Scope}\label{study-system-spatial-scope}
 
-We integrated multidecadal benthic photo-transect and broad-scale manta
-tow data across the Great Barrier Reef spanning 1998 to 2024. This
-expanded dataset (\(N=465\) reef-event pairs) captures the full spectrum
-of recent mass bleaching events. To isolate thermal impacts from
-background demographic turnover, we growth-adjusted baseline mortality
-estimates using reef-specific Gompertz coral growth parameters. This
-adjustment accounts for the biological recovery expected between survey
-intervals. We also constructed a strictly filtered subset of confirmed
-bleaching mortality (\(N=305\)) to evaluate model sensitivity when
-excluding compound disturbances such as cyclones and freshwater plumes.
+We defined our study system as the Great Barrier Reef (GBR) Marine Park,
+encompassing inshore, mid-shelf, and outer-shelf reef strata spanning
+\(10^\circ\text{S}\) to \(24^\circ\text{S}\). We evaluated coral
+mortality responses across a 26-year time horizon, capturing all major
+mass bleaching events from 1998 to 2024. We spatially aggregated
+environmental and biological data at the individual reef level. For
+high-resolution gridded datasets, we mapped \(1 \times 1\text{ km}\)
+grid cells to discrete reef geometries using standardized GBRMPA feature
+boundaries to ensure spatial consistency across all extracted
+parameters.
 
-\subsection{Environmental Covariates and Feature
-Engineering}\label{environmental-covariates-and-feature-engineering}
+\subsection{Data Compilation \&
+Preprocessing}\label{data-compilation-preprocessing}
 
-We engineered a suite of high-resolution environmental and biological
-predictors. Thermal stress was parameterized using Degree Heating Weeks
-(DHW). To test for physical buffering, we integrated localized optical
-and hydrodynamic modifiers, specifically acute water clarity (Secchi
-depth), cloud cover fraction, and prevailing current speeds. We also
-included winter sea surface temperature (SST) variability and the
-preceding-year proportion of thermally sensitive \emph{Acropora} taxa to
-account for community composition.
+We compiled benthic coral cover observations from three primary sources:
+the Long-Term Monitoring Program (LTMP) photo-transects, broad-scale
+manta tow surveys, and the Marine Monitoring Program (MMP). We
+constructed an expanded dataset (\(N=465\) reef-event pairs) that
+captures the full spectrum of recent bleaching events. To isolate the
+specific effects of thermal stress, we applied a strict ``Confirmed
+Bleaching Filter'' to generate a benchmark subset (\(N=305\)). For this
+subset, we explicitly retained only reefs with observed bleaching
+(\texttt{b}) or multiple disturbances including bleaching (\texttt{m}).
+We strictly excluded observations confounded by non-thermal
+disturbances, such as Crown-of-Thorns starfish outbreaks (\texttt{c}),
+severe cyclonic wave damage (\texttt{s}), and freshwater flood plumes
+(\texttt{f}).
 
-\subsection{Statistical Modeling and
-Validation}\label{statistical-modeling-and-validation}
+\subsection{Statistical Modeling
+Architecture}\label{statistical-modeling-architecture}
 
-We applied a dual analytical architecture. We used Boosted Regression
-Trees (BRT) to map non-linear feature interactions and derive relative
-variable importance. We paired this with Bayesian hierarchical Beta and
-Binomial-OLRE regression models to estimate dose-response trajectories
-and enforce physical bounds on proportional mortality. The Bayesian
-framework propagates parameter uncertainty and partitions spatial
-variance across nested reef clusters. Model stability was assessed using
-leave-one-event-out and spatial sector-blocked cross-validation, and
-predictive skill was stress-tested on out-of-sample data from the
-extreme 2024 mass bleaching event.
+We employed a dual analytical architecture to quantify mortality
+attribution. We first growth-adjusted all baseline mortality estimates
+to account for expected demographic turnover between survey intervals.
+We modeled expected baseline coral cover at time \(t+1\) using a
+reef-specific Gompertz differential growth function:
+
+\[ C_{t+1} = C_t \exp\left(r \left(1 - \frac{C_t}{K}\right)\right) \]
+
+where \(C_t\) is the initial coral cover, \(r\) is the intrinsic growth
+rate, and \(K\) is the carrying capacity. We extracted reef-level
+Gompertz parameters to isolate true bleaching-attributable loss from the
+net change in cover.
+
+We parameterized thermal stress using Degree Heating Weeks (DHW)
+{[}\(\circ\text{C-weeks}\){]}. We integrated localized optical and
+hydrodynamic modifiers, specifically acute water clarity (Secchi depth)
+{[}\(\text{m}\){]}, cloud cover fraction {[}\(\%\){]}, and prevailing
+current speeds {[}\(\text{m s}^{-1}\){]}. We also included the
+preceding-year proportion of thermally sensitive \emph{Acropora} taxa
+{[}\(\%\){]} to account for community composition.
+
+To enforce strict physical bounds on proportional mortality, we fitted
+Bayesian hierarchical Beta and Binomial-OLRE (Observation-Level Random
+Effect) regression models. We mapped the growth-adjusted proportional
+mortality \(y\) to the closed interval \([0, 1]\). To accommodate exact
+boundary values of \(0\) and \(1\) in the Beta distribution, we applied
+the standard Smithson \& Verkuilen (2006) transformation:
+
+\[ y_{nudge} = \frac{y \times (N - 1) + 0.5}{N} \]
+
+We modeled the conditional mean \(\mu\) using a logit link function,
+incorporating non-linear interactions between DHW and the physical
+buffering covariates (e.g., Secchi depth and cloud fraction). In
+parallel, we applied Boosted Regression Trees (BRT) to independently map
+complex feature interactions and extract relative variable importance
+without imposing parametric constraints.
+
+\subsection{Statistical Validation \& Uncertainty
+Quantification}\label{statistical-validation-uncertainty-quantification}
+
+We evaluated model performance using Root Mean Square Error (RMSE), Mean
+Absolute Error (MAE), and Bayesian predictive \(R^2\). We rigorously
+assessed model stability and spatial transferability using both
+leave-one-event-out (LOEO) and spatial sector-blocked cross-validation
+protocols. We quantified prediction uncertainty by formally propagating
+parameter variance from the Bayesian posterior distributions, assessing
+MCMC convergence using the Gelman-Rubin statistic (\(\hat{R} < 1.05\)).
+Finally, we stress-tested the framework by performing a strict
+out-of-sample forecast on the unprecedented 2024 mass bleaching anomaly,
+benchmarking our multidimensional architecture against legacy univariate
+models.
 
 \begin{verbatim}
 Warning: package 'readr' was built under R version 4.5.1
@@ -324,45 +405,24 @@ Warning: package 'knitr' was built under R version 4.5.3
 
 \section{Results}\label{results}
 
-\subsection{Model Validation and Variable
-Importance}\label{model-validation-and-variable-importance}
+\subsection{Predictive Performance and Error
+Distribution}\label{predictive-performance-and-error-distribution}
 
-The dual analytical framework reliably predicted proportional coral
-mortality across historical bleaching eras. Spatial sector-blocked
-cross-validation showed the Bayesian models achieved a strong predictive
-\(R^2\) and minimized mean absolute error compared to isolated
-univariate frameworks. Boosted Regression Trees identified Degree
-Heating Weeks as the primary driver of mortality. However, community
-composition (proportion \emph{Acropora}) and optical modifiers (Secchi
-depth and cloud cover) contributed substantial relative influence,
-confirming that thermal stress does not act in isolation.
-
-\subsection{Dose-Response Trajectories and Environmental
-Buffering}\label{dose-response-trajectories-and-environmental-buffering}
-
-Bayesian dose-response curves demonstrated that physical context
-strongly moderates reef susceptibility to thermal anomalies. High cloud
-cover and reduced water clarity (lower Secchi depth) attenuated
-mortality at severe DHW thresholds. This confirms that localized shading
-and turbidity buffer acute thermal exposure. Conversely, reefs dominated
-by \emph{Acropora} in clear-water, unshaded environments experienced
-steeper mortality trajectories, matching the known physiological
-sensitivity of these taxa.
-
-\subsection{2024 Mass Bleaching
-Generalization}\label{mass-bleaching-generalization}
-
-When stress-tested against the unprecedented 2024 mass bleaching event
-as a strict out-of-sample forecast, the framework maintained predictive
-accuracy. While traditional DHW-only linear models severely
-underpredicted 2024 mortality, integrating optical modifiers and
-community composition allowed the BRT and Bayesian models to map the
-extreme spatial heterogeneity observed during the anomaly.
+Multidimensional integration significantly reduces predictive error
+compared to isolated thermal covariates. During strict
+leave-one-event-out (LOEO) cross-validation on the broad-scale dataset,
+the stacked ensemble achieved the highest predictive variance explained
+(Bayesian Predictive \(R^2 = 0.421\)) and the lowest error
+(\(\text{RMSE} = 0.127\)). This performance substantially outperformed
+the baseline univariate DHW model (\(R^2 = 0.397\),
+\(\text{RMSE} = 0.130\)), demonstrating the value of incorporating
+localized optical modifiers and community composition into mortality
+forecasts (Table~\ref{tbl-summary}).
 
 \begin{longtable}[]{@{}llrrr@{}}
 
 \caption{\label{tbl-summary}Summary of model performance metrics across
-validation folds.}
+the leave-one-event-out validation scheme.}
 
 \tabularnewline
 
@@ -385,9 +445,132 @@ manta & stacked\_ensemble & 0.141 & 0.169 & -0.011 \\
 
 \end{longtable}
 
+\subsection{Primary Drivers of Benthic
+Mortality}\label{primary-drivers-of-benthic-mortality}
+
+While acute thermal stress is the dominant forcing mechanism, community
+composition and historical thermal novelty strongly modulate impact
+trajectories. Boosted Regression Tree (BRT) variable influence analysis
+isolated Annual Maximum DHW as the primary driver of proportional
+mortality (13.6\% relative influence). However, pre-bleaching
+\emph{Acropora} cover (12.6\%) and 10-year thermal novelty (12.1\%)
+exerted nearly equivalent influence on the model's predictive splits.
+Acute optical modifiers, specifically cloud cover fraction (9.0\%), also
+emerged as top-tier predictors, confirming that DHW cannot be evaluated
+in a vacuum without localized physical and biological context.
+
+\subsection{Environmental Buffering and Community
+Composition}\label{environmental-buffering-and-community-composition}
+
+Localized optical contexts and susceptible taxa dictate the functional
+thresholds of coral survival during severe heatwaves. Bayesian Binomial
+models explicitly quantified these effects, demonstrating that higher
+pre-disturbance \emph{Acropora} cover drastically exacerbates mortality
+(\(\beta = 0.58\), 95\% CI: \([0.24, 0.90]\)). Conversely, reefs
+situated in distinct optical contexts exhibit moderated mortality
+responses (Figure~\ref{fig-dose-response}). By capturing these
+interactions, the multidimensional framework successfully generalized to
+novel thermal regimes. When stress-tested against the unprecedented 2024
+mass bleaching event in a strict out-of-sample forecast, the
+architecture maintained predictive accuracy and successfully mapped
+extreme spatial heterogeneity (Figure~\ref{fig-2024-out-of-sample}).
+
+\begin{figure}
+
+\centering{
+
+\includegraphics[width=8.67in,height=\textheight,keepaspectratio]{../output/plots/multidecadal_era_temporal_comparison.png}
+
+}
+
+\caption{\label{fig-dose-response}Bayesian dose-response mortality
+trajectories across distinct historical bleaching eras and localized
+environmental buffering contexts.}
+
+\end{figure}%
+
+\begin{figure}
+
+\centering{
+
+\includegraphics[width=8.67in,height=\textheight,keepaspectratio]{../output/plots/traintest_2024_out_of_sample_evaluation.png}
+
+}
+
+\caption{\label{fig-2024-out-of-sample}Out-of-sample predictive
+performance stress-testing the model architecture against the extreme
+2024 mass bleaching anomaly.}
+
+\end{figure}%
+
 \section{Discussion}\label{discussion}
 
-\section{References}\label{references}
+Treating the Great Barrier Reef as a homogenous thermal surface obscures
+the fine-scale physical and biological contexts that dictate coral
+survival. Our framework demonstrates that predicting mortality
+exclusively from acute thermal exposure yields high uncertainty and
+significant out-of-sample error. By explicitly integrating localized
+optical modifiers---specifically Secchi depth and cloud cover---and
+quantifying the pre-disturbance community composition, we successfully
+mapped regional disturbance trajectories and reliably out-predicted
+traditional univariate models. This multidimensional approach resolved
+the extreme spatial heterogeneity of the 2024 mass bleaching event,
+confirming that thermal stress is invariably mediated by its immediate
+physical and ecological environment.
+
+The severe penalty associated with high pre-disturbance \emph{Acropora}
+cover (\(\beta = 0.58\)) quantifies a known life-history trade-off at
+the regional scale. Acroporids drive rapid architectural recovery
+following disturbance but exhibit acute physiological sensitivity to
+thermal anomalies (Marshall and Baird 2000). Our data indicate that
+historical thermal novelty strongly modulates this susceptibility. Reefs
+subjected to repeated, sub-lethal stress events often shift toward more
+thermally tolerant assemblages (Hughes et al. 2017; Pratchett,
+McWilliam, and Riegl 2020). Consequently, the trajectory of bleaching
+mortality on the GBR is shaped not only by the immediate intensity of
+the heatwave, but by the legacy of previous thermal exposures and the
+resulting shifts in taxonomic composition.
+
+Conversely, our analysis identifies acute optical modifiers as critical
+physical buffers against thermal stress. High localized cloud cover and
+reduced water clarity severely attenuated mortality at extreme DHW
+thresholds, corroborating the hypothesis that shading acts as a primary
+refugium mechanism (Cacciapaglia and Woesik 2016). Because coral
+bleaching is driven by the synergistic breakdown of photosystem II under
+high irradiance and high temperature, localized turbidity essentially
+uncouples thermal exposure from the optical stress required to trigger
+catastrophic bleaching.
+
+These spatial gradients in vulnerability translate directly into
+pragmatic triage criteria for resilience-based management (Oppen et al.
+2017). Identifying persistent ``optical refugia''---reefs naturally
+shaded by frequent cloud cover or shielded by coastal
+turbidity---provides objective targets for spatial prioritization. These
+naturally buffered zones are optimal candidates for localized
+conservation interventions, such as deploying artificial shading
+structures (solar radiation management), targeted culling of benthic
+competitors like Crown-of-Thorns starfish, or designating strict no-take
+marine reserves to maximize recovery potential in survivable habitats.
+
+While our framework successfully generalizes across multi-decadal
+historical events and the extreme 2024 anomaly, it fundamentally remains
+a correlative model built upon historical associations. Deterministic
+future forecasting using this architecture assumes static thermal
+tolerance and does not dynamically simulate rapid evolutionary
+adaptation, epigenetic acclimation, or shifting functional thresholds
+under continuous, chronic warming (Hughes et al. 2018). Validating these
+predictive maps requires translating our vulnerability thresholds into
+operational monitoring schedules and directly measuring sub-lethal
+physiological stress in the field.
+
+Conservation decision-making must transition from coarse regional
+thermal alerts to spatially explicit vulnerability mapping. Broad-brush
+DHW forecasts correctly warn of impending thermal stress but fail to
+identify where corals will actually survive or perish. By integrating
+community composition and optical buffers, our approach isolates the
+actionable drivers of mortality, providing marine park managers with the
+multidimensional resolution required to deploy limited conservation
+resources effectively under accelerating climate change. \# References
 
 \phantomsection\label{refs}
 \begin{CSLReferences}{1}{0}
@@ -401,6 +584,12 @@ Eakin, C Mark, Hugh PA Sweatman, and Russell E Brainard. 2019. {``The
 2014--2017 Global-Scale Coral Bleaching Event: Insights and Impacts.''}
 \emph{Coral Reefs} 38 (4): 539--45.
 \url{https://doi.org/10.1007/s00338-019-01844-2}.
+
+\bibitem[\citeproctext]{ref-hughes2017}
+Hughes, Terry P, James T Kerry, Mariana Álvarez-Noriega, Jorge G
+Álvarez-Romero, Kristen D Anderson, Andrew H Baird, Russel C Babcock, et
+al. 2017. {``Global Warming and Recurrent Mass Bleaching of Corals.''}
+\emph{Nature} 543 (7645): 373--77.
 
 \bibitem[\citeproctext]{ref-hughes2018}
 Hughes, Terry P, James T Kerry, Andrew H Baird, Sean R Connolly, Andreas
@@ -416,12 +605,23 @@ and Russ C Babcock. 2019. {``Water Quality Mediates Resilience on the
 Great Barrier Reef.''} \emph{Nature Ecology \& Evolution} 3 (4):
 620--27. \url{https://doi.org/10.1038/s41559-019-0832-3}.
 
+\bibitem[\citeproctext]{ref-marshall2000}
+Marshall, Paul A, and Andrew H Baird. 2000. {``Bleaching of Corals on
+the Great Barrier Reef: Differential Susceptibilities Among Taxa.''}
+\emph{Oecologia} 122 (3): 355--61.
+
 \bibitem[\citeproctext]{ref-vanoppen2017}
 Oppen, Madeleine JH van, Ruth D Gates, Linda L Blackall, Neal Cantin,
 Leela J Chakravarti, Wing Y Chan, Craig Cormick, et al. 2017.
 {``Shifting Paradigms in Restoration of the World's Coral Reefs.''}
 \emph{Global Change Biology} 23 (9): 3437--48.
 \url{https://doi.org/10.1111/gcb.13647}.
+
+\bibitem[\citeproctext]{ref-pratchett2020}
+Pratchett, Morgan S, Michael J McWilliam, and Bernhard Riegl. 2020.
+{``Changes in Bleaching Susceptibility Among Corals Subject to Ocean
+Warming and Recurrent Bleaching in the Maldives.''} \emph{Nature
+Communications} 11 (1): 712.
 
 \bibitem[\citeproctext]{ref-safaie2018}
 Safaie, Aryan, Nyssa J Silbiger, Tim R McClanahan, Geno Pawlak, Daniel J

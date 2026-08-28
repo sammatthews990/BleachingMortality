@@ -1,0 +1,280 @@
+---
+title: 'AIMS logger validation of NOAA DHW'
+subtitle: 'GBR-wide event comparison and 2024 Lizard-cluster model sensitivity'
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    df-print: paged
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+logger <- read_csv(
+  '../data/processed/aims_logger_noaa_dhw_validation.csv',
+  show_col_types = FALSE
+)
+logger_ok <- logger |> filter(adequate_dhw_coverage)
+
+cluster_pattern <- paste(
+  c('Lizard', 'Martin', 'Linnet', 'North Direction', 'Macgillivray', 'Eyrie'),
+  collapse = '|'
+)
+cluster_logger <- logger_ok |>
+  filter(grepl(cluster_pattern, site, ignore.case = TRUE))
+
+cluster_ids <- c('14-114', '14-116a', '14-118', '14-123', '14-126', '14-143')
+base_name <- 'persistent_rw1_cyclone_cots_partial_pool'
+adjusted_name <- 'persistent_rw1_cyclone_cots_lizard_adjusted_partial_pool'
+inla_predictions <- read_csv(
+  '../output/inla_spatiotemporal/cv_predictions.csv', show_col_types = FALSE
+)
+inla_metrics <- read_csv(
+  '../output/inla_spatiotemporal/model_comparison.csv', show_col_types = FALSE
+) |>
+  filter(candidate %in% c(base_name, adjusted_name)) |>
+  mutate(
+    DHW_input = if_else(candidate == adjusted_name, 'Locally adjusted', 'NOAA'),
+    validation = recode(
+      scheme,
+      reef_blocked_5fold = 'Reef-blocked',
+      leave_one_event_out = 'Leave-event-out'
+    )
+  )
+
+reef_pair <- inla_predictions |>
+  filter(
+    event_year == 2024, ReefID %in% cluster_ids,
+    scheme == 'reef_blocked_5fold',
+    candidate %in% c(base_name, adjusted_name)
+  ) |>
+  mutate(DHW_input = if_else(candidate == adjusted_name, 'Locally adjusted', 'NOAA')) |>
+  group_by(DHW_input, ReefID, ReefName) |>
+  summarise(
+    observations = n(),
+    observed = mean(observed_mortality),
+    predicted = mean(predicted_mortality),
+    DHW = mean(ann_maxdhw),
+    .groups = 'drop'
+  )
+
+reef_pair_metrics <- reef_pair |>
+  group_by(DHW_input) |>
+  summarise(
+    reefs = n(),
+    RMSE = sqrt(mean((observed - predicted)^2)),
+    bias = mean(predicted - observed),
+    mean_observed = mean(observed),
+    mean_predicted = mean(predicted),
+    .groups = 'drop'
+  )
+
+cluster_validation_metrics <- inla_predictions |>
+  filter(
+    event_year == 2024, ReefID %in% cluster_ids,
+    candidate %in% c(base_name, adjusted_name)
+  ) |>
+  mutate(DHW_input = if_else(candidate == adjusted_name, 'Locally adjusted', 'NOAA')) |>
+  group_by(DHW_input, scheme, ReefID) |>
+  summarise(
+    observed = mean(observed_mortality),
+    predicted = mean(predicted_mortality),
+    .groups = 'drop'
+  ) |>
+  group_by(DHW_input, scheme) |>
+  summarise(
+    RMSE = sqrt(mean((observed - predicted)^2)),
+    bias = mean(predicted - observed),
+    .groups = 'drop'
+  )
+```
+
+## Decision summary
+
+The AIMS logger evidence supports a real local underestimation of thermal stress near Lizard Island, including in 2016. The correction is not constant across all reefs or events, however. It should therefore enter the operational pipeline as a spatially and temporally estimated NOAA-bias layer, not as a permanent +4.82 DHW rule.
+
+For the immediate 2024 sensitivity, adding the mean flat-logger uplift (+4.82 DHW) to MacGillivray, Lizard NW, Eyrie, Martin, Linnet and North Direction improves the six-reef, reef-blocked RMSE from `r number(reef_pair_metrics$RMSE[reef_pair_metrics$DHW_input == 'NOAA'], accuracy = 0.001)` to `r number(reef_pair_metrics$RMSE[reef_pair_metrics$DHW_input == 'Locally adjusted'], accuracy = 0.001)`. Mean bias changes from `r number(reef_pair_metrics$bias[reef_pair_metrics$DHW_input == 'NOAA'], accuracy = 0.001)` to `r number(reef_pair_metrics$bias[reef_pair_metrics$DHW_input == 'Locally adjusted'], accuracy = 0.001)`.
+
+The harder test gives the same conclusion: when the whole 2024 event is excluded from fitting, six-reef RMSE falls from `r number(cluster_validation_metrics$RMSE[cluster_validation_metrics$DHW_input == 'NOAA' & cluster_validation_metrics$scheme == 'leave_one_event_out'], accuracy = 0.001)` to `r number(cluster_validation_metrics$RMSE[cluster_validation_metrics$DHW_input == 'Locally adjusted' & cluster_validation_metrics$scheme == 'leave_one_event_out'], accuracy = 0.001)`.
+
+## GBR-wide logger comparison
+
+Logger DHW was reconstructed from daily quality-controlled AIMS temperature using the collocated NOAA maximum monthly mean and the NOAA 84-day threshold definition. A comparison is accepted only when at least 70 logger days are present in the 84-day window at the logger-DHW peak.
+
+```{r}
+logger_ok |>
+  group_by(event_year) |>
+  summarise(
+    adequate_series = n(),
+    median_discrepancy_DHW = median(dhw_discrepancy_logger_minus_noaa),
+    q10 = quantile(dhw_discrepancy_logger_minus_noaa, 0.10),
+    q90 = quantile(dhw_discrepancy_logger_minus_noaa, 0.90),
+    NOAA_underestimated_fraction = mean(dhw_discrepancy_logger_minus_noaa > 0),
+    .groups = 'drop'
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 2))) |>
+  kable(caption = 'Coverage-qualified AIMS logger comparisons by bleaching event')
+```
+
+```{r, fig.width=9, fig.height=8}
+ggplot(
+  logger_ok,
+  aes(lon, lat, colour = dhw_discrepancy_logger_minus_noaa)
+) +
+  geom_point(alpha = 0.78, size = 1.7) +
+  facet_wrap(~ event_year, ncol = 2) +
+  scale_colour_gradient2(
+    low = '#2c7bb6', mid = 'white', high = '#d7191c', midpoint = 0,
+    limits = c(-8, 8), oob = squish,
+    name = 'Logger minus\nNOAA DHW'
+  ) +
+  coord_equal() +
+  labs(
+    x = 'Longitude', y = 'Latitude',
+    title = 'AIMS logger minus NOAA DHW discrepancy',
+    subtitle = 'Values above zero indicate NOAA underestimation; colour is capped at ±8 DHW'
+  ) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+The map shows why a universal offset is inappropriate. Flat loggers tend to be warmer than NOAA during several events, but the sign and magnitude vary through space and time. Slope records are generally more mixed.
+
+## Lizard-region event history
+
+```{r, fig.width=10, fig.height=5.5}
+ggplot(
+  cluster_logger,
+  aes(
+    event_year, dhw_discrepancy_logger_minus_noaa,
+    colour = site, group = series, shape = habitat_position
+  )
+) +
+  geom_hline(yintercept = 0, colour = 'grey45') +
+  geom_line(alpha = 0.65) +
+  geom_point(size = 2.7) +
+  scale_x_continuous(breaks = sort(unique(logger$event_year))) +
+  labs(
+    x = 'Bleaching event', y = 'Logger minus NOAA DHW',
+    colour = 'AIMS site', shape = 'Position',
+    title = 'The local NOAA discrepancy recurs, but is not constant'
+  ) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+### 2016 evidence
+
+```{r}
+cluster_logger |>
+  filter(event_year == 2016) |>
+  select(
+    site, series, habitat_position, matched_days,
+    logger_max_DHW = logger_max_dhw,
+    NOAA_max_DHW = noaa_official_max_dhw,
+    discrepancy_DHW = dhw_discrepancy_logger_minus_noaa,
+    mean_daily_temperature_difference_C = mean_logger_minus_noaa_sst
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 2))) |>
+  kable(caption = 'Coverage-qualified Lizard-region comparisons for 2016')
+```
+
+Martin and Linnet both span the full 2015–16 bleaching summer. The AIMS temperature-logger catalogue and daily API contain no 2016 North Direction record. North Direction begins in this product during the 2017 event. The separate Lizard automated weather/ocean station does list water-temperature series for 2016, but its measurement endpoint requires an AIMS API key; it is therefore a useful follow-up source rather than silently substituting inaccessible data.
+
+## Effect of the 2024 DHW sensitivity on INLA
+
+```{r}
+inla_metrics |>
+  select(
+    DHW_input, validation, RMSE = rmse, MAE = mae,
+    predictive_R2 = predictive_r2, bias,
+    severe_predicted, severe_observed, severe_RMSE = severe_rmse,
+    WAIC = waic, DIC = dic
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  arrange(validation, DHW_input) |>
+  kable(caption = 'Same INLA structure with NOAA versus locally adjusted 2024 DHW')
+```
+
+```{r, fig.width=9, fig.height=5.5}
+ggplot(reef_pair, aes(observed, predicted, colour = DHW_input)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey45') +
+  geom_segment(
+    aes(xend = observed, yend = predicted),
+    position = position_dodge(width = 0.01), alpha = 0.3
+  ) +
+  geom_point(size = 3) +
+  geom_text(
+    aes(label = ReefName), nudge_y = 0.025,
+    size = 3, check_overlap = TRUE, show.legend = FALSE
+  ) +
+  coord_equal(xlim = c(0, 0.65), ylim = c(0, 0.65)) +
+  labs(
+    x = 'Observed relative mortality', y = 'Predicted relative mortality',
+    colour = 'DHW input',
+    title = '2024 Lizard-cluster predictions improve with logger-informed DHW'
+  ) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+```{r}
+reef_pair |>
+  mutate(across(c(observed, predicted, DHW), ~ round(.x, 3))) |>
+  arrange(ReefID, DHW_input) |>
+  select(ReefID, ReefName, DHW_input, DHW, observed, predicted) |>
+  kable(caption = 'Paired reef-blocked predictions for the six adjusted reefs')
+```
+
+The adjusted exposure resolves much of the underprediction at Eyrie and Linnet and improves Lizard and North Direction. It overpredicts Martin, demonstrating that the local correction should eventually be estimated from the spatial logger-discrepancy surface and its uncertainty rather than copied equally to every nearby reef.
+
+## Severe-tail BRT check
+
+```{r}
+read_tail_metrics <- function(path, label) {
+  read_csv(path, show_col_types = FALSE) |>
+    filter(
+      programme_key == 'pooled',
+      tail_features %in% c('none', 'wqc_threshold_track_tail'),
+      learner %in% c('INLA only', 'Conservative tail (0.5 gate)')
+    ) |>
+    mutate(DHW_input = label)
+}
+
+bind_rows(
+  read_tail_metrics('../output/inla_severe_tail/metrics.csv', 'NOAA'),
+  read_tail_metrics(
+    '../output/inla_severe_tail_lizard_adjusted/metrics.csv',
+    'Locally adjusted'
+  )
+) |>
+  select(
+    DHW_input, scheme, tail_features, learner,
+    RMSE = rmse, predictive_R2 = predictive_r2, bias,
+    severe_predicted, severe_observed, severe_RMSE = severe_rmse,
+    false_extreme_rate
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  kable(caption = 'INLA and conservative severe-tail ensemble sensitivity')
+```
+
+The conservative WQC/cyclone-track tail remains the safer ensemble form. With locally adjusted DHW it marginally improves reef-blocked GBR-wide RMSE while avoiding the larger positive bias of the fully soft-gated tail.
+
+## Recommended implementation
+
+1. Keep NOAA DHW unchanged as the reproducible GBR-wide base exposure.
+2. Retain the six-reef +4.82 DHW model as a sensitivity, because it demonstrates that exposure error explains a substantial share of the local 2024 misses.
+3. Build an event-specific spatial correction from the full coverage-qualified logger discrepancy product. Include habitat position as a diagnostic or uncertainty modifier, not as a reason to discard slope loggers.
+4. Validate the correction by leaving logger sites and whole events out. Apply it operationally only where the correction improves held-out DHW agreement and propagate correction uncertainty into mortality predictions.
+5. Add the automated-station series once an AIMS API key is available; this may fill the Lizard Island 2016 gap but does not alter the confirmed Martin and Linnet result.

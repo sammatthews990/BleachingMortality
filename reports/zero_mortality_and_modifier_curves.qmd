@@ -1,0 +1,272 @@
+---
+title: "Zero mortality influence and modifier-dependent DHW curves"
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(scales)
+library(tidyr)
+
+result_dir <- '../output/zero_mortality_sensitivity'
+predictions <- read_csv(file.path(result_dir, 'cross_validated_predictions.csv'), show_col_types = FALSE)
+overall <- read_csv(file.path(result_dir, 'overall_metrics.csv'), show_col_types = FALSE)
+bands <- read_csv(file.path(result_dir, 'dhw_band_metrics.csv'), show_col_types = FALSE)
+severe <- read_csv(file.path(result_dir, 'severe_metrics.csv'), show_col_types = FALSE)
+zero_audit <- read_csv(file.path(result_dir, 'zero_audit.csv'), show_col_types = FALSE)
+curves <- read_csv(file.path(result_dir, 'modifier_dhw_curves.csv'), show_col_types = FALSE)
+scenario_values <- read_csv(file.path(result_dir, 'modifier_scenario_values.csv'), show_col_types = FALSE)
+selection <- read_csv(file.path(result_dir, 'modifier_selection_audit.csv'), show_col_types = FALSE)
+mmp_stage <- read_csv(file.path(result_dir, 'mmp_dhw_stage_summary.csv'), show_col_types = FALSE)
+mmp_near4 <- read_csv(file.path(result_dir, 'mmp_dhw_near4_rows.csv'), show_col_types = FALSE)
+
+programme_labels <- c(manta = 'Manta tow', ltmp = 'LTMP', mmp = 'MMP')
+curves <- curves |>
+  mutate(
+    Programme = recode(programme_key, !!!programme_labels),
+    modifier_level = factor(
+      modifier_level,
+      levels = c('Low (10th percentile)', 'Median (50th percentile)',
+                 'High (90th percentile)')
+    ),
+    learner = factor(learner, levels = c(
+      'BRT', 'Bayesian beta + Bernoulli boundary'
+    ))
+  )
+predictions <- predictions |>
+  mutate(Programme = recode(programme_key, !!!programme_labels))
+overall <- overall |>
+  mutate(Programme = recode(programme_key, !!!programme_labels))
+bands <- bands |>
+  mutate(Programme = recode(programme_key, !!!programme_labels))
+severe <- severe |>
+  mutate(Programme = recode(programme_key, !!!programme_labels))
+
+theme_set(theme_minimal(base_size = 12))
+```
+
+## What zeros represent
+
+Zeros are common, but not randomly distributed. They represent surveyed reefs where relative cover did not decline over the defined event interval after gains were clamped to zero. They are especially frequent during the low-mortality 2020 and 2022 events and much less frequent in 2024.
+
+```{r}
+zero_event <- zero_audit |>
+  group_by(programme_key, event_year) |>
+  summarise(
+    observed_mean = sum(observed_mean * n) / sum(n),
+    n = sum(n), zeros = sum(zeros),
+    zero_fraction = zeros / n,
+    .groups = 'drop'
+  ) |>
+  mutate(Programme = recode(programme_key, !!!programme_labels))
+
+ggplot(zero_event, aes(factor(event_year), Programme, fill = zero_fraction)) +
+  geom_tile(colour = 'white', linewidth = 0.6) +
+  geom_text(aes(label = percent(zero_fraction, accuracy = 1)), size = 3.5) +
+  scale_fill_viridis_c(labels = percent, limits = c(0, 1)) +
+  labs(x = 'Bleaching event', y = NULL, fill = 'Zero fraction')
+```
+
+```{r}
+zero_event |>
+  select(Programme, event_year, n, zeros, zero_fraction, observed_mean) |>
+  mutate(across(c(zero_fraction, observed_mean), ~ percent(.x, accuracy = 0.1))) |>
+  knitr::kable(caption = 'Zero mortality observations by programme and event')
+```
+
+## How zeros enter the prediction
+
+The two-part Bayesian screen predicts
+
+$$E(M) = P(M > 0) \times E(M \mid M > 0).$$
+
+The first term is the Bernoulli occurrence model and the second is the conditional beta model. The table separates them using untouched reef-blocked predictions with all training zeros retained.
+
+```{r}
+baseline_bands <- bands |>
+  filter(zero_retention == 1, prediction_type == 'raw_downsampled') |>
+  select(Programme, dhw_band, n, observed_mean,
+         occurrence_mean, positive_mean, predicted_mean, rmse) |>
+  mutate(across(c(observed_mean, occurrence_mean, positive_mean,
+                  predicted_mean, rmse), ~ percent(.x, accuracy = 0.1)))
+knitr::kable(baseline_bands, caption = 'Occurrence, conditional magnitude and combined prediction')
+```
+
+Zeros reduce the combined prediction through the occurrence probability, but the conditional beta magnitude is itself well below the most severe observed losses in Manta and LTMP. Treating occurrence as certain therefore provides an informative upper diagnostic, not a complete solution.
+
+## Training-zero stress test
+
+Zeros were retained at 100%, 75%, 50% or 25% within each event in the training fold only. Every held-out zero remained in validation. The uncorrected curve shows what happens when the model is allowed to believe the altered class prevalence. The corrected curve applies the standard case-control intercept correction; if the apparent gain disappears after correction, it came from redefining prevalence rather than learning better ecology.
+
+```{r}
+plot_overall <- overall |>
+  filter(prediction_type != 'conditional_positive') |>
+  mutate(
+    prediction_label = recode(
+      prediction_type,
+      raw_downsampled = 'Raw zero-downsampled',
+      prevalence_corrected = 'Prevalence corrected'
+    )
+  )
+observed_lines <- plot_overall |>
+  distinct(Programme, observed_mean)
+
+ggplot(plot_overall, aes(zero_retention, predicted_mean,
+                         colour = prediction_label)) +
+  geom_hline(data = observed_lines, aes(yintercept = observed_mean),
+             inherit.aes = FALSE, linetype = 3, colour = 'black') +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  scale_x_reverse(breaks = c(1, .75, .5, .25), labels = percent) +
+  scale_y_continuous(labels = percent) +
+  facet_wrap(~ Programme, scales = 'free_y') +
+  labs(x = 'Training zeros retained', y = 'Mean held-out prediction',
+       colour = NULL, subtitle = 'Dotted line is the observed mean') +
+  theme(legend.position = 'bottom')
+```
+
+```{r}
+overall |>
+  filter(
+    zero_retention %in% c(1, .5, .25),
+    prediction_type %in% c('raw_downsampled', 'prevalence_corrected',
+                           'conditional_positive')
+  ) |>
+  select(Programme, zero_retention, prediction_type,
+         predicted_mean, bias, rmse, predictive_r2) |>
+  mutate(
+    zero_retention = percent(zero_retention),
+    across(c(predicted_mean, bias, rmse), ~ percent(.x, accuracy = 0.1))
+  ) |>
+  knitr::kable(digits = 3, caption = 'Held-out performance under zero downsampling')
+```
+
+```{r}
+severe |>
+  filter(
+    zero_retention %in% c(1, .5, .25),
+    prediction_type %in% c('raw_downsampled', 'prevalence_corrected',
+                           'conditional_positive')
+  ) |>
+  select(Programme, zero_retention, prediction_type, n,
+         observed_mean, predicted_mean, bias, rmse) |>
+  mutate(
+    zero_retention = percent(zero_retention),
+    across(c(observed_mean, predicted_mean, bias, rmse),
+           ~ percent(.x, accuracy = 0.1))
+  ) |>
+  knitr::kable(caption = 'Observed mortality >=50%')
+```
+
+Downsampling zeros raises the severe-case prediction only modestly. With 25% of training zeros retained, the uncorrected severe mean rises from 27.4% to 29.2% for Manta, 38.8% to 40.9% for LTMP, and 37.2% to 39.5% for MMP. At the same time, overall RMSE worsens in every programme. After correcting the altered prevalence, the uplift disappears.
+
+Even the conditional-positive diagnostic remains too low: 32.4% versus 57.0% observed for severe Manta cases, 43.6% versus 61.4% for LTMP, and 41.8% versus 64.4% for MMP. Zeros account for only about 5 percentage points of the severe-case deficit. Most of the remaining underprediction is in the conditional magnitude model and unresolved event/reef modifiers.
+
+## Why MMP appeared to have no observations below 4 DHW
+
+No MMP observations were filtered at 4 DHW. Four 2024 Stingaree rows have a legacy survey-linked value of 3.98 DHW. Their independently reconstructed NOAA reef value is 4.15 DHW, placing them just above the threshold. The exact `<4` statement was therefore specific to `ann_maxdhw`, not to the source survey DHW.
+
+```{r}
+mmp_stage |>
+  mutate(field = sub('Legacy survey-linked ', 'Legacy: ', field),
+         field = sub('Reconstructed NOAA ', 'Reconstructed: ', field)) |>
+  knitr::kable(digits = 2, caption = 'MMP DHW support under both fields')
+```
+
+```{r}
+mmp_near4 |>
+  select(ReefName, event_year, survey_date, depth, reef_zone,
+         mortality_prop, legacy_survey_max_dhw,
+         reconstructed_ann_maxdhw, dhw_difference,
+         legacy_below4_reclassified) |>
+  mutate(mortality_prop = percent(mortality_prop, accuracy = 0.1)) |>
+  knitr::kable(digits = 2, caption = 'MMP observations close to 4 DHW')
+```
+
+For descriptive bins, `<4.5 DHW` is more stable to the 0.1--0.2 DHW product difference. The continuous models should retain the reconstructed field and should never use the threshold to exclude MMP rows.
+
+## Modifier selection
+
+The marginal curves use the three strongest non-redundant modifiers shared by the current production BRT and Bayesian models. Ranking combines mean BRT relative influence with the largest absolute standardised Bayesian coefficient across programmes. Acropora proportion and absolute pre-event Acropora cover are treated as one coherent composition scenario.
+
+```{r}
+selection |>
+  mutate(selected = if_else(selected, 'Yes', 'No')) |>
+  knitr::kable(digits = 3, caption = 'Cross-framework modifier ranking')
+```
+
+```{r}
+scenario_values |>
+  mutate(Programme = recode(programme_key, !!!programme_labels)) |>
+  select(Programme, modifier, modifier_level, modifier_value, modifier_units) |>
+  knitr::kable(digits = 3, caption = 'Programme-specific low, median and high scenarios')
+```
+
+## BRT versus beta/Bernoulli marginal DHW curves
+
+Each curve changes DHW and one modifier while holding all remaining predictors at their programme median. Full-opacity portions are inside the programme's observed DHW range; faded portions are extrapolations. BRT extrapolation is especially limited because trees cannot learn a new slope outside their training support.
+
+```{r}
+ggplot(curves, aes(ann_maxdhw, mortality,
+                   colour = modifier_level,
+                   linetype = learner,
+                   group = interaction(modifier_level, learner))) +
+  geom_line(data = curves |> filter(!outside_observed_dhw), linewidth = 0.85) +
+  geom_line(data = curves |> filter(outside_observed_dhw),
+            linewidth = 0.85, alpha = 0.35) +
+  scale_y_continuous(labels = percent, limits = c(0, NA)) +
+  scale_colour_brewer(palette = 'Dark2') +
+  facet_grid(Programme ~ modifier_label, scales = 'free_y') +
+  labs(x = 'Maximum DHW', y = 'Expected relative mortality',
+       colour = 'Modifier level', linetype = 'Learner') +
+  theme(legend.position = 'bottom')
+```
+
+The next figure separates the zero/occurrence mechanism from positive-loss magnitude at the median modifier level.
+
+```{r}
+component_curves <- curves |>
+  filter(modifier_level == 'Median (50th percentile)') |>
+  select(Programme, learner, modifier_label, ann_maxdhw,
+         outside_observed_dhw, occurrence, positive_mortality) |>
+  pivot_longer(c(occurrence, positive_mortality),
+               names_to = 'component', values_to = 'prediction') |>
+  mutate(component = recode(
+    component,
+    occurrence = 'Probability of any loss',
+    positive_mortality = 'Mortality conditional on loss'
+  ))
+
+ggplot(component_curves, aes(ann_maxdhw, prediction,
+                             colour = learner, group = learner)) +
+  geom_line(data = component_curves |> filter(!outside_observed_dhw),
+            linewidth = 0.85) +
+  geom_line(data = component_curves |> filter(outside_observed_dhw),
+            linewidth = 0.85, alpha = 0.35) +
+  scale_y_continuous(labels = percent, limits = c(0, 1)) +
+  facet_grid(component + Programme ~ modifier_label) +
+  labs(x = 'Maximum DHW', y = NULL, colour = NULL) +
+  theme(legend.position = 'bottom')
+```
+
+## Interpretation
+
+The cross-framework ranking selects Acropora composition first, thermal novelty second and cloud fraction third. The learners agree that novelty and composition can strongly separate the DHW response, but they do not agree on every direction or threshold. Near the upper observed support, high novelty produces about 29% Manta mortality in the BRT and 21% in the beta/Bernoulli model, compared with about 14% and 6% at low novelty. For MMP at 12 DHW, the Bayesian composition profile ranges from about 9% at low Acropora to 38% at high Acropora.
+
+The Manta Bayesian Acropora profile is counterintuitive: its high-composition curve falls below the low-composition curve near 11.5 DHW. This arises because the model contains both Acropora proportion and absolute Acropora cover, with opposing fitted effects, while only proportion interacts with DHW. Those correlated terms should be reparameterised before the formal refit rather than interpreted ecologically.
+
+At median modifier values, neither framework reaches the expected severe response near 12 DHW. Around the upper observed support, Manta predicts about 16% (BRT) versus 11% (Bayesian), LTMP about 1% versus 7%, and MMP about 11% versus 14%. Modifier heterogeneity helps, especially high novelty or high Acropora, but one-at-a-time profiles still do not reproduce the severe tail.
+
+The raw zero-downsampling curves answer the narrow sensitivity question, but they are not deployable models: changing the training prevalence changes the meaning of the occurrence probability. The prevalence-corrected results and full held-out RMSE determine whether zeros are genuinely distorting the response.
+
+The marginal plots should also not be read as causal effects. Novelty and DHW are related by construction, and Acropora proportion and absolute cover are correlated. These are controlled prediction profiles designed to reveal how the learners differ. Any curve outside observed DHW support is explicitly marked and should not guide GBR-wide extrapolation without an ecological shape constraint.

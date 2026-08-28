@@ -1,0 +1,761 @@
+ReefID,event_year,fold,model,flood30,salinity_min_psu,observation_depth_class,predicted
+18-001,2016,1,Spatial prior,TRUE,28.0023,coral depth (1-10 m),24.09699691134526
+18-001,2017,1,Spatial prior,TRUE,28.3,coral depth (1-10 m),24.09699691134526
+18-001,2017,1,Spatial prior,TRUE,24.4,coral depth (1-10 m),24.09699691134526
+23-004b,2017,1,Spatial prior,TRUE,27.3,coral depth (1-10 m),25.4250839343816
+15-051,2020,1,Spatial prior,TRUE,22,surface/plume (<=1 m),18.075752641711574
+14-022,2020,1,Spatial prior,TRUE,26.1,surface/plume (<=1 m),21.813709412320534
+17-055,2022,1,Spatial prior,TRUE,29.9979,coral depth (1-10 m),24.070949017801755
+18-001,2022,1,Spatial prior,TRUE,29.62665,coral depth (1-10 m),24.09699691134526
+15-051,2022,1,Spatial prior,TRUE,29.81295,coral depth (1-10 m),23.659173601867302
+12-025,2022,1,Spatial prior,TRUE,25.8494,surface/plume (<=1 m),20.82369692806434
+15-011,2022,1,Spatial prior,TRUE,24.1729,surface/plume (<=1 m),18.61704929668567
+18-001,2024,1,Spatial prior,TRUE,22.104,coral depth (1-10 m),24.09699691134526
+15-051,2024,1,Spatial prior,TRUE,29.396,surface/plume (<=1 m),18.075752641711574
+15-051,2024,1,Spatial prior,TRUE,17.80394,surface/plume (<=1 m),18.075752641711574
+15-051,2024,1,Spatial prior,TRUE,29.222,coral depth (1-10 m),23.659173601867302
+14-022,2024,1,Spatial prior,TRUE,25.326,surface/plume (<=1 m),21.813709412320534
+14-022,2024,1,Spatial prior,TRUE,19.604,surface/plume (<=1 m),21.813709412320534
+18-001,2024,1,Spatial prior,TRUE,19.521,coral depth (1-10 m),24.09699691134526
+18-001,2016,1,eReefs calibrated,TRUE,28.0023,coral depth (1-10 m),24.096992748123412
+18-001,2017,1,eReefs calibrated,TRUE,28.3,coral depth (1-10 m),24.096991161135705
+18-001,2017,1,eReefs calibrated,TRUE,24.4,coral depth (1-10 m),24.096991161135705
+23-004b,2017,1,eReefs calibrated,TRUE,27.3,coral depth (1-10 m),25.425193885147486
+15-051,2020,1,eReefs calibrated,TRUE,22,surface/plume (<=1 m),18.07576657734154
+14-022,2020,1,eReefs calibrated,TRUE,26.1,surface/plume (<=1 m),21.813705345657535
+17-055,2022,1,eReefs calibrated,TRUE,29.9979,coral depth (1-10 m),24.07094978807809
+18-001,2022,1,eReefs calibrated,TRUE,29.62665,coral depth (1-10 m),24.096997803804566
+15-051,2022,1,eReefs calibrated,TRUE,29.81295,coral depth (1-10 m),23.659181499122898
+12-025,2022,1,eReefs calibrated,TRUE,25.8494,surface/plume (<=1 m),20.823661642652727
+15-011,2022,1,eReefs calibrated,TRUE,24.1729,surface/plume (<=1 m),18.61707348732407
+18-001,2024,1,eReefs calibrated,TRUE,22.104,coral depth (1-10 m),24.096997299212305
+15-051,2024,1,eReefs calibrated,TRUE,29.396,surface/plume (<=1 m),18.075768563467427
+15-051,2024,1,eReefs calibrated,TRUE,17.80394,surface/plume (<=1 m),18.075768563467427
+15-051,2024,1,eReefs calibrated,TRUE,29.222,coral depth (1-10 m),23.659181233305283
+14-022,2024,1,eReefs calibrated,TRUE,25.326,surface/plume (<=1 m),21.813706438999063
+14-022,2024,1,eReefs calibrated,TRUE,19.604,surface/plume (<=1 m),21.813706438999063
+18-001,2024,1,eReefs calibrated,TRUE,19.521,coral depth (1-10 m),24.096997299212305
+18-001,2016,1,Operational proxies,TRUE,28.0023,coral depth (1-10 m),23.02835233155176
+18-001,2017,1,Operational proxies,TRUE,28.3,coral depth (1-10 m),23.35548782591115
+18-001,2017,1,Operational proxies,TRUE,24.4,coral depth (1-10 m),23.35548782591115
+23-004b,2017,1,Operational proxies,TRUE,27.3,coral depth (1-10 m),23.82140512299659
+15-051,2020,1,Operational proxies,TRUE,22,surface/plume (<=1 m),15.236690098548458
+14-022,2020,1,Operational proxies,TRUE,26.1,surface/plume (<=1 m),24.26560401327914
+17-055,2022,1,Operational proxies,TRUE,29.9979,coral depth (1-10 m),25.079770717352663
+18-001,2022,1,Operational proxies,TRUE,29.62665,coral depth (1-10 m),25.561141143062024
+15-051,2022,1,Operational proxies,TRUE,29.81295,coral depth (1-10 m),23.177128983867217
+12-025,2022,1,Operational proxies,TRUE,25.8494,surface/plume (<=1 m),17.60785855321771
+15-011,2022,1,Operational proxies,TRUE,24.1729,surface/plume (<=1 m),19.06186771652071
+18-001,2024,1,Operational proxies,TRUE,22.104,coral depth (1-10 m),23.963675798231613
+15-051,2024,1,Operational proxies,TRUE,29.396,surface/plume (<=1 m),20.263446275881996
+15-051,2024,1,Operational proxies,TRUE,17.80394,surface/plume (<=1 m),20.263446275881996
+15-051,2024,1,Operational proxies,TRUE,29.222,coral depth (1-10 m),24.51740205349098
+14-022,2024,1,Operational proxies,TRUE,25.326,surface/plume (<=1 m),22.695473393573767
+14-022,2024,1,Operational proxies,TRUE,19.604,surface/plume (<=1 m),22.695473393573767
+18-001,2024,1,Operational proxies,TRUE,19.521,coral depth (1-10 m),23.963675798231613
+18-001,2016,1,Hybrid,TRUE,28.0023,coral depth (1-10 m),23.028359359280106
+18-001,2017,1,Hybrid,TRUE,28.3,coral depth (1-10 m),23.355520687489584
+18-001,2017,1,Hybrid,TRUE,24.4,coral depth (1-10 m),23.355520687489584
+23-004b,2017,1,Hybrid,TRUE,27.3,coral depth (1-10 m),23.821492205706583
+15-051,2020,1,Hybrid,TRUE,22,surface/plume (<=1 m),15.236592001802004
+14-022,2020,1,Hybrid,TRUE,26.1,surface/plume (<=1 m),24.26554768769916
+17-055,2022,1,Hybrid,TRUE,29.9979,coral depth (1-10 m),25.079745229881986
+18-001,2022,1,Hybrid,TRUE,29.62665,coral depth (1-10 m),25.561115972129578
+15-051,2022,1,Hybrid,TRUE,29.81295,coral depth (1-10 m),23.17712971267767
+12-025,2022,1,Hybrid,TRUE,25.8494,surface/plume (<=1 m),17.607836080505443
+15-011,2022,1,Hybrid,TRUE,24.1729,surface/plume (<=1 m),19.061868014553035
+18-001,2024,1,Hybrid,TRUE,22.104,coral depth (1-10 m),23.963629512635276
+15-051,2024,1,Hybrid,TRUE,29.396,surface/plume (<=1 m),20.26348186373592
+15-051,2024,1,Hybrid,TRUE,17.80394,surface/plume (<=1 m),20.26348186373592
+15-051,2024,1,Hybrid,TRUE,29.222,coral depth (1-10 m),24.517418177150137
+14-022,2024,1,Hybrid,TRUE,25.326,surface/plume (<=1 m),22.69545598143582
+14-022,2024,1,Hybrid,TRUE,19.604,surface/plume (<=1 m),22.69545598143582
+18-001,2024,1,Hybrid,TRUE,19.521,coral depth (1-10 m),23.963629512635276
+17-056,2016,2,Spatial prior,TRUE,28.6999,coral depth (1-10 m),26.904615171083634
+17-056,2016,2,Spatial prior,TRUE,27.7208,coral depth (1-10 m),26.904615171083634
+17-009a,2016,2,Spatial prior,TRUE,11,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,27.3,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,24.7,coral depth (1-10 m),26.8061856772809
+17-009a,2016,2,Spatial prior,TRUE,0.1,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,13.7,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,3.7,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,5.8,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,1.4,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,0.7,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,5.2,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,7,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,26.9,surface/plume (<=1 m),23.514577484340585
+17-009a,2016,2,Spatial prior,TRUE,25,surface/plume (<=1 m),23.514577484340585
+17-056,2016,2,Spatial prior,TRUE,27.2,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,26.5,coral depth (1-10 m),26.904615171083634
+17-056,2016,2,Spatial prior,TRUE,20.8,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,3.3,coral depth (1-10 m),26.904615171083634
+17-056,2016,2,Spatial prior,TRUE,3.6,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,0.1,coral depth (1-10 m),26.904615171083634
+17-056,2016,2,Spatial prior,TRUE,12.4,coral depth (1-10 m),26.904615171083634
+17-056,2016,2,Spatial prior,TRUE,0.4,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,0.1,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,10.5,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,24.5,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,22.9,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,24.9,coral depth (1-10 m),26.904615171083634
+17-056,2016,2,Spatial prior,TRUE,13.4,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,7.3,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,23.6,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,Spatial prior,TRUE,20.7,surface/plume (<=1 m),23.690261549589863
+17-056,2017,2,Spatial prior,TRUE,26.7722,coral depth (1-10 m),26.904615171083634
+17-056,2017,2,Spatial prior,TRUE,21.47855,coral depth (1-10 m),26.904615171083634
+17-056,2017,2,Spatial prior,TRUE,29.11545,coral depth (1-10 m),26.904615171083634
+17-009a,2017,2,Spatial prior,TRUE,22.4,coral depth (1-10 m),26.8061856772809
+17-009a,2017,2,Spatial prior,TRUE,18.2,coral depth (1-10 m),26.8061856772809
+17-009a,2017,2,Spatial prior,TRUE,25.75,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,9.8,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,10.9,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,0.9,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,9.7,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,0.2,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,5.6,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,2.1,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,4.2,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,27.6,surface/plume (<=1 m),23.514577484340585
+17-009a,2017,2,Spatial prior,TRUE,27.9,surface/plume (<=1 m),23.514577484340585
+17-056,2017,2,Spatial prior,TRUE,16.4,coral depth (1-10 m),26.904615171083634
+17-056,2017,2,Spatial prior,TRUE,9.7,coral depth (1-10 m),26.904615171083634
+17-056,2017,2,Spatial prior,TRUE,0.1,coral depth (1-10 m),26.904615171083634
+17-056,2017,2,Spatial prior,TRUE,0.1,surface/plume (<=1 m),23.690261549589863
+17-056,2017,2,Spatial prior,TRUE,0.1,surface/plume (<=1 m),23.690261549589863
+17-056,2017,2,Spatial prior,TRUE,6.8,surface/plume (<=1 m),23.690261549589863
+17-056,2017,2,Spatial prior,TRUE,17.7,coral depth (1-10 m),26.904615171083634
+17-056,2017,2,Spatial prior,TRUE,10,surface/plume (<=1 m),23.690261549589863
+17-056,2017,2,Spatial prior,TRUE,25,surface/plume (<=1 m),23.690261549589863
+17-056,2017,2,Spatial prior,TRUE,20.2,surface/plume (<=1 m),23.690261549589863
+18-006,2017,2,Spatial prior,TRUE,29.9,surface/plume (<=1 m),23.707074769155156
+18-006,2017,2,Spatial prior,TRUE,27.9,surface/plume (<=1 m),23.707074769155156
+17-009a,2020,2,Spatial prior,TRUE,21.44015,coral depth (1-10 m),26.8061856772809
+15-053,2020,2,Spatial prior,TRUE,20.1,surface/plume (<=1 m),22.71730054537229
+14-031,2020,2,Spatial prior,TRUE,21.1,coral depth (1-10 m),26.164457676528173
+17-056,2022,2,Spatial prior,TRUE,22.44545,coral depth (1-10 m),26.904615171083634
+15-053,2022,2,Spatial prior,TRUE,7.2063,surface/plume (<=1 m),22.71730054537229
+15-053,2022,2,Spatial prior,TRUE,4.0502,surface/plume (<=1 m),22.71730054537229
+14-031,2022,2,Spatial prior,TRUE,29.36905,coral depth (1-10 m),26.164457676528173
+17-009a,2022,2,Spatial prior,TRUE,19.32955,coral depth (1-10 m),26.8061856772809
+17-009a,2022,2,Spatial prior,TRUE,17.68675,coral depth (1-10 m),26.8061856772809
+17-009a,2022,2,Spatial prior,TRUE,26.034,coral depth (1-10 m),26.8061856772809
+17-009a,2022,2,Spatial prior,TRUE,24.795,coral depth (1-10 m),26.8061856772809
+17-009a,2022,2,Spatial prior,TRUE,29.63,surface/plume (<=1 m),23.514577484340585
+17-056,2022,2,Spatial prior,TRUE,28.54155,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,4.12,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,20.339,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,15.78825,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,0.00562,surface/plume (<=1 m),23.690261549589863
+17-056,2022,2,Spatial prior,TRUE,12.225,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,27.011,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,28.54155,coral depth (1-10 m),26.904615171083634
+17-056,2022,2,Spatial prior,TRUE,21.835,surface/plume (<=1 m),23.690261549589863
+17-056,2022,2,Spatial prior,TRUE,28.284,surface/plume (<=1 m),23.690261549589863
+17-056,2022,2,Spatial prior,TRUE,23.048,surface/plume (<=1 m),23.690261549589863
+18-006,2022,2,Spatial prior,TRUE,14.116,surface/plume (<=1 m),23.707074769155156
+17-009a,2024,2,Spatial prior,TRUE,26.418,coral depth (1-10 m),26.8061856772809
+17-009a,2024,2,Spatial prior,TRUE,17.319,surface/plume (<=1 m),23.514577484340585
+17-056,2024,2,Spatial prior,TRUE,28.241,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,23.729,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,23.086,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,26.694,coral depth (1-10 m),26.904615171083634
+15-053,2024,2,Spatial prior,TRUE,0.41565,surface/plume (<=1 m),22.71730054537229
+15-053,2024,2,Spatial prior,TRUE,6.8422,surface/plume (<=1 m),22.71730054537229
+14-031,2024,2,Spatial prior,TRUE,29.683,coral depth (1-10 m),26.164457676528173
+14-031,2024,2,Spatial prior,TRUE,28.91741,surface/plume (<=1 m),22.36917502821823
+14-031,2024,2,Spatial prior,TRUE,21.752,coral depth (1-10 m),26.164457676528173
+17-009a,2024,2,Spatial prior,TRUE,27.79,coral depth (1-10 m),26.8061856772809
+17-009a,2024,2,Spatial prior,TRUE,26.521,coral depth (1-10 m),26.8061856772809
+17-009a,2024,2,Spatial prior,TRUE,24.373,coral depth (1-10 m),26.8061856772809
+17-009a,2024,2,Spatial prior,TRUE,25.59,coral depth (1-10 m),26.8061856772809
+17-009a,2024,2,Spatial prior,TRUE,3.58917,coral depth (1-10 m),26.8061856772809
+17-009a,2024,2,Spatial prior,TRUE,0.06615,surface/plume (<=1 m),23.514577484340585
+17-009a,2024,2,Spatial prior,TRUE,0.04762,surface/plume (<=1 m),23.514577484340585
+17-009a,2024,2,Spatial prior,TRUE,11.30619,surface/plume (<=1 m),23.514577484340585
+17-009a,2024,2,Spatial prior,TRUE,16.01134,surface/plume (<=1 m),23.514577484340585
+17-009a,2024,2,Spatial prior,TRUE,6.87802,surface/plume (<=1 m),23.514577484340585
+17-056,2024,2,Spatial prior,TRUE,26.218,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,26.691,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,25.06,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,8.43973,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,25.316,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,0.03391,surface/plume (<=1 m),23.690261549589863
+17-056,2024,2,Spatial prior,TRUE,0.03852,surface/plume (<=1 m),23.690261549589863
+17-056,2024,2,Spatial prior,TRUE,28.677,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,28.239,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,24.76079,coral depth (1-10 m),26.904615171083634
+17-056,2024,2,Spatial prior,TRUE,12.32078,surface/plume (<=1 m),23.690261549589863
+17-009a,2024,2,Spatial prior,TRUE,5.199,surface/plume (<=1 m),23.514577484340585
+17-056,2024,2,Spatial prior,TRUE,24.525,surface/plume (<=1 m),23.690261549589863
+17-056,2024,2,Spatial prior,TRUE,13.363,surface/plume (<=1 m),23.690261549589863
+17-056,2016,2,eReefs calibrated,TRUE,28.6999,coral depth (1-10 m),27.269300017015684
+17-056,2016,2,eReefs calibrated,TRUE,27.7208,coral depth (1-10 m),27.269300017015684
+17-009a,2016,2,eReefs calibrated,TRUE,11,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,27.3,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,24.7,coral depth (1-10 m),26.672973845101836
+17-009a,2016,2,eReefs calibrated,TRUE,0.1,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,13.7,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,3.7,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,5.8,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,1.4,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,0.7,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,5.2,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,7,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,26.9,surface/plume (<=1 m),23.292316868334925
+17-009a,2016,2,eReefs calibrated,TRUE,25,surface/plume (<=1 m),23.292316868334925
+17-056,2016,2,eReefs calibrated,TRUE,27.2,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,26.5,coral depth (1-10 m),27.269300017015684
+17-056,2016,2,eReefs calibrated,TRUE,20.8,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,3.3,coral depth (1-10 m),27.269300017015684
+17-056,2016,2,eReefs calibrated,TRUE,3.6,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,0.1,coral depth (1-10 m),27.269300017015684
+17-056,2016,2,eReefs calibrated,TRUE,12.4,coral depth (1-10 m),27.269300017015684
+17-056,2016,2,eReefs calibrated,TRUE,0.4,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,0.1,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,10.5,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,24.5,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,22.9,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,24.9,coral depth (1-10 m),27.269300017015684
+17-056,2016,2,eReefs calibrated,TRUE,13.4,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,7.3,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,23.6,surface/plume (<=1 m),24.35454598636968
+17-056,2016,2,eReefs calibrated,TRUE,20.7,surface/plume (<=1 m),24.35454598636968
+17-056,2017,2,eReefs calibrated,TRUE,26.7722,coral depth (1-10 m),27.223739612489346
+17-056,2017,2,eReefs calibrated,TRUE,21.47855,coral depth (1-10 m),27.223739612489346
+17-056,2017,2,eReefs calibrated,TRUE,29.11545,coral depth (1-10 m),27.223739612489346
+17-009a,2017,2,eReefs calibrated,TRUE,22.4,coral depth (1-10 m),26.683181540427732
+17-009a,2017,2,eReefs calibrated,TRUE,18.2,coral depth (1-10 m),26.683181540427732
+17-009a,2017,2,eReefs calibrated,TRUE,25.75,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,9.8,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,10.9,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,0.9,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,9.7,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,0.2,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,5.6,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,2.1,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,4.2,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,27.6,surface/plume (<=1 m),23.310499721467792
+17-009a,2017,2,eReefs calibrated,TRUE,27.9,surface/plume (<=1 m),23.310499721467792
+17-056,2017,2,eReefs calibrated,TRUE,16.4,coral depth (1-10 m),27.223739612489346
+17-056,2017,2,eReefs calibrated,TRUE,9.7,coral depth (1-10 m),27.223739612489346
+17-056,2017,2,eReefs calibrated,TRUE,0.1,coral depth (1-10 m),27.223739612489346
+17-056,2017,2,eReefs calibrated,TRUE,0.1,surface/plume (<=1 m),24.273389749067537
+17-056,2017,2,eReefs calibrated,TRUE,0.1,surface/plume (<=1 m),24.273389749067537
+17-056,2017,2,eReefs calibrated,TRUE,6.8,surface/plume (<=1 m),24.273389749067537
+17-056,2017,2,eReefs calibrated,TRUE,17.7,coral depth (1-10 m),27.223739612489346
+17-056,2017,2,eReefs calibrated,TRUE,10,surface/plume (<=1 m),24.273389749067537
+17-056,2017,2,eReefs calibrated,TRUE,25,surface/plume (<=1 m),24.273389749067537
+17-056,2017,2,eReefs calibrated,TRUE,20.2,surface/plume (<=1 m),24.273389749067537
+18-006,2017,2,eReefs calibrated,TRUE,29.9,surface/plume (<=1 m),23.69567141262243
+18-006,2017,2,eReefs calibrated,TRUE,27.9,surface/plume (<=1 m),23.69567141262243
+17-009a,2020,2,eReefs calibrated,TRUE,21.44015,coral depth (1-10 m),26.777691825974635
+15-053,2020,2,eReefs calibrated,TRUE,20.1,surface/plume (<=1 m),22.42004557865974
+14-031,2020,2,eReefs calibrated,TRUE,21.1,coral depth (1-10 m),26.272709060483763
+17-056,2022,2,eReefs calibrated,TRUE,22.44545,coral depth (1-10 m),26.632026373009122
+15-053,2022,2,eReefs calibrated,TRUE,7.2063,surface/plume (<=1 m),22.65792726280727
+15-053,2022,2,eReefs calibrated,TRUE,4.0502,surface/plume (<=1 m),22.65792726280727
+14-031,2022,2,eReefs calibrated,TRUE,29.36905,coral depth (1-10 m),26.263298768471596
+17-009a,2022,2,eReefs calibrated,TRUE,19.32955,coral depth (1-10 m),26.61763320675759
+17-009a,2022,2,eReefs calibrated,TRUE,17.68675,coral depth (1-10 m),26.61763320675759
+17-009a,2022,2,eReefs calibrated,TRUE,26.034,coral depth (1-10 m),26.61763320675759
+17-009a,2022,2,eReefs calibrated,TRUE,24.795,coral depth (1-10 m),26.61763320675759
+17-009a,2022,2,eReefs calibrated,TRUE,29.63,surface/plume (<=1 m),23.193739210287102
+17-056,2022,2,eReefs calibrated,TRUE,28.54155,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,4.12,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,20.339,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,15.78825,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,0.00562,surface/plume (<=1 m),23.219377595810293
+17-056,2022,2,eReefs calibrated,TRUE,12.225,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,27.011,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,28.54155,coral depth (1-10 m),26.632026373009122
+17-056,2022,2,eReefs calibrated,TRUE,21.835,surface/plume (<=1 m),23.219377595810293
+17-056,2022,2,eReefs calibrated,TRUE,28.284,surface/plume (<=1 m),23.219377595810293
+17-056,2022,2,eReefs calibrated,TRUE,23.048,surface/plume (<=1 m),23.219377595810293
+18-006,2022,2,eReefs calibrated,TRUE,14.116,surface/plume (<=1 m),23.183367350846467
+17-009a,2024,2,eReefs calibrated,TRUE,26.418,coral depth (1-10 m),26.705613909055057
+17-009a,2024,2,eReefs calibrated,TRUE,17.319,surface/plume (<=1 m),23.350458247966728
+17-056,2024,2,eReefs calibrated,TRUE,28.241,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,23.729,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,23.086,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,26.694,coral depth (1-10 m),26.744476016926264
+15-053,2024,2,eReefs calibrated,TRUE,0.41565,surface/plume (<=1 m),22.699517819132446
+15-053,2024,2,eReefs calibrated,TRUE,6.8422,surface/plume (<=1 m),22.699517819132446
+14-031,2024,2,eReefs calibrated,TRUE,29.683,coral depth (1-10 m),26.589744803346957
+14-031,2024,2,eReefs calibrated,TRUE,28.91741,surface/plume (<=1 m),23.14406191025649
+14-031,2024,2,eReefs calibrated,TRUE,21.752,coral depth (1-10 m),26.589744803346957
+17-009a,2024,2,eReefs calibrated,TRUE,27.79,coral depth (1-10 m),26.705613909055057
+17-009a,2024,2,eReefs calibrated,TRUE,26.521,coral depth (1-10 m),26.705613909055057
+17-009a,2024,2,eReefs calibrated,TRUE,24.373,coral depth (1-10 m),26.705613909055057
+17-009a,2024,2,eReefs calibrated,TRUE,25.59,coral depth (1-10 m),26.705613909055057
+17-009a,2024,2,eReefs calibrated,TRUE,3.58917,coral depth (1-10 m),26.705613909055057
+17-009a,2024,2,eReefs calibrated,TRUE,0.06615,surface/plume (<=1 m),23.350458247966728
+17-009a,2024,2,eReefs calibrated,TRUE,0.04762,surface/plume (<=1 m),23.350458247966728
+17-009a,2024,2,eReefs calibrated,TRUE,11.30619,surface/plume (<=1 m),23.350458247966728
+17-009a,2024,2,eReefs calibrated,TRUE,16.01134,surface/plume (<=1 m),23.350458247966728
+17-009a,2024,2,eReefs calibrated,TRUE,6.87802,surface/plume (<=1 m),23.350458247966728
+17-056,2024,2,eReefs calibrated,TRUE,26.218,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,26.691,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,25.06,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,8.43973,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,25.316,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,0.03391,surface/plume (<=1 m),23.419682884605642
+17-056,2024,2,eReefs calibrated,TRUE,0.03852,surface/plume (<=1 m),23.419682884605642
+17-056,2024,2,eReefs calibrated,TRUE,28.677,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,28.239,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,24.76079,coral depth (1-10 m),26.744476016926264
+17-056,2024,2,eReefs calibrated,TRUE,12.32078,surface/plume (<=1 m),23.419682884605642
+17-009a,2024,2,eReefs calibrated,TRUE,5.199,surface/plume (<=1 m),23.350458247966728
+17-056,2024,2,eReefs calibrated,TRUE,24.525,surface/plume (<=1 m),23.419682884605642
+17-056,2024,2,eReefs calibrated,TRUE,13.363,surface/plume (<=1 m),23.419682884605642
+17-056,2016,2,Operational proxies,TRUE,28.6999,coral depth (1-10 m),25.57989975787192
+17-056,2016,2,Operational proxies,TRUE,27.7208,coral depth (1-10 m),25.57989975787192
+17-009a,2016,2,Operational proxies,TRUE,11,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,27.3,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,24.7,coral depth (1-10 m),26.250018695981073
+17-009a,2016,2,Operational proxies,TRUE,0.1,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,13.7,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,3.7,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,5.8,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,1.4,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,0.7,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,5.2,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,7,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,26.9,surface/plume (<=1 m),22.25451468207106
+17-009a,2016,2,Operational proxies,TRUE,25,surface/plume (<=1 m),22.25451468207106
+17-056,2016,2,Operational proxies,TRUE,27.2,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,26.5,coral depth (1-10 m),25.57989975787192
+17-056,2016,2,Operational proxies,TRUE,20.8,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,3.3,coral depth (1-10 m),25.57989975787192
+17-056,2016,2,Operational proxies,TRUE,3.6,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,0.1,coral depth (1-10 m),25.57989975787192
+17-056,2016,2,Operational proxies,TRUE,12.4,coral depth (1-10 m),25.57989975787192
+17-056,2016,2,Operational proxies,TRUE,0.4,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,0.1,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,10.5,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,24.5,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,22.9,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,24.9,coral depth (1-10 m),25.57989975787192
+17-056,2016,2,Operational proxies,TRUE,13.4,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,7.3,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,23.6,surface/plume (<=1 m),21.020717123848843
+17-056,2016,2,Operational proxies,TRUE,20.7,surface/plume (<=1 m),21.020717123848843
+17-056,2017,2,Operational proxies,TRUE,26.7722,coral depth (1-10 m),26.519104979791265
+17-056,2017,2,Operational proxies,TRUE,21.47855,coral depth (1-10 m),26.519104979791265
+17-056,2017,2,Operational proxies,TRUE,29.11545,coral depth (1-10 m),26.519104979791265
+17-009a,2017,2,Operational proxies,TRUE,22.4,coral depth (1-10 m),26.65864062265744
+17-009a,2017,2,Operational proxies,TRUE,18.2,coral depth (1-10 m),26.65864062265744
+17-009a,2017,2,Operational proxies,TRUE,25.75,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,9.8,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,10.9,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,0.9,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,9.7,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,0.2,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,5.6,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,2.1,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,4.2,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,27.6,surface/plume (<=1 m),23.006853866502883
+17-009a,2017,2,Operational proxies,TRUE,27.9,surface/plume (<=1 m),23.006853866502883
+17-056,2017,2,Operational proxies,TRUE,16.4,coral depth (1-10 m),26.519104979791265
+17-056,2017,2,Operational proxies,TRUE,9.7,coral depth (1-10 m),26.519104979791265
+17-056,2017,2,Operational proxies,TRUE,0.1,coral depth (1-10 m),26.519104979791265
+17-056,2017,2,Operational proxies,TRUE,0.1,surface/plume (<=1 m),22.749946136154254
+17-056,2017,2,Operational proxies,TRUE,0.1,surface/plume (<=1 m),22.749946136154254
+17-056,2017,2,Operational proxies,TRUE,6.8,surface/plume (<=1 m),22.749946136154254
+17-056,2017,2,Operational proxies,TRUE,17.7,coral depth (1-10 m),26.519104979791265
+17-056,2017,2,Operational proxies,TRUE,10,surface/plume (<=1 m),22.749946136154254
+17-056,2017,2,Operational proxies,TRUE,25,surface/plume (<=1 m),22.749946136154254
+17-056,2017,2,Operational proxies,TRUE,20.2,surface/plume (<=1 m),22.749946136154254
+18-006,2017,2,Operational proxies,TRUE,29.9,surface/plume (<=1 m),22.88302481856994
+18-006,2017,2,Operational proxies,TRUE,27.9,surface/plume (<=1 m),22.88302481856994
+17-009a,2020,2,Operational proxies,TRUE,21.44015,coral depth (1-10 m),25.04904877663804
+15-053,2020,2,Operational proxies,TRUE,20.1,surface/plume (<=1 m),20.746801293434068
+14-031,2020,2,Operational proxies,TRUE,21.1,coral depth (1-10 m),24.58825779451241
+17-056,2022,2,Operational proxies,TRUE,22.44545,coral depth (1-10 m),27.319078724051078
+15-053,2022,2,Operational proxies,TRUE,7.2063,surface/plume (<=1 m),23.462453015516726
+15-053,2022,2,Operational proxies,TRUE,4.0502,surface/plume (<=1 m),23.462453015516726
+14-031,2022,2,Operational proxies,TRUE,29.36905,coral depth (1-10 m),27.915630262294243
+17-009a,2022,2,Operational proxies,TRUE,19.32955,coral depth (1-10 m),28.683617908824374
+17-009a,2022,2,Operational proxies,TRUE,17.68675,coral depth (1-10 m),28.683617908824374
+17-009a,2022,2,Operational proxies,TRUE,26.034,coral depth (1-10 m),28.683617908824374
+17-009a,2022,2,Operational proxies,TRUE,24.795,coral depth (1-10 m),28.683617908824374
+17-009a,2022,2,Operational proxies,TRUE,29.63,surface/plume (<=1 m),26.735165199081962
+17-056,2022,2,Operational proxies,TRUE,28.54155,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,4.12,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,20.339,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,15.78825,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,0.00562,surface/plume (<=1 m),24.222827435546616
+17-056,2022,2,Operational proxies,TRUE,12.225,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,27.011,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,28.54155,coral depth (1-10 m),27.319078724051078
+17-056,2022,2,Operational proxies,TRUE,21.835,surface/plume (<=1 m),24.222827435546616
+17-056,2022,2,Operational proxies,TRUE,28.284,surface/plume (<=1 m),24.222827435546616
+17-056,2022,2,Operational proxies,TRUE,23.048,surface/plume (<=1 m),24.222827435546616
+18-006,2022,2,Operational proxies,TRUE,14.116,surface/plume (<=1 m),26.653346947917857
+17-009a,2024,2,Operational proxies,TRUE,26.418,coral depth (1-10 m),25.53378153276218
+17-009a,2024,2,Operational proxies,TRUE,17.319,surface/plume (<=1 m),20.93580599793664
+17-056,2024,2,Operational proxies,TRUE,28.241,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,23.729,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,23.086,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,26.694,coral depth (1-10 m),25.989618489399746
+15-053,2024,2,Operational proxies,TRUE,0.41565,surface/plume (<=1 m),23.45783837071554
+15-053,2024,2,Operational proxies,TRUE,6.8422,surface/plume (<=1 m),23.45783837071554
+14-031,2024,2,Operational proxies,TRUE,29.683,coral depth (1-10 m),25.565189090130225
+14-031,2024,2,Operational proxies,TRUE,28.91741,surface/plume (<=1 m),20.9936324006641
+14-031,2024,2,Operational proxies,TRUE,21.752,coral depth (1-10 m),25.565189090130225
+17-009a,2024,2,Operational proxies,TRUE,27.79,coral depth (1-10 m),25.53378153276218
+17-009a,2024,2,Operational proxies,TRUE,26.521,coral depth (1-10 m),25.53378153276218
+17-009a,2024,2,Operational proxies,TRUE,24.373,coral depth (1-10 m),25.53378153276218
+17-009a,2024,2,Operational proxies,TRUE,25.59,coral depth (1-10 m),25.53378153276218
+17-009a,2024,2,Operational proxies,TRUE,3.58917,coral depth (1-10 m),25.53378153276218
+17-009a,2024,2,Operational proxies,TRUE,0.06615,surface/plume (<=1 m),20.93580599793664
+17-009a,2024,2,Operational proxies,TRUE,0.04762,surface/plume (<=1 m),20.93580599793664
+17-009a,2024,2,Operational proxies,TRUE,11.30619,surface/plume (<=1 m),20.93580599793664
+17-009a,2024,2,Operational proxies,TRUE,16.01134,surface/plume (<=1 m),20.93580599793664
+17-009a,2024,2,Operational proxies,TRUE,6.87802,surface/plume (<=1 m),20.93580599793664
+17-056,2024,2,Operational proxies,TRUE,26.218,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,26.691,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,25.06,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,8.43973,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,25.316,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,0.03391,surface/plume (<=1 m),21.775075703750062
+17-056,2024,2,Operational proxies,TRUE,0.03852,surface/plume (<=1 m),21.775075703750062
+17-056,2024,2,Operational proxies,TRUE,28.677,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,28.239,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,24.76079,coral depth (1-10 m),25.989618489399746
+17-056,2024,2,Operational proxies,TRUE,12.32078,surface/plume (<=1 m),21.775075703750062
+17-009a,2024,2,Operational proxies,TRUE,5.199,surface/plume (<=1 m),20.93580599793664
+17-056,2024,2,Operational proxies,TRUE,24.525,surface/plume (<=1 m),21.775075703750062
+17-056,2024,2,Operational proxies,TRUE,13.363,surface/plume (<=1 m),21.775075703750062
+17-056,2016,2,Hybrid,TRUE,28.6999,coral depth (1-10 m),26.134018199956266
+17-056,2016,2,Hybrid,TRUE,27.7208,coral depth (1-10 m),26.134018199956266
+17-009a,2016,2,Hybrid,TRUE,11,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,27.3,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,24.7,coral depth (1-10 m),26.47992468720221
+17-009a,2016,2,Hybrid,TRUE,0.1,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,13.7,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,3.7,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,5.8,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,1.4,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,0.7,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,5.2,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,7,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,26.9,surface/plume (<=1 m),22.694980396782668
+17-009a,2016,2,Hybrid,TRUE,25,surface/plume (<=1 m),22.694980396782668
+17-056,2016,2,Hybrid,TRUE,27.2,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,26.5,coral depth (1-10 m),26.134018199956266
+17-056,2016,2,Hybrid,TRUE,20.8,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,3.3,coral depth (1-10 m),26.134018199956266
+17-056,2016,2,Hybrid,TRUE,3.6,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,0.1,coral depth (1-10 m),26.134018199956266
+17-056,2016,2,Hybrid,TRUE,12.4,coral depth (1-10 m),26.134018199956266
+17-056,2016,2,Hybrid,TRUE,0.4,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,0.1,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,10.5,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,24.5,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,22.9,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,24.9,coral depth (1-10 m),26.134018199956266
+17-056,2016,2,Hybrid,TRUE,13.4,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,7.3,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,23.6,surface/plume (<=1 m),22.05942457997496
+17-056,2016,2,Hybrid,TRUE,20.7,surface/plume (<=1 m),22.05942457997496
+17-056,2017,2,Hybrid,TRUE,26.7722,coral depth (1-10 m),26.99499089919291
+17-056,2017,2,Hybrid,TRUE,21.47855,coral depth (1-10 m),26.99499089919291
+17-056,2017,2,Hybrid,TRUE,29.11545,coral depth (1-10 m),26.99499089919291
+17-009a,2017,2,Hybrid,TRUE,22.4,coral depth (1-10 m),26.883978034306594
+17-009a,2017,2,Hybrid,TRUE,18.2,coral depth (1-10 m),26.883978034306594
+17-009a,2017,2,Hybrid,TRUE,25.75,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,9.8,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,10.9,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,0.9,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,9.7,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,0.2,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,5.6,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,2.1,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,4.2,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,27.6,surface/plume (<=1 m),23.437373108458623
+17-009a,2017,2,Hybrid,TRUE,27.9,surface/plume (<=1 m),23.437373108458623
+17-056,2017,2,Hybrid,TRUE,16.4,coral depth (1-10 m),26.99499089919291
+17-056,2017,2,Hybrid,TRUE,9.7,coral depth (1-10 m),26.99499089919291
+17-056,2017,2,Hybrid,TRUE,0.1,coral depth (1-10 m),26.99499089919291
+17-056,2017,2,Hybrid,TRUE,0.1,surface/plume (<=1 m),23.641344050376297
+17-056,2017,2,Hybrid,TRUE,0.1,surface/plume (<=1 m),23.641344050376297
+17-056,2017,2,Hybrid,TRUE,6.8,surface/plume (<=1 m),23.641344050376297
+17-056,2017,2,Hybrid,TRUE,17.7,coral depth (1-10 m),26.99499089919291
+17-056,2017,2,Hybrid,TRUE,10,surface/plume (<=1 m),23.641344050376297
+17-056,2017,2,Hybrid,TRUE,25,surface/plume (<=1 m),23.641344050376297
+17-056,2017,2,Hybrid,TRUE,20.2,surface/plume (<=1 m),23.641344050376297
+18-006,2017,2,Hybrid,TRUE,29.9,surface/plume (<=1 m),23.734647270494236
+18-006,2017,2,Hybrid,TRUE,27.9,surface/plume (<=1 m),23.734647270494236
+17-009a,2020,2,Hybrid,TRUE,21.44015,coral depth (1-10 m),25.79828952146099
+15-053,2020,2,Hybrid,TRUE,20.1,surface/plume (<=1 m),20.637253948336806
+14-031,2020,2,Hybrid,TRUE,21.1,coral depth (1-10 m),24.85432847903851
+17-056,2022,2,Hybrid,TRUE,22.44545,coral depth (1-10 m),27.149820115052677
+15-053,2022,2,Hybrid,TRUE,7.2063,surface/plume (<=1 m),23.272434134825026
+15-053,2022,2,Hybrid,TRUE,4.0502,surface/plume (<=1 m),23.272434134825026
+14-031,2022,2,Hybrid,TRUE,29.36905,coral depth (1-10 m),27.872490433265614
+17-009a,2022,2,Hybrid,TRUE,19.32955,coral depth (1-10 m),28.708604965324408
+17-009a,2022,2,Hybrid,TRUE,17.68675,coral depth (1-10 m),28.708604965324408
+17-009a,2022,2,Hybrid,TRUE,26.034,coral depth (1-10 m),28.708604965324408
+17-009a,2022,2,Hybrid,TRUE,24.795,coral depth (1-10 m),28.708604965324408
+17-009a,2022,2,Hybrid,TRUE,29.63,surface/plume (<=1 m),26.78987530853405
+17-056,2022,2,Hybrid,TRUE,28.54155,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,4.12,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,20.339,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,15.78825,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,0.00562,surface/plume (<=1 m),23.925821538887476
+17-056,2022,2,Hybrid,TRUE,12.225,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,27.011,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,28.54155,coral depth (1-10 m),27.149820115052677
+17-056,2022,2,Hybrid,TRUE,21.835,surface/plume (<=1 m),23.925821538887476
+17-056,2022,2,Hybrid,TRUE,28.284,surface/plume (<=1 m),23.925821538887476
+17-056,2022,2,Hybrid,TRUE,23.048,surface/plume (<=1 m),23.925821538887476
+18-006,2022,2,Hybrid,TRUE,14.116,surface/plume (<=1 m),26.525369845696268
+17-009a,2024,2,Hybrid,TRUE,26.418,coral depth (1-10 m),25.611514733024684
+17-009a,2024,2,Hybrid,TRUE,17.319,surface/plume (<=1 m),21.09939598856419
+17-056,2024,2,Hybrid,TRUE,28.241,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,23.729,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,23.086,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,26.694,coral depth (1-10 m),25.75347814057739
+15-053,2024,2,Hybrid,TRUE,0.41565,surface/plume (<=1 m),22.64343348580836
+15-053,2024,2,Hybrid,TRUE,6.8422,surface/plume (<=1 m),22.64343348580836
+14-031,2024,2,Hybrid,TRUE,29.683,coral depth (1-10 m),25.851568332655194
+14-031,2024,2,Hybrid,TRUE,28.91741,surface/plume (<=1 m),21.540461615304892
+14-031,2024,2,Hybrid,TRUE,21.752,coral depth (1-10 m),25.851568332655194
+17-009a,2024,2,Hybrid,TRUE,27.79,coral depth (1-10 m),25.611514733024684
+17-009a,2024,2,Hybrid,TRUE,26.521,coral depth (1-10 m),25.611514733024684
+17-009a,2024,2,Hybrid,TRUE,24.373,coral depth (1-10 m),25.611514733024684
+17-009a,2024,2,Hybrid,TRUE,25.59,coral depth (1-10 m),25.611514733024684
+17-009a,2024,2,Hybrid,TRUE,3.58917,coral depth (1-10 m),25.611514733024684
+17-009a,2024,2,Hybrid,TRUE,0.06615,surface/plume (<=1 m),21.09939598856419
+17-009a,2024,2,Hybrid,TRUE,0.04762,surface/plume (<=1 m),21.09939598856419
+17-009a,2024,2,Hybrid,TRUE,11.30619,surface/plume (<=1 m),21.09939598856419
+17-009a,2024,2,Hybrid,TRUE,16.01134,surface/plume (<=1 m),21.09939598856419
+17-009a,2024,2,Hybrid,TRUE,6.87802,surface/plume (<=1 m),21.09939598856419
+17-056,2024,2,Hybrid,TRUE,26.218,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,26.691,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,25.06,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,8.43973,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,25.316,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,0.03391,surface/plume (<=1 m),21.360234315599726
+17-056,2024,2,Hybrid,TRUE,0.03852,surface/plume (<=1 m),21.360234315599726
+17-056,2024,2,Hybrid,TRUE,28.677,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,28.239,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,24.76079,coral depth (1-10 m),25.75347814057739
+17-056,2024,2,Hybrid,TRUE,12.32078,surface/plume (<=1 m),21.360234315599726
+17-009a,2024,2,Hybrid,TRUE,5.199,surface/plume (<=1 m),21.09939598856419
+17-056,2024,2,Hybrid,TRUE,24.525,surface/plume (<=1 m),21.360234315599726
+17-056,2024,2,Hybrid,TRUE,13.363,surface/plume (<=1 m),21.360234315599726
+20-211,2017,3,Spatial prior,TRUE,29.564,coral depth (1-10 m),25.16067270447227
+20-211,2017,3,Spatial prior,TRUE,23.6,surface/plume (<=1 m),20.137676110353468
+15-014a,2020,3,Spatial prior,TRUE,9.8,surface/plume (<=1 m),20.221964296534956
+15-014a,2020,3,Spatial prior,TRUE,26.2937,coral depth (1-10 m),25.20598403115157
+14-001,2020,3,Spatial prior,TRUE,28.35,surface/plume (<=1 m),21.265627239596526
+15-014a,2022,3,Spatial prior,TRUE,0.01291,surface/plume (<=1 m),20.221964296534956
+15-014a,2022,3,Spatial prior,TRUE,11.0302,surface/plume (<=1 m),20.221964296534956
+15-014a,2022,3,Spatial prior,TRUE,10.83725,surface/plume (<=1 m),20.221964296534956
+14-001,2022,3,Spatial prior,TRUE,28.276,surface/plume (<=1 m),21.265627239596526
+15-014a,2022,3,Spatial prior,TRUE,20.7727,surface/plume (<=1 m),20.221964296534956
+20-211,2024,3,Spatial prior,TRUE,14.646,coral depth (1-10 m),25.16067270447227
+15-014a,2024,3,Spatial prior,TRUE,0.12006,surface/plume (<=1 m),20.221964296534956
+15-014a,2024,3,Spatial prior,TRUE,5.65912,surface/plume (<=1 m),20.221964296534956
+15-014a,2024,3,Spatial prior,TRUE,29.219,coral depth (1-10 m),25.20598403115157
+15-014a,2024,3,Spatial prior,TRUE,17.36478,surface/plume (<=1 m),20.221964296534956
+14-001,2024,3,Spatial prior,TRUE,24.622,coral depth (1-10 m),25.767032437796765
+14-001,2024,3,Spatial prior,TRUE,21.382,coral depth (1-10 m),25.767032437796765
+20-211,2017,3,eReefs calibrated,TRUE,29.564,coral depth (1-10 m),23.402938907445108
+20-211,2017,3,eReefs calibrated,TRUE,23.6,surface/plume (<=1 m),16.873467984979396
+15-014a,2020,3,eReefs calibrated,TRUE,9.8,surface/plume (<=1 m),20.335363917198126
+15-014a,2020,3,eReefs calibrated,TRUE,26.2937,coral depth (1-10 m),25.264700510729497
+14-001,2020,3,eReefs calibrated,TRUE,28.35,surface/plume (<=1 m),21.259903414186525
+15-014a,2022,3,eReefs calibrated,TRUE,0.01291,surface/plume (<=1 m),20.363564573054873
+15-014a,2022,3,eReefs calibrated,TRUE,11.0302,surface/plume (<=1 m),20.363564573054873
+15-014a,2022,3,eReefs calibrated,TRUE,10.83725,surface/plume (<=1 m),20.363564573054873
+14-001,2022,3,eReefs calibrated,TRUE,28.276,surface/plume (<=1 m),21.265564597953162
+15-014a,2022,3,eReefs calibrated,TRUE,20.7727,surface/plume (<=1 m),20.363564573054873
+20-211,2024,3,eReefs calibrated,TRUE,14.646,coral depth (1-10 m),25.26574700156183
+15-014a,2024,3,eReefs calibrated,TRUE,0.12006,surface/plume (<=1 m),20.359682977827305
+15-014a,2024,3,eReefs calibrated,TRUE,5.65912,surface/plume (<=1 m),20.359682977827305
+15-014a,2024,3,eReefs calibrated,TRUE,29.219,coral depth (1-10 m),25.277778978191783
+15-014a,2024,3,eReefs calibrated,TRUE,17.36478,surface/plume (<=1 m),20.359682977827305
+14-001,2024,3,eReefs calibrated,TRUE,24.622,coral depth (1-10 m),25.73791102706659
+14-001,2024,3,eReefs calibrated,TRUE,21.382,coral depth (1-10 m),25.73791102706659
+20-211,2017,3,Operational proxies,TRUE,29.564,coral depth (1-10 m),27.103649825697364
+20-211,2017,3,Operational proxies,TRUE,23.6,surface/plume (<=1 m),24.1034688875185
+15-014a,2020,3,Operational proxies,TRUE,9.8,surface/plume (<=1 m),18.125333339663236
+15-014a,2020,3,Operational proxies,TRUE,26.2937,coral depth (1-10 m),23.72616785628601
+14-001,2020,3,Operational proxies,TRUE,28.35,surface/plume (<=1 m),18.211268097265553
+15-014a,2022,3,Operational proxies,TRUE,0.01291,surface/plume (<=1 m),19.896522430346096
+15-014a,2022,3,Operational proxies,TRUE,11.0302,surface/plume (<=1 m),19.896522430346096
+15-014a,2022,3,Operational proxies,TRUE,10.83725,surface/plume (<=1 m),19.896522430346096
+14-001,2022,3,Operational proxies,TRUE,28.276,surface/plume (<=1 m),22.719411811296453
+15-014a,2022,3,Operational proxies,TRUE,20.7727,surface/plume (<=1 m),19.896522430346096
+20-211,2024,3,Operational proxies,TRUE,14.646,coral depth (1-10 m),26.63061000673248
+15-014a,2024,3,Operational proxies,TRUE,0.12006,surface/plume (<=1 m),23.04266677323499
+15-014a,2024,3,Operational proxies,TRUE,5.65912,surface/plume (<=1 m),23.04266677323499
+15-014a,2024,3,Operational proxies,TRUE,29.219,coral depth (1-10 m),26.504325841584723
+15-014a,2024,3,Operational proxies,TRUE,17.36478,surface/plume (<=1 m),23.04266677323499
+14-001,2024,3,Operational proxies,TRUE,24.622,coral depth (1-10 m),24.963004292033663
+14-001,2024,3,Operational proxies,TRUE,21.382,coral depth (1-10 m),24.963004292033663
+20-211,2017,3,Hybrid,TRUE,29.564,coral depth (1-10 m),27.103605625517837
+20-211,2017,3,Hybrid,TRUE,23.6,surface/plume (<=1 m),24.103394115241585
+15-014a,2020,3,Hybrid,TRUE,9.8,surface/plume (<=1 m),18.125318513272184
+15-014a,2020,3,Hybrid,TRUE,26.2937,coral depth (1-10 m),23.72615582847777
+14-001,2020,3,Hybrid,TRUE,28.35,surface/plume (<=1 m),18.211244147168685
+15-014a,2022,3,Hybrid,TRUE,0.01291,surface/plume (<=1 m),19.896533608288674
+15-014a,2022,3,Hybrid,TRUE,11.0302,surface/plume (<=1 m),19.896533608288674
+15-014a,2022,3,Hybrid,TRUE,10.83725,surface/plume (<=1 m),19.896533608288674
+14-001,2022,3,Hybrid,TRUE,28.276,surface/plume (<=1 m),22.71940050298533
+15-014a,2022,3,Hybrid,TRUE,20.7727,surface/plume (<=1 m),19.896533608288674
+20-211,2024,3,Hybrid,TRUE,14.646,coral depth (1-10 m),26.630570273074532
+15-014a,2024,3,Hybrid,TRUE,0.12006,surface/plume (<=1 m),23.04267477012503
+15-014a,2024,3,Hybrid,TRUE,5.65912,surface/plume (<=1 m),23.04267477012503
+15-014a,2024,3,Hybrid,TRUE,29.219,coral depth (1-10 m),26.50432810288159
+15-014a,2024,3,Hybrid,TRUE,17.36478,surface/plume (<=1 m),23.04267477012503
+14-001,2024,3,Hybrid,TRUE,24.622,coral depth (1-10 m),24.963012186365358
+14-001,2024,3,Hybrid,TRUE,21.382,coral depth (1-10 m),24.963012186365358
+21-004,2016,4,Spatial prior,TRUE,26.7,surface/plume (<=1 m),19.6498297236768
+19-802,2017,4,Spatial prior,TRUE,18,surface/plume (<=1 m),18.79375107891374
+16-054f,2017,4,Spatial prior,TRUE,28.3,surface/plume (<=1 m),18.47769750501908
+23-028,2017,4,Spatial prior,TRUE,18.2,coral depth (1-10 m),25.793931089475386
+15-014b,2020,4,Spatial prior,TRUE,24.2,coral depth (1-10 m),25.31136224619905
+15-014b,2022,4,Spatial prior,TRUE,23.13535,surface/plume (<=1 m),19.426700053922644
+15-014b,2022,4,Spatial prior,TRUE,18.24325,surface/plume (<=1 m),19.426700053922644
+14-013,2022,4,Spatial prior,TRUE,27.651,surface/plume (<=1 m),20.618890929979834
+19-018,2022,4,Spatial prior,TRUE,28.435,surface/plume (<=1 m),18.725150870320626
+19-018,2022,4,Spatial prior,TRUE,17.253,coral depth (1-10 m),24.96652894968197
+19-802,2022,4,Spatial prior,TRUE,26.209,surface/plume (<=1 m),18.79375107891374
+15-014b,2024,4,Spatial prior,TRUE,5.17183,surface/plume (<=1 m),19.426700053922644
+15-014b,2024,4,Spatial prior,TRUE,3.51957,surface/plume (<=1 m),19.426700053922644
+14-013,2024,4,Spatial prior,TRUE,27.888,coral depth (1-10 m),25.897361231697957
+14-013,2024,4,Spatial prior,TRUE,27.042,coral depth (1-10 m),25.897361231697957
+14-013,2024,4,Spatial prior,TRUE,18.05123,surface/plume (<=1 m),20.618890929979834
+13-111,2024,4,Spatial prior,TRUE,22.635,surface/plume (<=1 m),20.6950603006575
+13-111,2024,4,Spatial prior,TRUE,25.564,surface/plume (<=1 m),20.6950603006575
+16-054f,2024,4,Spatial prior,TRUE,13.329,surface/plume (<=1 m),18.47769750501908
+21-004,2016,4,eReefs calibrated,TRUE,26.7,surface/plume (<=1 m),19.649506672912494
+19-802,2017,4,eReefs calibrated,TRUE,18,surface/plume (<=1 m),18.793988258370184
+16-054f,2017,4,eReefs calibrated,TRUE,28.3,surface/plume (<=1 m),18.477841305177137
+23-028,2017,4,eReefs calibrated,TRUE,18.2,coral depth (1-10 m),25.79380179827577
+15-014b,2020,4,eReefs calibrated,TRUE,24.2,coral depth (1-10 m),25.311498710274613
+15-014b,2022,4,eReefs calibrated,TRUE,23.13535,surface/plume (<=1 m),19.426770300778266
+15-014b,2022,4,eReefs calibrated,TRUE,18.24325,surface/plume (<=1 m),19.426770300778266
+14-013,2022,4,eReefs calibrated,TRUE,27.651,surface/plume (<=1 m),20.618917883224135
+19-018,2022,4,eReefs calibrated,TRUE,28.435,surface/plume (<=1 m),18.72512838771869
+19-018,2022,4,eReefs calibrated,TRUE,17.253,coral depth (1-10 m),24.966533327476903
+19-802,2022,4,eReefs calibrated,TRUE,26.209,surface/plume (<=1 m),18.79363927318176
+15-014b,2024,4,eReefs calibrated,TRUE,5.17183,surface/plume (<=1 m),19.42672788833547
+15-014b,2024,4,eReefs calibrated,TRUE,3.51957,surface/plume (<=1 m),19.42672788833547
+14-013,2024,4,eReefs calibrated,TRUE,27.888,coral depth (1-10 m),25.897247982866975
+14-013,2024,4,eReefs calibrated,TRUE,27.042,coral depth (1-10 m),25.897247982866975
+14-013,2024,4,eReefs calibrated,TRUE,18.05123,surface/plume (<=1 m),20.61863398287005
+13-111,2024,4,eReefs calibrated,TRUE,22.635,surface/plume (<=1 m),20.694887357882426
+13-111,2024,4,eReefs calibrated,TRUE,25.564,surface/plume (<=1 m),20.694887357882426
+16-054f,2024,4,eReefs calibrated,TRUE,13.329,surface/plume (<=1 m),18.477615284360958
+21-004,2016,4,Operational proxies,TRUE,26.7,surface/plume (<=1 m),22.02507716008601
+19-802,2017,4,Operational proxies,TRUE,18,surface/plume (<=1 m),23.578841085619842
+16-054f,2017,4,Operational proxies,TRUE,28.3,surface/plume (<=1 m),19.409654783120875
+23-028,2017,4,Operational proxies,TRUE,18.2,coral depth (1-10 m),24.77663912677658
+15-014b,2020,4,Operational proxies,TRUE,24.2,coral depth (1-10 m),23.23559264321371
+15-014b,2022,4,Operational proxies,TRUE,23.13535,surface/plume (<=1 m),18.546687616718987
+15-014b,2022,4,Operational proxies,TRUE,18.24325,surface/plume (<=1 m),18.546687616718987
+14-013,2022,4,Operational proxies,TRUE,27.651,surface/plume (<=1 m),23.409353964899974
+19-018,2022,4,Operational proxies,TRUE,28.435,surface/plume (<=1 m),23.202803985220093
+19-018,2022,4,Operational proxies,TRUE,17.253,coral depth (1-10 m),26.841991678016363
+19-802,2022,4,Operational proxies,TRUE,26.209,surface/plume (<=1 m),22.766600232865734
+15-014b,2024,4,Operational proxies,TRUE,5.17183,surface/plume (<=1 m),21.9840283890293
+15-014b,2024,4,Operational proxies,TRUE,3.51957,surface/plume (<=1 m),21.9840283890293
+14-013,2024,4,Operational proxies,TRUE,27.888,coral depth (1-10 m),25.965329721681282
+14-013,2024,4,Operational proxies,TRUE,27.042,coral depth (1-10 m),25.965329721681282
+14-013,2024,4,Operational proxies,TRUE,18.05123,surface/plume (<=1 m),21.558866652024918
+13-111,2024,4,Operational proxies,TRUE,22.635,surface/plume (<=1 m),22.846167077254034
+13-111,2024,4,Operational proxies,TRUE,25.564,surface/plume (<=1 m),22.846167077254034
+16-054f,2024,4,Operational proxies,TRUE,13.329,surface/plume (<=1 m),18.93135365059082
+21-004,2016,4,Hybrid,TRUE,26.7,surface/plume (<=1 m),22.025266665127063
+19-802,2017,4,Hybrid,TRUE,18,surface/plume (<=1 m),23.578825510967135
+16-054f,2017,4,Hybrid,TRUE,28.3,surface/plume (<=1 m),19.409553895409125
+23-028,2017,4,Hybrid,TRUE,18.2,coral depth (1-10 m),24.77610758575986
+15-014b,2020,4,Hybrid,TRUE,24.2,coral depth (1-10 m),23.23538792781126
+15-014b,2022,4,Hybrid,TRUE,23.13535,surface/plume (<=1 m),18.546620444480652
+15-014b,2022,4,Hybrid,TRUE,18.24325,surface/plume (<=1 m),18.546620444480652
+14-013,2022,4,Hybrid,TRUE,27.651,surface/plume (<=1 m),23.409414877658765
+19-018,2022,4,Hybrid,TRUE,28.435,surface/plume (<=1 m),23.202941232993076
+19-018,2022,4,Hybrid,TRUE,17.253,coral depth (1-10 m),26.842067113365566
+19-802,2022,4,Hybrid,TRUE,26.209,surface/plume (<=1 m),22.7668147158142
+15-014b,2024,4,Hybrid,TRUE,5.17183,surface/plume (<=1 m),21.98403535976267
+15-014b,2024,4,Hybrid,TRUE,3.51957,surface/plume (<=1 m),21.98403535976267
+14-013,2024,4,Hybrid,TRUE,27.888,coral depth (1-10 m),25.965442047855003
+14-013,2024,4,Hybrid,TRUE,27.042,coral depth (1-10 m),25.965442047855003
+14-013,2024,4,Hybrid,TRUE,18.05123,surface/plume (<=1 m),21.55907219066475
+13-111,2024,4,Hybrid,TRUE,22.635,surface/plume (<=1 m),22.84631643548248
+13-111,2024,4,Hybrid,TRUE,25.564,surface/plume (<=1 m),22.84631643548248
+16-054f,2024,4,Hybrid,TRUE,13.329,surface/plume (<=1 m),18.931397847927975
+17-070,2017,5,Spatial prior,TRUE,29.8,surface/plume (<=1 m),17.75554465254799
+14-016,2020,5,Spatial prior,TRUE,23.3,surface/plume (<=1 m),23.327314158652207
+12-073,2020,5,Spatial prior,TRUE,1.2,surface/plume (<=1 m),24.15130152566345
+12-073,2020,5,Spatial prior,TRUE,8.5,coral depth (1-10 m),27.565778421672075
+15-009,2022,5,Spatial prior,TRUE,22.7171,coral depth (1-10 m),25.39225445626343
+12-073,2022,5,Spatial prior,TRUE,18.54955,surface/plume (<=1 m),24.15130152566345
+17-070,2022,5,Spatial prior,TRUE,28.503,surface/plume (<=1 m),17.75554465254799
+14-016,2024,5,Spatial prior,TRUE,22.419,surface/plume (<=1 m),23.327314158652207
+12-073,2024,5,Spatial prior,TRUE,2.98581,surface/plume (<=1 m),24.15130152566345
+12-073,2024,5,Spatial prior,TRUE,25.188,surface/plume (<=1 m),24.15130152566345
+12-073,2024,5,Spatial prior,TRUE,1.513,surface/plume (<=1 m),24.15130152566345
+12-073,2024,5,Spatial prior,TRUE,29.219,surface/plume (<=1 m),24.15130152566345
+12-073,2024,5,Spatial prior,TRUE,28.726,coral depth (1-10 m),27.565778421672075
+12-073,2024,5,Spatial prior,TRUE,6.09024,surface/plume (<=1 m),24.15130152566345
+16-054g,2024,5,Spatial prior,TRUE,29.83813,surface/plume (<=1 m),17.15685081339972
+16-094,2024,5,Spatial prior,TRUE,25.473,coral depth (1-10 m),24.155695552772112
+16-094,2024,5,Spatial prior,TRUE,27.31,coral depth (1-10 m),24.155695552772112
+17-070,2017,5,eReefs calibrated,TRUE,29.8,surface/plume (<=1 m),17.755728124241983
+14-016,2020,5,eReefs calibrated,TRUE,23.3,surface/plume (<=1 m),23.32706655578375
+12-073,2020,5,eReefs calibrated,TRUE,1.2,surface/plume (<=1 m),24.149073237664442
+12-073,2020,5,eReefs calibrated,TRUE,8.5,coral depth (1-10 m),27.56462269777963
+15-009,2022,5,eReefs calibrated,TRUE,22.7171,coral depth (1-10 m),25.392558266909838
+12-073,2022,5,eReefs calibrated,TRUE,18.54955,surface/plume (<=1 m),24.149040585959778
+17-070,2022,5,eReefs calibrated,TRUE,28.503,surface/plume (<=1 m),17.75604179619662
+14-016,2024,5,eReefs calibrated,TRUE,22.419,surface/plume (<=1 m),23.326992091870366
+12-073,2024,5,eReefs calibrated,TRUE,2.98581,surface/plume (<=1 m),24.14914255028475
+12-073,2024,5,eReefs calibrated,TRUE,25.188,surface/plume (<=1 m),24.14914255028475
+12-073,2024,5,eReefs calibrated,TRUE,1.513,surface/plume (<=1 m),24.14914255028475
+12-073,2024,5,eReefs calibrated,TRUE,29.219,surface/plume (<=1 m),24.14914255028475
+12-073,2024,5,eReefs calibrated,TRUE,28.726,coral depth (1-10 m),27.56465745439152
+12-073,2024,5,eReefs calibrated,TRUE,6.09024,surface/plume (<=1 m),24.14914255028475
+16-054g,2024,5,eReefs calibrated,TRUE,29.83813,surface/plume (<=1 m),17.157105326167795
+16-094,2024,5,eReefs calibrated,TRUE,25.473,coral depth (1-10 m),24.155687813260045
+16-094,2024,5,eReefs calibrated,TRUE,27.31,coral depth (1-10 m),24.155687813260045
+17-070,2017,5,Operational proxies,TRUE,29.8,surface/plume (<=1 m),17.00196375052736
+14-016,2020,5,Operational proxies,TRUE,23.3,surface/plume (<=1 m),26.630869891920362
+12-073,2020,5,Operational proxies,TRUE,1.2,surface/plume (<=1 m),25.4498345191419
+12-073,2020,5,Operational proxies,TRUE,8.5,coral depth (1-10 m),28.135516997850722
+15-009,2022,5,Operational proxies,TRUE,22.7171,coral depth (1-10 m),27.666507669952708
+12-073,2022,5,Operational proxies,TRUE,18.54955,surface/plume (<=1 m),25.85715299782385
+17-070,2022,5,Operational proxies,TRUE,28.503,surface/plume (<=1 m),21.714002187065272
+14-016,2024,5,Operational proxies,TRUE,22.419,surface/plume (<=1 m),25.516089715665945
+12-073,2024,5,Operational proxies,TRUE,2.98581,surface/plume (<=1 m),25.979713267440303
+12-073,2024,5,Operational proxies,TRUE,25.188,surface/plume (<=1 m),25.979713267440303
+12-073,2024,5,Operational proxies,TRUE,1.513,surface/plume (<=1 m),25.979713267440303
+12-073,2024,5,Operational proxies,TRUE,29.219,surface/plume (<=1 m),25.979713267440303
+12-073,2024,5,Operational proxies,TRUE,28.726,coral depth (1-10 m),28.40899148666295
+12-073,2024,5,Operational proxies,TRUE,6.09024,surface/plume (<=1 m),25.979713267440303
+16-054g,2024,5,Operational proxies,TRUE,29.83813,surface/plume (<=1 m),15.254630348610316
+16-094,2024,5,Operational proxies,TRUE,25.473,coral depth (1-10 m),20.19422987327846
+16-094,2024,5,Operational proxies,TRUE,27.31,coral depth (1-10 m),20.19422987327846
+17-070,2017,5,Hybrid,TRUE,29.8,surface/plume (<=1 m),17.001925553935443
+14-016,2020,5,Hybrid,TRUE,23.3,surface/plume (<=1 m),26.63084460715711
+12-073,2020,5,Hybrid,TRUE,1.2,surface/plume (<=1 m),25.4498024751167
+12-073,2020,5,Hybrid,TRUE,8.5,coral depth (1-10 m),28.135500206164334
+15-009,2022,5,Hybrid,TRUE,22.7171,coral depth (1-10 m),27.666510788445848
+12-073,2022,5,Hybrid,TRUE,18.54955,surface/plume (<=1 m),25.857134191913996
+17-070,2022,5,Hybrid,TRUE,28.503,surface/plume (<=1 m),21.71396930951315
+14-016,2024,5,Hybrid,TRUE,22.419,surface/plume (<=1 m),25.516059645478478
+12-073,2024,5,Hybrid,TRUE,2.98581,surface/plume (<=1 m),25.979672458800454
+12-073,2024,5,Hybrid,TRUE,25.188,surface/plume (<=1 m),25.979672458800454
+12-073,2024,5,Hybrid,TRUE,1.513,surface/plume (<=1 m),25.979672458800454
+12-073,2024,5,Hybrid,TRUE,29.219,surface/plume (<=1 m),25.979672458800454
+12-073,2024,5,Hybrid,TRUE,28.726,coral depth (1-10 m),28.408970195694796
+12-073,2024,5,Hybrid,TRUE,6.09024,surface/plume (<=1 m),25.979672458800454
+16-054g,2024,5,Hybrid,TRUE,29.83813,surface/plume (<=1 m),15.254641306602565
+16-094,2024,5,Hybrid,TRUE,25.473,coral depth (1-10 m),20.194226757183493
+16-094,2024,5,Hybrid,TRUE,27.31,coral depth (1-10 m),20.194226757183493

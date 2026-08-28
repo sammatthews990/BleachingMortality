@@ -16,6 +16,8 @@ latent_mortality_predictors <- c(
     'ann_maxdhw', 'dhw_excess4', 'dhw_excess8',
     'prop_acropora_pre', 'observed_pre_cover',
     'histmDHW6', 'yrsince6', 'dhw10_load4', 'dhw_novelty10',
+    'dhw_events_since2016_n6', 'dhw_years_since_last_n6_capped8',
+    'dhw_no_prior_n6',
     'secc3m_p10', 'cloudp_90',
     'log_coastal_rain30', 'era5_wind_mean',
     'era5_wind_calm_fraction', 'era5_coastal_distance_km',
@@ -90,6 +92,8 @@ latent_ecological_rhs <- function() {
     interactions <- c(
         'dhw_excess4_z:prop_acropora_pre_z',
         'dhw_excess8_z:prop_acropora_pre_z',
+        'ann_maxdhw_z:dhw_events_since2016_n6_z',
+        'ann_maxdhw_z:dhw_years_since_last_n6_capped8_z',
         'ann_maxdhw_z:log_coastal_rain30_z',
         'ann_maxdhw_z:wqc_freqcc12_z',
         'ann_maxdhw_z:era5_wind_calm_fraction_z'

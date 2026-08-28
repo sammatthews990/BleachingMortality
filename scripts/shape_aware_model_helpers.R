@@ -14,7 +14,8 @@ shape_environmental_predictors <- c(
     'histmDHW6', 'yrsince6', 'histmDHW4', 'yrsince4',
     'ann_maxsst', 'winyear_mean', 'winyear_sd', 'mcur_90',
     'secc3m', 'cloudp_90', 'dhw10_load4', 'dhw_novelty10',
-    'secc3m_p10'
+    'secc3m_p10', 'dhw_events_since2016_n6',
+    'dhw_years_since_last_n6_capped8', 'dhw_no_prior_n6'
 )
 
 shape_predictors <- function(programme_key) {
@@ -42,7 +43,11 @@ shape_mean_rhs <- function(predictors) {
     scaled_main_effects <- paste0(predictors, '_z')
     thermal_composition <- c(
         'dhw_excess4_z:prop_acropora_pre',
-        'dhw_excess8_z:prop_acropora_pre'
+        'dhw_excess8_z:prop_acropora_pre',
+        'dhw_excess4_z:dhw_events_since2016_n6_z',
+        'dhw_excess8_z:dhw_events_since2016_n6_z',
+        'dhw_excess4_z:dhw_years_since_last_n6_capped8_z',
+        'dhw_excess8_z:dhw_years_since_last_n6_capped8_z'
     )
     paste(
         c(
@@ -62,8 +67,14 @@ shape_boundary_rhs <- function() {
             'prop_acropora_pre_z', 'observed_pre_cover_z',
             'cloudp_90_z', 'secc3m_z', 'histmDHW6_z',
             'dhw10_load4_z', 'dhw_novelty10_z', 'secc3m_p10_z',
+            'dhw_events_since2016_n6_z',
+            'dhw_years_since_last_n6_capped8_z', 'dhw_no_prior_n6_z',
             'dhw_excess4_z:prop_acropora_pre',
             'dhw_excess8_z:prop_acropora_pre',
+            'dhw_excess4_z:dhw_events_since2016_n6_z',
+            'dhw_excess8_z:dhw_events_since2016_n6_z',
+            'dhw_excess4_z:dhw_years_since_last_n6_capped8_z',
+            'dhw_excess8_z:dhw_years_since_last_n6_capped8_z',
             '(1 | region_effect)'
         ),
         collapse = ' + '

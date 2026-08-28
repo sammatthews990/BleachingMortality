@@ -41,7 +41,10 @@ predictor_columns <- c(
 )
 predictor_columns <- c(
     predictor_columns,
-    'dhw10_load4', 'dhw_novelty10', 'secc3m_p10'
+    'dhw10_load4', 'dhw_novelty10', 'secc3m_p10',
+    'dhw_events_since2016_n6', 'dhw_events_prior8_n6',
+    'dhw_history_years_since2016', 'dhw_years_since_last_n6',
+    'dhw_years_since_last_n6_capped8', 'dhw_no_prior_n6'
 )
 
 # Read and stack outcomes. Programme identity is retained and the tables are

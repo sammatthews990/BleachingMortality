@@ -317,7 +317,9 @@ mortality_environment <- read_csv(
     transmute(
         ReefID = LABEL_ID, event_year = as.integer(year),
         histmDHW6, yrsince6, histmDHW4, yrsince4,
-        dhw10_load4, dhw_novelty10, ann_maxsst,
+        dhw10_load4, dhw_novelty10, dhw_events_since2016_n6,
+        dhw_events_prior8_n6, dhw_years_since_last_n6,
+        dhw_years_since_last_n6_capped8, dhw_no_prior_n6, ann_maxsst,
         winyear_mean, winyear_sd, mcur_90, dist_to_er_km,
         secc3m, secc3m_p10, cloudp_90
     ) |>

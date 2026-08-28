@@ -83,6 +83,61 @@ def compute_ten_year_dhw_metrics(target_year, years_list, dhw_matrix,
         'dhw_novelty10': novelty,
     }
 
+
+def compute_repeated_exposure_metrics(target_year, years_list, dhw_matrix,
+                                      threshold=6.0, origin_year=2016,
+                                      rolling_years=8):
+    '''Count prior severe-heat events without using the response year's DHW.
+
+    ``dhw_events_since2016_n6`` follows the fixed-origin history used by
+    McWilliam et al. (2026). ``dhw_events_prior8_n6`` is its operational
+    rolling counterpart, so the predictor remains meaningful after the 2016
+    cohort becomes increasingly distant. Both stop at ``target_year - 1``.
+    '''
+    idx_target = years_list.index(target_year)
+    years = np.asarray(years_list)
+    history = np.asarray(dhw_matrix[:idx_target, :], dtype=float)
+
+    fixed_mask = years[:idx_target] >= origin_year
+    rolling_mask = years[:idx_target] >= target_year - rolling_years
+
+    def summarise(mask):
+        selected = history[mask, :]
+        if selected.shape[0] == 0:
+            return (
+                np.zeros(history.shape[1], dtype=np.float32),
+                np.zeros(history.shape[1], dtype=np.float32),
+            )
+        counts = np.sum(selected > threshold, axis=0).astype(np.float32)
+        observed = np.sum(np.isfinite(selected), axis=0).astype(np.float32)
+        counts[observed == 0] = np.nan
+        return counts, observed
+
+    fixed_count, fixed_observed = summarise(fixed_mask)
+    rolling_count, _ = summarise(rolling_mask)
+    event = np.isfinite(history) & (history > threshold)
+    years_since = np.full(history.shape[1], np.nan, dtype=np.float32)
+    no_prior = np.ones(history.shape[1], dtype=np.float32)
+    for reef_index in range(history.shape[1]):
+        event_indices = np.where(event[:, reef_index])[0]
+        if len(event_indices) > 0:
+            years_since[reef_index] = (
+                target_year - years[event_indices[-1]]
+            )
+            no_prior[reef_index] = 0
+    years_since_capped = np.where(
+        np.isfinite(years_since), np.minimum(years_since, rolling_years),
+        rolling_years
+    ).astype(np.float32)
+    return {
+        'dhw_events_since2016_n6': fixed_count,
+        'dhw_events_prior8_n6': rolling_count,
+        'dhw_history_years_since2016': fixed_observed,
+        'dhw_years_since_last_n6': years_since,
+        'dhw_years_since_last_n6_capped8': years_since_capped,
+        'dhw_no_prior_n6': no_prior,
+    }
+
 def haversine_np(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
     dlat = lat2 - lat1
@@ -186,6 +241,9 @@ def main():
         dhw10 = compute_ten_year_dhw_metrics(
             yr, all_years_hist, dhw_matrix
         )
+        repeated_exposure = compute_repeated_exposure_metrics(
+            yr, all_years_hist, dhw_matrix
+        )
         
         # 2. CRW SST (Annual Max & Previous Year Baseline)
         ds_sst_yr = ds_sst.sel(time=slice(f"{yr}-01-01", f"{yr}-12-31"))
@@ -241,6 +299,22 @@ def main():
             'dhw10_n4': dhw10['dhw10_n4'],
             'dhw10_n6': dhw10['dhw10_n6'],
             'dhw_novelty10': dhw10['dhw_novelty10'],
+            'dhw_events_since2016_n6': repeated_exposure[
+                'dhw_events_since2016_n6'
+            ],
+            'dhw_events_prior8_n6': repeated_exposure[
+                'dhw_events_prior8_n6'
+            ],
+            'dhw_history_years_since2016': repeated_exposure[
+                'dhw_history_years_since2016'
+            ],
+            'dhw_years_since_last_n6': repeated_exposure[
+                'dhw_years_since_last_n6'
+            ],
+            'dhw_years_since_last_n6_capped8': repeated_exposure[
+                'dhw_years_since_last_n6_capped8'
+            ],
+            'dhw_no_prior_n6': repeated_exposure['dhw_no_prior_n6'],
             'ann_maxsst': ann_maxsst,
             'winyear_mean': winyear_mean,
             'winyear_sd': winyear_sd,

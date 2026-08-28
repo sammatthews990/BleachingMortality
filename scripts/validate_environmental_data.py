@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.2"
 EXPECTED_YEARS = [2016, 2017, 2020, 2022, 2024]
 KEY_COLUMNS = ["LABEL_ID", "lon", "lat", "year"]
 REQUIRED_COLUMNS = {
@@ -53,6 +53,12 @@ REQUIRED_COLUMNS = {
     'dhw10_n4',
     'dhw10_n6',
     'dhw_novelty10',
+    'dhw_events_since2016_n6',
+    'dhw_events_prior8_n6',
+    'dhw_history_years_since2016',
+    'dhw_years_since_last_n6',
+    'dhw_years_since_last_n6_capped8',
+    'dhw_no_prior_n6',
     'k490_q90',
     'secc3m_p10',
 }
@@ -84,6 +90,12 @@ VALID_RANGES = {
     'dhw10_n4': (0.0, 10.0),
     'dhw10_n6': (0.0, 10.0),
     'dhw_novelty10': (-50.0, 50.0),
+    'dhw_events_since2016_n6': (0.0, 20.0),
+    'dhw_events_prior8_n6': (0.0, 8.0),
+    'dhw_history_years_since2016': (0.0, 20.0),
+    'dhw_years_since_last_n6': (0.0, 100.0),
+    'dhw_years_since_last_n6_capped8': (0.0, 8.0),
+    'dhw_no_prior_n6': (0.0, 1.0),
     'k490_q90': (0.0, 20.0),
     'secc3m_p10': (0.0, 100.0),
 }
@@ -96,6 +108,12 @@ MAX_MISSING_FRACTION = {
     'dhw10_n4': 0.01,
     'dhw10_n6': 0.01,
     'dhw_novelty10': 0.01,
+    'dhw_events_since2016_n6': 0.01,
+    'dhw_events_prior8_n6': 0.01,
+    'dhw_history_years_since2016': 0.01,
+    'dhw_years_since_last_n6': 1.0,
+    'dhw_years_since_last_n6_capped8': 0.01,
+    'dhw_no_prior_n6': 0.01,
     'k490_q90': 0.10,
     'secc3m_p10': 0.10,
     "ann_maxdhw": 0.01,

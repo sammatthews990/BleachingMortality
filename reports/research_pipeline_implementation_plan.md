@@ -733,7 +733,620 @@ Implementation: `scripts/build_annual_coral_transitions.R`,
 `output/annual_coral_change/`, `output/decomposed_annual_change/`, and
 `reports/decomposed_annual_change_assessment.qmd`.
 
+## 7i. Extreme-loss expert and distributional annual-change benchmark - completed candidate
+
+- Add the RRN coral-sink connectivity index to the annual transition table as
+  a recovery predictor. The remaining RRN individual-pressure fields were
+  already present. Do not use the temporally composite RRN metrics as acute
+  mortality predictors when their component variables are available.
+- Fit a Bernoulli severe-loss gate (annual loss of at least 10 percentage
+  points) and a severe-magnitude BRT. Train the tail with both severe annual
+  transitions and source-balanced restricted bleaching-mortality rows, while
+  applying the same reef/year exclusions as every validation fold.
+- Blend the tail expert with the mortality-augmented decomposition. In
+  reef-blocked 2024 validation, the soft gate improves RMSE from 8.59 to 8.14
+  points and severe-loss MAE from 11.43 to 9.67. The aggressive gate improves
+  severe MAE to 8.47 but raises false-extreme predictions among non-severe rows
+  to 18.2%; retain it as a risk-sensitive scenario rather than the central
+  prediction.
+- Fit a distributionally appropriate GAM benchmark with binomial gain/loss
+  occurrence and conditional beta magnitudes. Retain current cover, available
+  space, Acropora, thermal history/novelty, Secchi/cloud, rainfall/calm, WQC,
+  cyclone waves, COTS and the restricted-mortality transfer. Treat this as a
+  transparent distributional benchmark, not a substitute for the formal
+  Bayesian latent observation model. It is competitive but not promoted:
+  unseen-reef RMSE is 6.89 pp (predictive R2 0.178), while reef-blocked 2024
+  RMSE is 9.48 and its mean prediction for severe cases is -10.29 pp versus
+  -21.58 observed. The severe underprediction is therefore not explained only
+  by use of an unbounded response distribution.
+- Prioritise measured MMP event salinity/TSS/CDOM/Secchi, Queensland river
+  discharge, raw AIMS community and agents-of-mortality fields, cyclone
+  best-track/rainfall exposure, 2024 aerial bleaching and GBR10 reef habitat.
+  Derive event timing/duration rather than relying only on wet-season means.
+- Carry the base, soft-gated central candidate and aggressive severe-risk
+  scenario forward. Select any final blending weight and threshold with nested
+  reef/year validation and an explicit asymmetric cost for missed extremes,
+  while reporting the false-extreme rate as a separate constraint.
+
+Implementation: `scripts/fit_extreme_loss_ensemble.R`,
+`scripts/fit_beta_binomial_annual_gam.R`,
+`output/extreme_loss_ensemble/`, `output/beta_binomial_annual/`, and
+`reports/extreme_loss_ensemble_assessment.qmd`.
+
+## 7j. Measured freshwater, cyclone tracks and upwelling relief - data layer completed
+
+- Reconstruct the public AIMS water-quality record rather than reusing the
+  existing eReefs salinity field. The API exposes MMP-only/all-programme,
+  depth-average/depth-weighted and daily/hourly choices. The reproducible
+  all-programme extraction contains 10 logger sites, 6,366 depth-averaged and
+  3,868 depth-weighted sample rows across the 2015--2025 wet seasons. It
+  supplies salinity, TSS, CDOM, Secchi, chlorophyll and nutrients, including
+  943 depth-averaged observations below 30 PSU.
+- Record the genuine observation gap: public daily AIMS logger downloads end
+  by 25 October 2023. Do not treat the absence of a 2024 logger summary as a
+  failed join and do not invent direct Jasper-period logger salinity.
+- Link shallow (0--10 m) sample summaries to unique GBR registry points while
+  retaining nearest-reef distance and 5/20 km proximity flags. This creates
+  3,267 AIMS point-event calibration rows; 2,193 are within 5 km and 3,164 are
+  within 20 km of a registry reef point. Exact unique survey-name lineage is
+  used before spatial matching. River-mouth observations remain plume
+  calibration data and are not relabelled as direct reef measurements.
+- Build the corresponding 46,760-row all-GBR reef-event prediction grid for
+  2016--2025. Join RRN coloured water, cyclone waves and COTS; ERA5 rainfall
+  and wind; IMOS Kd490/Secchi; eReefs salinity; and the new BoM cyclone fields.
+  Complete ERA5/eReefs predictor layers currently cover the five principal
+  bleaching years 2016, 2017, 2020, 2022 and 2024.
+- Parse the complete BoM Australian tropical-cyclone best-track database into
+  reef-event proximity, nearest-fix wind/pressure, storms within 300 km and
+  quadrant-aware gale-radius exposure. Jasper passes approximately 31 km from
+  Mackay 16-015, 68 km from Swinger, 78 km from Mackay 15-024, and 124--132 km
+  from Linnet/Lizard/Eyrie. Keep this forcing separate from rainfall/flooding
+  and wave damage.
+- Generalise freshwater with a two-part model: below-30-PSU occurrence and
+  conditional magnitude/freshwater deficit. Calibrate the broad eReefs prior
+  against AIMS, then predict from event rainfall, IMOS optical plume anomalies,
+  cyclone forcing and river-to-reef connectivity. Keep 2024 in the training
+  pool and validate with held-out spatial/catchment groups; report a no-2024
+  sensitivity analysis rather than using 2024 only as a holdout.
+- The first whole-reef-blocked pilot is complete. The hybrid occurrence model
+  has average precision 0.339 versus prevalence 0.184, but conditional
+  low-salinity magnitude RMSE remains 11.5 PSU with predictions biased 5.7 PSU
+  too high. Do not pass these magnitude estimates into mortality yet. Add
+  event timing and river-to-reef connectivity before expanding model
+  complexity.
+- Derive upwelling relief dynamically. First extract daily IMOS 0.02-degree L3S
+  reef SST residuals relative to contemporaneous surrounding waters. Retain
+  minimum residual, cool-day counts and cool-spell duration during peak heat.
+  Then add a coarser subsurface forcing layer from vertical velocity, currents
+  and temperature gradients, calibrated against Palm Passage/Myrmidon and
+  other suitable AIMS/IMOS temperature records. Surface SST alone cannot detect
+  all bottom intrusions.
+- Enter predicted freshwater and cooling relief into the mortality ensemble as
+  opposite-signed DHW interactions. Pass their uncertainty forward. Retain
+  aerial bleaching as an optional within-event nowcast gate. Exclude the
+  habitat map from this stage because it does not resolve either dynamic
+  process.
+
+Implementation: `scripts/extract_aims_water_quality.R`,
+`scripts/extract_aims_logger_hourly.R`,
+`scripts/extract_bom_cyclone_exposure.R`,
+`scripts/build_aims_freshwater_calibration.R`,
+`scripts/fit_aims_freshwater_proxy.R`,
+`data/processed/aims_freshwater_training_points.csv`,
+`data/processed/freshwater_predictor_grid_2016_2025.csv`,
+`data/processed/bom_cyclone_reef_year.csv`, and
+`reports/aims_cyclone_upwelling_assessment.qmd`.
+
+## 7k. Repeated thermal exposure and susceptible composition - predictor contract updated
+
+- Following McWilliam et al. (2026), calculate the number of completed years
+  exceeding 6 DHW since 2016 and the years since the most recent >6-DHW event.
+  Every history stops at the year before the modelled event; the response-year
+  DHW can never contribute. Retain an explicit no-prior-event flag instead of
+  treating the legacy value of 35 years as an observed recovery interval. Use
+  an explicit 8+ year cap in model fitting while retaining the uncapped value
+  for audit.
+- Also retain an eight-year rolling event count for operational forecasts after
+  the fixed 2016 origin becomes increasingly remote. Compare the fixed-origin
+  and rolling definitions in validation; do not fit both together by default.
+- The completed all-GBR reconstruction contains 35,315 feature-years across
+  7,063 feature locations. For the 2024 prediction surface, 34.5% have no prior
+  >6-DHW event since 2016 and 24.7% have at least three. The target Mackay,
+  Linnet, Lizard, Eyrie and Swinger features have a seven-year interval since
+  their last >6-DHW event, while prior-event counts vary from one to two.
+- Allow current DHW to interact with event frequency and recovery interval in
+  the formal BRMS/BRT, shape-aware, shared-latent and annual-loss candidates.
+  This represents selective filtering after frequent events and renewed
+  susceptibility following long recovery windows.
+- Keep total pre-event Acropora in all models. Add tabular and staghorn
+  Acropora as separate composition fields only when source observations support
+  them. The local LTMP export contains only an aggregate `Acropora` category,
+  so tabular cover must not be inferred from total Acropora. Request the raw
+  point-classification/taxon-growth-form data and build a past-only tabular
+  composition layer with the same provenance rules as total Acropora.
+
+Implementation: `scripts/fetch_dms_environmental_data.py`,
+`scripts/add_repeated_dhw_exposure.py`,
+`scripts/audit_acropora_resolution.R`, `scripts/build_validation_splits.R`,
+the formal/joint/latent/shape-aware model helpers,
+`scripts/fit_beta_binomial_annual_gam.R`, and
+`reports/repeated_exposure_and_composition_assessment.qmd`.
+
+## 7l. R-INLA rapid Bayesian screening - first test completed
+
+- Use a two-component INLA approximation for rapid model development:
+  Bernoulli occurrence plus conditional beta mortality magnitude, with
+  independent reef, event and region effects and fold-local preprocessing.
+  Keep the exact zero-inflated/zero-one-inflated beta BRMS model as the formal
+  endpoint.
+- The first screen completed 56 blocked fits in 4.5 minutes (median 5.2 seconds
+  per two-component fit). This is fast enough to compare a small prespecified
+  set of ecological hypotheses under the full blocked-validation protocol.
+- The McWilliam-style event-count/recovery history improves manta tow under
+  reef and event blocking and improves 2024 manta prediction. It worsens LTMP
+  and is mixed for MMP. Pooled reef-blocked RMSE is essentially unchanged
+  (0.142 legacy versus 0.143 new history); retain both as candidate
+  specifications rather than replacing the legacy history globally.
+- Both formulations continue to underpredict observed mortality >=50% by about
+  26 percentage points under reef blocking. The next INLA screen must therefore
+  add operational exacerbating and ameliorating modifiers before any BRMS
+  refit: freshwater/coloured water or rainfall-runoff, cyclone wave exposure,
+  COTS, doldrum wind exposure, and dynamic cooling/upwelling.
+- Rank candidates with programme-specific blocked RMSE/MAE, predictive R2,
+  occurrence Brier score, severe-case bias and calibration. Use WAIC/DIC only
+  as within-likelihood full-data support, not as a replacement for blocked
+  prediction. Promote only stable predictive gains to the formal BRMS model.
+
+Implementation: `scripts/fit_inla_history_screen.R`,
+`output/inla_history_screen/`, and
+`reports/inla_history_screen.qmd`.
+
+## 7m. Low-DHW high-loss sensitivity and Lizard freshwater audit - completed
+
+- Treat low-DHW/high-loss removal only as an influence test. In every
+  reef-blocked fold, remove candidate rows from training while retaining the
+  complete held-out assessment set. Compare 5%, 10% and 20% mortality
+  thresholds below 4 DHW with the unchanged two-part Bernoulli/beta INLA
+  model.
+- The mechanical hypothesis is only partly supported. Excluding rows with
+  mortality >=10% steepens the mean predicted difference from <4 to 8--<12
+  DHW from 13.8 to 15.8 percentage points in Manta and 15.2 to 16.4 points in
+  LTMP. It does not improve extreme prediction: Manta severe-case mean
+  prediction falls from 27.4% to 26.3% and RMSE worsens from 34.0 to 35.7
+  points; LTMP changes negligibly.
+- Do not remove these rows from the production pipeline. Mackay, Swinger and
+  other 2024 cases carry information about the compound-event response that
+  the model needs to learn. The reconstructed MMP field has no rows below 4,
+  although four retained Stingaree rows have legacy survey DHW of 3.98 and
+  reconstructed NOAA DHW of 4.15. This threshold difference does not explain
+  MMP severe high-DHW underprediction.
+- Record the Lizard observation gap precisely. There is no continuous AIMS
+  salinity logger near Lizard in the extracted public record; RM8 is the
+  nearest at about 285 km and continuous coverage ends in October 2023.
+  Discrete AIMS samples do exist around Lizard, Eyrie and Linnet during the
+  2024 wet season.
+- Use the discrete samples as compound-event evidence, not continuous
+  exposure. Lizard Island north changed from 35.3 PSU in November to 33.8 PSU
+  in February and MacGillivray from 35.2 to 34.1 PSU, with concurrent
+  chlorophyll increases; Eyrie measured 34.26 PSU and Linnet 33.28 PSU in
+  January. These snapshots support moderate freshening but cannot rule out a
+  shorter pulse below 30 PSU.
+- Retain rather than delete the northern misses, and add a measured-or-proxy
+  freshwater interaction with DHW. Consider a robust contamination or
+  heavy-tailed observation layer for remaining unexplained non-thermal loss,
+  but do not allow it to suppress compound events that are forecast targets.
+
+Implementation: `scripts/test_low_dhw_sensitivity.R`,
+`scripts/audit_lizard_freshwater_context.R`,
+`output/low_dhw_sensitivity/`, and
+`reports/low_dhw_sensitivity_and_lizard_audit.qmd`.
+
+## 7n. Zero-mortality influence and modifier-dependent DHW curves - completed
+
+- Preserve zeros in the production estimand. They comprise 56% of Manta and
+  LTMP and 34% of MMP, but are event structured: 2020 contains 92% Manta and
+  87% LTMP zeros, compared with 27% and 37% in 2024. They encode the genuinely
+  weak 2020/2022 responses and cannot be treated as generic contamination.
+- Test zero leverage by retaining 100%, 75%, 50% and 25% of zeros in each
+  training event while leaving every held-out zero untouched. Report raw
+  downsampling, case-control prevalence-corrected predictions, and the
+  conditional-positive beta prediction.
+- Raw downsampling modestly raises severe predictions but worsens overall
+  reef-blocked RMSE in every programme. With 25% of zeros retained, severe
+  means rise only from 27.4% to 29.2% in Manta, 38.8% to 40.9% in LTMP and
+  37.2% to 39.5% in MMP. The gain disappears after prevalence correction.
+- Even assuming mortality occurrence is certain, the conditional beta
+  magnitude predicts only 32.4%, 43.6% and 41.8% for severe Manta, LTMP and
+  MMP cases, versus observed means of 57.0%, 61.4% and 64.4%. The severe-tail
+  problem is therefore mainly magnitude/heterogeneity, not the presence of
+  zeros.
+- Compare production BRT and Bayesian beta-plus-boundary curves using the
+  three strongest cross-framework, non-redundant modifiers: pre-event
+  Acropora composition, DHW novelty and cloud fraction. Show programme-specific
+  10th, 50th and 90th percentile profiles and clearly fade curves outside
+  observed DHW support.
+- Reparameterise Acropora before formal refitting. The existing Manta Bayesian
+  model contains correlated Acropora proportion and absolute-cover terms with
+  opposing effects, producing a counterintuitive high-composition curve. Test
+  a single interpretable composition basis plus DHW interaction rather than
+  retaining both unconstrained representations.
+- Correct the MMP threshold audit. Four retained 2024 Stingaree observations
+  have legacy survey DHW of 3.98, but reconstructed NOAA DHW of 4.15. No rows
+  were removed; the apparent absence below 4 DHW is a product/threshold
+  difference. Use <4.5 only for descriptive sensitivity bins and retain
+  continuous reconstructed DHW in models.
+
+Implementation: `scripts/test_zero_mortality_sensitivity.R`,
+`scripts/build_brt_beta_modifier_curves.R`,
+`scripts/audit_mmp_dhw_support.R`,
+`output/zero_mortality_sensitivity/`, and
+`reports/zero_mortality_and_modifier_curves.qmd`.
+
+## 7o. Coherent Acropora and extreme-aware relative mortality - completed
+
+- Retain all zeros and target the remaining conditional-magnitude deficit.
+  Fit a standard two-part BRT plus a specialist gate for mortality of at least
+  30% and a robust tail-magnitude learner. All comparisons use untouched
+  reef-blocked folds and reef/event-balanced training weights.
+- Use Acropora proportion plus total pre-event cover as the common ecological
+  basis. Absolute Acropora cover is competitive for LTMP and MMP but weaker
+  for Manta; fitting proportion and derived absolute cover together is not
+  consistently better and recreates correlated, opposing terms.
+- Retain the conservative tail learner as an operational ensemble candidate.
+  Pooled RMSE improves from 0.157 to 0.153 and mean prediction for observed
+  mortality of at least 50% rises from 0.281 to 0.325. The soft gate raises the
+  severe mean to 0.369 with RMSE 0.154, but increases the false-extreme rate
+  among observations below 30% from 4.1% to 8.3%.
+- Treat the soft gate as an event-risk prediction and the aggressive gate only
+  as an upper-risk sensitivity. In 2024, the soft gate raises severe means
+  from 39.8% to 52.9% for LTMP, 31.4% to 35.2% for Manta and 23.9% to 35.0%
+  for MMP. MMP severe loss remains substantially underestimated.
+- Preserve the beta-plus-Bernoulli INLA/BRMS framework. Matched held-out
+  predictions show that INLA remains the strongest single general model for
+  LTMP and MMP, while the tail BRT contributes more to Manta severe cases.
+  Equal INLA/BRT blending improves LTMP and Manta but weakens MMP relative to
+  INLA alone; estimate programme-aware stacking weights only inside nested CV.
+- Move modifiers jointly when diagnosing the ecological response. At 11.5 DHW
+  within observed support, the high Acropora, high novelty, high freshwater/
+  coloured-water and low-cloud profile predicts 35.9%, 46.6% and 51.2% for
+  LTMP, Manta and MMP; the conservative tail version predicts 45.4%, 48.9%
+  and 54.1%. Low-risk profiles remain below 7%.
+- Carry the resulting structure into the formal BRMS shared ecological model:
+  Bernoulli occurrence, conditional beta magnitude, a continuous tail mixture
+  or robust event scale, DHW interactions for composition, novelty,
+  freshwater and cloud, and programme-specific observation layers. Require
+  reef-blocked, leave-event-out and forward-event validation.
+
+Implementation: `scripts/fit_joint_extreme_relative_screen.R`,
+`scripts/combine_relative_framework_predictions.R`,
+`output/joint_extreme_relative/`, and
+`reports/joint_extreme_relative_screen.qmd`.
+
+## 7p. INLA spatial and spatio-temporal bounded model - completed screen
+
+- Use INLA as the main bounded-response inference engine. The implemented
+  screen jointly fits Bernoulli occurrence and conditional beta magnitude for
+  LTMP, Manta tow and MMP, with shared ecological effects and programme/layer
+  intercepts.
+- Carry a persistent SPDE field into the operational GBR forecast. It improves
+  reef-blocked RMSE from 0.154 to 0.147 and predictive R2 from 0.248 to 0.311.
+  Its posterior median spatial range is about 223 km, although uncertainty is
+  wide because only 139 reefs contribute to the field.
+- Keep independent event-specific SPDE fields for retrospective diagnosis and
+  event updating. They reach RMSE 0.145 and predictive R2 0.332 at new reefs
+  within observed events, but their latent surface is not available for a pure
+  pre-survey forecast.
+- Do not promote the AR1 event field. Its adjacent-event correlation is
+  negative (median -0.49), and the five events are irregularly spaced. The
+  simpler independent event fields predict just as well.
+- Retain the persistent-field plus RW1 DHW-slope model as a sensitivity. It is
+  the best leave-event-out candidate (RMSE 0.212 versus 0.223 non-spatial), but
+  all event-specific slope intervals cross zero and the direct repeat-exposure
+  interaction is uncertain. This is not evidence of adaptation.
+- Preserve the severe-tail and BRT work. Spatial modelling raises the mean
+  prediction for observed mortality of at least 50% from 0.263 to about 0.31,
+  still far below the observed 0.617. In 2024, reef-blocked spatial predictions
+  explain 26.5--28.2% of variation but predict severe cases near 0.33 versus
+  0.623 observed.
+- In the formal model, estimate programme/component calibration loadings around
+  the shared ecological response, use posterior sampling for the occurrence
+  times magnitude expectation, and compare a pre-survey persistent-field map
+  with an optional event-updated map.
+- A prediction-stack audit found and corrected constrained random effects for
+  prediction-only reef-event and held-event levels. Corrected caches use the
+  `v2` prefix; the original caches are retained only for provenance.
+
+Implementation: `scripts/fit_inla_spatiotemporal_screen.R`,
+`output/inla_spatiotemporal/`, and
+`reports/inla_spatiotemporal_screen.qmd`.
+
+## 7q. Restore current speed and SST-shape candidates - completed screen
+
+- Restore eReefs current speed to the operational ecological core. Its omission
+  from the first spatio-temporal screen was a predictor-list refactor gap, not a
+  model-selection decision. Fit both its main effect and DHW interaction.
+- Carry summer SST skewness, summer SST excess kurtosis and wet-season median
+  IMOS Chl-a as one regularised feature group. Do not interpret skewness and
+  kurtosis independently because their correlation is approximately -0.80.
+- Hold the selected latent structure fixed while testing these additions:
+  persistent SPDE field, event-varying DHW slope, joint Bernoulli occurrence
+  and conditional beta magnitude, and all previously retained ecological
+  modifiers.
+- Current speed improves pooled reef-blocked RMSE from 0.146 to 0.142 and
+  leave-event-out RMSE from 0.212 to 0.202. Adding SST shape and Chl-a improves
+  these further to 0.139 and 0.198; pooled reef-blocked predictive R2 rises
+  from 0.327 to 0.384.
+- The full feature group improves LTMP under both validation schemes and MMP
+  for new reefs within observed events. Manta is nearly unchanged under
+  reef-blocking. MMP leave-event-out RMSE worsens from 0.265 to 0.282, so the
+  formal model must allow programme-specific, partially pooled feature slopes.
+- Retain the group for prediction despite uncertain individual coefficients.
+  In the full shared screen, current speed and DHW-by-current are negative and
+  excess kurtosis has the largest SST-shape coefficient, but all 95% intervals
+  include zero. The predictive gain is multivariate rather than a supported
+  single-driver claim.
+- Current speed is complete for all 537 rows, but post-January 2024 eReefs
+  values are partly reef-climatological and should be interpreted as persistent
+  hydrodynamic exposure. Mackay Reef SST/Chl-a features for 2016 and 2024 are
+  fold-locally imputed; the other 304 joint reef-event keys are complete.
+- Promote the full group to the formal partially pooled INLA model and retain
+  the nonlinear BRT as an interaction learner. Do not automatically add DHW
+  interactions for SST skewness, kurtosis or Chl-a unless nested validation
+  demonstrates an additional gain.
+- Implement partial pooling for the five prespecified DHW interactions:
+  Acropora, novelty, freshwater/coloured water, cloud and current speed. Each
+  keeps a common ecological coefficient plus shrunk deviations for occurrence
+  and positive magnitude in LTMP, Manta and MMP.
+- Partial pooling improves pooled reef-blocked RMSE from 0.139 to 0.137,
+  predictive R2 from 0.384 to 0.405, and the severe-case mean prediction from
+  0.331 to 0.354. It improves reef-blocked performance in all three programmes.
+  Leave-event-out RMSE is 0.201 versus 0.198 for completely shared slopes: MMP
+  improves, while LTMP and Manta weaken slightly.
+- Prefer the partially pooled model for within-event GBR mapping and retain the
+  completely shared full-feature model as a future-event forecast sensitivity.
+  Most layer deviations shrink close to zero; the clearest exception is the
+  novelty response in MMP positive mortality.
+
+Implementation: expanded candidates in
+`scripts/fit_inla_spatiotemporal_screen.R`, corrected `v2` caches in
+`output/inla_spatiotemporal/`, and updated figures in
+`reports/inla_spatiotemporal_screen.qmd`.
+
+## 7r. INLA severe-tail, WQC threshold and local heat audit - completed screen
+
+- Add a severe-tail BRT on top of the selected partially pooled INLA
+  expectation. The BRT separately estimates the probability of at least 30%
+  mortality and robust tail magnitude; corrections are upward-only so the
+  tail expert cannot flatten or reduce the calibrated INLA prediction.
+- Encode the RRN WQC signal on its native 0-1 scale using raw frequency, a
+  hinge above 0.50 and a rolling ten-year sum of annual excess above 0.50.
+  Include DHW interactions for current and cumulative excess. Keep the
+  reef-relative prior-ten-year percentile as a distinct anomaly feature.
+- Under reef-blocked validation, the conservative WQC-plus-track tail raises
+  the severe-case mean prediction from 35.4% to 38.6% and reduces severe RMSE
+  from 0.331 to 0.305, while pooled RMSE remains approximately 0.137. The soft
+  gate raises the severe mean to 41.9% and reduces severe RMSE to 0.283, but
+  increases pooled RMSE to 0.141 and false extremes.
+- Do not use the tail learner as an unconditional replacement for INLA. When a
+  complete event is held out, all tail variants worsen pooled RMSE even though
+  the WQC-plus-track variant improves severe-case error. Use the conservative
+  tail as an operational ensemble candidate and the soft gate as a high-risk
+  scenario.
+- Retain WQC in the severe-tail candidate but do not overstate the 0.50 hinge.
+  High WQC is enriched for severe mortality and raw WQC is influential in the
+  gate, yet adding threshold/cumulative terms does not improve blocked RMSE
+  over the otherwise identical legacy tail model.
+- Treat the current BoM best-track distance, wind and wind-by-distance index as
+  provisional. They resolve a Jasper proximity signal at Mackay and Snapper,
+  but a better cyclone data set is expected shortly and should replace this
+  isolated feature block for Jasper and Kirrily before the production fit.
+- Use the public AIMS daily endpoint to compare 2024 Lizard Island and North
+  Direction reef-flat/slope loggers with the same NOAA CoralTemp grid used in
+  the model. Seasonal mean differences are -0.04 to +0.07 degrees C but the
+  January means are +0.08 to +0.44 degrees C. The signed January offset is
+  0.37-1.94 degree-weeks and the positive-only offset is 0.87-2.05
+  degree-weeks. These are offset integrals rather than formal extra DHW because
+  they are not yet thresholded against a local MMM. Do not apply a blanket
+  uplift; calculate logger-consistent HotSpots and DHW as the next diagnostic.
+  Linnet has no AIMS logger coverage after 2018.
+
+Implementation: `scripts/fit_inla_severe_tail_brt.R`,
+`scripts/build_lizard_logger_diagnostic.py`,
+`output/inla_severe_tail/`, and
+`reports/inla_severe_tail_assessment.qmd`.
+
+## 7s. Explained extreme misses and independent reef-event audit - in progress
+
+- Keep a versioned reef-event explanation registry at
+  `data/curated/extreme_miss_explanations.csv`. Evidence labels are diagnostic
+  annotations only and do not exclude observations or change the existing
+  disturbance-attribution logic.
+- Report both observation-level and reef-event-level residual rankings.
+  Snapper contributes three observations among the top five raw misses; the
+  reef-event table collapses these only for interpretation and leaves the fit
+  unchanged.
+- Preserve the current explanations and actions: Snapper 2024 is Jasper
+  flooding; Penrith 2017 has an LTMP storm note and 34.85 RRN damaging-wave
+  hours from Debbie; Gannett Cay 2020 is consistent with COTS; Mackay 2024 is
+  missing Jasper/freshwater forcing; Linnet 2024 combines a plausible local
+  heat mismatch with rainfall and possible COTS effects; Opal 2016 requires
+  preceding-cover uncertainty propagation; and Tobias Spit 2024 has 2 m
+  floodwater/Jasper notes.
+- Add `data/gbrPredsAdj_20262408.csv` as a COTS outbreak-probability predictor
+  in the severe-tail screen. Gannett Cay 2020 has outbreak probability 0.934,
+  independently supported by RRN IDW COTS pressure of 0.8393. Retain both
+  until blocked validation establishes whether either is redundant.
+- Replace the provisional cyclone fields when the forthcoming Jasper/Kirrily
+  data arrive; preserve RRN wave hours in the interim because they clearly
+  identify Penrith's Debbie exposure.
+
+Implementation: `data/curated/extreme_miss_explanations.csv`, the monthly
+logger-NOAA diagnostic, the COTS hindcast extension and reef-event prediction
+output in `scripts/fit_inla_severe_tail_brt.R`, and the corresponding tables in
+`reports/inla_severe_tail_assessment.qmd`.
+
+## 7t. Cyclone/COTS INLA baseline, local DHW uplift and disease risk - completed screen
+
+- Reconstruct local DHW from the AIMS logger temperatures using NOAA CRW v3.1
+  MMM and the standard 84-day accumulation of HotSpots at least 1 degree C.
+  The reconstructed NOAA peak agrees with the official daily product within
+  0.18 DHW, supporting the implementation.
+- Across November--April, logger peak DHW exceeds official NOAA by 4.26 and
+  3.44 DHW at Lizard Island and by 5.38 and 1.05 DHW at North Direction.
+  Carry a regional median sensitivity of +3.85 DHW, with depth-stratified
+  means of +4.82 for reef flats and +2.25 for slopes. For the explicitly local
+  2024 sensitivity, apply the flat mean to all six nearby reef exposures
+  regardless of survey depth: NOAA is a surface-temperature product, so this
+  test corrects the satellite exposure rather than the benthic survey depth.
+  Do not extrapolate the fixed uplift beyond the named cluster.
+- Add provisional cyclone-track proximity, a wind-distance index and the GBR
+  COTS outbreak-probability hindcast to the central INLA candidate. This lowers
+  reef-blocked RMSE from 0.1369 to 0.1357 and leave-event-out RMSE from 0.2008
+  to 0.1973, while raising the severe-case mean from 35.4% to 35.9%. Promote
+  this candidate as the INLA baseline for the severe-tail ensemble.
+- Extract NOAA CRW disease outbreak risk over each November--April event
+  window. Preserve negative product mask codes as structural non-applicability,
+  not negative or missing risk. The product is applicable at 23 validation
+  reef-years in 2020 and three in 2022, but none in 2016, 2017 or 2024.
+- Disease intensity and duration do not improve the current models. Adding
+  them to INLA worsens leave-event-out RMSE from 0.1973 to 0.2114 and raises
+  false extremes; adding them to the tail BRT also weakens blocked prediction.
+  Retain the metric for ecological attribution and sensitivity analysis, not
+  the operational ensemble.
+- Keep the cyclone source block replaceable. The forthcoming Jasper/Kirrily
+  data should be evaluated with the same frozen validation splits and compared
+  against both the provisional track fields and RRN damaging-wave hours.
+
+Implementation: `scripts/build_lizard_logger_diagnostic.py`,
+`scripts/extract_noaa_disease_risk.py`,
+`tests/test_noaa_disease_risk.py`,
+`scripts/fit_inla_spatiotemporal_screen.R`,
+`scripts/fit_inla_severe_tail_brt.R`,
+`data/processed/lizard_cluster_logger_dhw_uplift_2024.csv`,
+`data/processed/noaa_disease_risk_validation.csv`, and
+`reports/inla_severe_tail_assessment.qmd`.
+
+## 7u. GBR-wide AIMS logger validation and local 2024 DHW sensitivity - completed screen
+
+- Extract all public AIMS daily temperature-logger records for the 2016, 2017,
+  2020, 2022 and 2024 bleaching events and collocate each series with NOAA
+  CoralTemp SST, official DHW and the NOAA MMM. Reconstruct logger DHW with the
+  same 84-day, HotSpot-at-least-1-degree definition used by NOAA.
+- Accept a logger-event DHW comparison only when at least 70 daily
+  observations occur in the 84-day window at its eligible peak. This yields
+  143, 186, 202, 163 and 148 coverage-qualified GBR series-events respectively.
+- Confirm a strong 2016 Lizard-region discrepancy. Linnet reaches 15.39 DHW
+  versus NOAA 7.76 (+7.63), while Martin reaches 11.59 versus NOAA 7.87
+  (+3.72). Both have complete summer records. The logger API has no 2016 North
+  Direction series; its available record begins during the 2017 event.
+- Preserve the discrepancy as event-specific and spatially heterogeneous.
+  The GBR medians are -0.16, -0.22, -0.25, -0.47 and -1.50 DHW across the five
+  events, while individual reefs can differ by several DHW in either
+  direction. A universal correction would therefore be poorly calibrated.
+- Test a transparent 2024 local sensitivity using +4.82 DHW at MacGillivray,
+  Lizard NW, Eyrie, Martin, Linnet and North Direction. With the same INLA
+  structure, reef-blocked GBR-wide RMSE improves from 0.1357 to 0.1349 and
+  leave-event-out RMSE from 0.1973 to 0.1944. At the six target reefs,
+  reef-blocked RMSE improves from 0.178 to 0.101 and mean bias from -0.147 to
+  -0.010; when all 2024 observations are excluded from training, local RMSE
+  improves from 0.349 to 0.104. The correction improves Eyrie and Linnet substantially but
+  overpredicts Martin, so retain it as a sensitivity rather than production
+  truth.
+- Refit the severe-tail BRT on the adjusted INLA baseline. The conservative
+  WQC/cyclone-track ensemble gives reef-blocked GBR-wide RMSE 0.134 versus
+  0.136 with the unadjusted baseline, while the fully soft gate still adds too
+  much positive bias. Keep the conservative gate as the operational candidate.
+- Next replace the fixed local uplift with a spatial, event-specific NOAA-bias
+  surface trained on coverage-qualified logger discrepancies. Validate it by
+  leaving logger sites and entire events out, and propagate correction
+  uncertainty into the mortality model. The Lizard automated weather station
+  lists additional 2016 temperature series, but its measurement endpoint
+  requires an AIMS API key and remains a documented follow-up.
+
+Implementation: `scripts/build_aims_noaa_dhw_validation.py`, cached event
+downloads in `data/raw/aims_temperature/events/`,
+`data/processed/aims_logger_noaa_dhw_validation.csv`, the adjusted candidates
+in `scripts/fit_inla_spatiotemporal_screen.R` and
+`scripts/fit_inla_severe_tail_brt.R`, and
+`reports/aims_noaa_dhw_validation.qmd`.
+
+## 7v. Authenticated AIMS extraction and event-specific DHW correction - completed screen
+
+- Store the AIMS Data Platform credential only in the Windows user environment
+  as `AIMS_DATAPLATFORM_API_KEY`. The extraction script reads that variable at
+  runtime; the credential is not written to code, data products or reports.
+- Use `scripts/pull_aims_temperature_data.R` to retrieve the complete
+  temperature deployment catalogue and all daily logger observations in the
+  prespecified 2016, 2017, 2020, 2022 and 2024 event windows. Retain deployment
+  depth and optionally add automated-station water temperatures. Raw responses
+  are cached so routine rebuilds do not repeatedly download high-frequency
+  data. Environment settings control years, refreshes and automated-site scope.
+- Add the authenticated 2016 Lizard Island automated records. The shallow
+  0.6 m and deep 10.1 m series have logger-minus-NOAA discrepancies of -0.68
+  and -0.35 DHW. This confirms that the strong positive 2016 discrepancies at
+  Linnet (+7.63) and Martin (+3.72) were spatially local rather than a uniform
+  Lizard Island offset.
+- Retain depth explicitly, but do not yet estimate a depth slope. Only five
+  coverage-qualified site-events contain paired shallow and deep observations,
+  with a median shallow-minus-deep discrepancy of 0.50 DHW and inconsistent
+  event contrasts. Prefer
+  shallow/flat records (0--5 m) for NOAA surface calibration and use deeper
+  records where shallow records are unavailable; preserve the paired depth
+  audit for future expansion.
+- Replace the fixed local uplift with two partially pooled spatial products in
+  `scripts/build_event_dhw_correction_layer.py`:
+  (1) a historical-only rolling-prior surface for prospective prediction, and
+  (2) a within-event update for retrospective or live-event recalibration.
+  Both expose distance, effective logger count and information-availability
+  fields. The selected ranges are 100 km for the historical surface and 200 km
+  for the broad within-event offset.
+- In blocked logger validation, the historical surface improves event-held-out
+  discrepancy RMSE from 4.93 DHW with no correction to 4.73 DHW at the selected
+  100 km range (best screened event-held-out RMSE 4.67 DHW at 25 km). Large
+  individual logger anomalies dominate the remaining error, so correction
+  uncertainty must be propagated rather than treating the surface as truth.
+- Add historical and within-event correction candidates to the same INLA
+  mortality structure. The historical surface slightly improves
+  leave-one-event-out mortality RMSE from 0.1973 to 0.1942 and severe RMSE from
+  0.4069 to 0.3985. Reef-blocked RMSE is effectively unchanged (0.1357 versus
+  0.1368). The within-event surface raises exposure at the 2024 Lizard-region
+  misses but gives leave-event-out RMSE 0.2000; it is not promoted as the
+  prospective default.
+- Preserve the ecological interpretation: corrected 2024 DHW rises by about
+  0.96 at Linnet, 0.94 at Martin and 0.84 at Eyrie, yet severe mortality remains
+  strongly underpredicted. Local NOAA mismatch explains part of the misses but
+  cannot replace freshwater/WQC, Acropora composition, cyclone or COTS
+  modifiers. Keep the former fixed +4.82 DHW uplift as a stress-test only.
+
+Implementation: `scripts/pull_aims_temperature_data.R`,
+`scripts/build_aims_noaa_dhw_validation.py`,
+`scripts/build_event_dhw_correction_layer.py`, the rolling and within-event
+candidates in `scripts/fit_inla_spatiotemporal_screen.R`,
+`data/processed/aims_temperature_daily_with_depth.csv.gz`,
+`data/processed/noaa_dhw_correction_layer_validation.csv`, outputs under
+`output/dhw_correction/`, and
+`reports/event_dhw_correction_assessment.qmd`.
+
 ## 8. Refactor the reports into a research-grade narrative
+
+### Addendum: SST distribution shape and median chlorophyll screen
+
+- NOAA CoralTemp v3.1 now supplies acute-summer SST skewness and excess
+  kurtosis, while IMOS MODIS-Aqua OC3 supplies wet-season median chlorophyll.
+  The validation extraction has complete summer SST and wet-season chlorophyll
+  coverage for all 304 reef-years.
+- Q1 and wet-season chlorophyll are near duplicates (Spearman rho 0.97), so
+  only wet-season median chlorophyll is retained as a direct candidate.
+- The first fixed-settings blocked BRT/INLA screen finds no universal upgrade.
+  Raw SST-shape/chlorophyll improves LTMP BRT reef-blocked RMSE from 0.133 to
+  0.127 and 2024 RMSE from 0.121 to 0.107. Modifier PCA improves MMP BRT
+  reef-blocked RMSE from 0.266 to 0.250. These gains do not remain stable under
+  event-held-out validation, and manta's best INLA result remains the core
+  model.
+- Keep the SST shape and wet-season chlorophyll variables as grouped candidates.
+  Test them jointly with freshwater, coloured water, cyclone, wind, COTS and
+  cooling-relief variables under nested tuning before promoting them to the
+  production BRMS/BRT ensemble.
 
 - Keep exploratory diagnostics separate from confirmatory modelling and final
   evaluation.
