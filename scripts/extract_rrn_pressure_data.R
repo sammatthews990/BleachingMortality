@@ -70,6 +70,8 @@ add_prior_wq_context <- function(reef_rows) {
     reef_rows$wqc_prior10_n <- 0L
     reef_rows$wqc_prior10_percentile <- NA_real_
     reef_rows$wqc_prior10_delta <- NA_real_
+    reef_rows$wqc_prior10_sum <- NA_real_
+    reef_rows$wqc_10yr_sum <- NA_real_
     reef_rows$wqc_excess50_10yr_sum <- NA_real_
     for (i in seq_len(nrow(reef_rows))) {
         year <- reef_rows$event_year[[i]]
@@ -80,6 +82,9 @@ add_prior_wq_context <- function(reef_rows) {
         ]
         history <- history[is.finite(history)]
         reef_rows$wqc_prior10_n[[i]] <- length(history)
+        if (length(history) > 0L) {
+            reef_rows$wqc_prior10_sum[[i]] <- sum(history)
+        }
         if (is.finite(current) && length(history) > 0L) {
             reef_rows$wqc_prior10_percentile[[i]] <- (
                 sum(history < current) + 0.5 * sum(history == current)
@@ -92,6 +97,7 @@ add_prior_wq_context <- function(reef_rows) {
         ]
         inclusive_window <- inclusive_window[is.finite(inclusive_window)]
         if (length(inclusive_window) > 0L) {
+            reef_rows$wqc_10yr_sum[[i]] <- sum(inclusive_window)
             reef_rows$wqc_excess50_10yr_sum[[i]] <- sum(
                 pmax(inclusive_window - 0.50, 0)
             )
@@ -144,12 +150,15 @@ metadata <- bind_rows(
     tibble(
         variable = c(
             'wqc_prior10_percentile', 'wqc_prior10_delta',
-            'wqc_excess50', 'wqc_excess50_10yr_sum',
+            'wqc_prior10_sum',
+            'wqc_10yr_sum', 'wqc_excess50', 'wqc_excess50_10yr_sum',
             'log1p_cyc_maxHrs4mw', 'log1p_cot_idwmeanpertow'
         ),
         role = c(
             'reef-relative freshwater/plume anomaly',
             'reef-relative freshwater/plume anomaly',
+            'prior-only cumulative coloured-water exposure',
+            'cumulative coloured-water exposure',
             'high coloured-water threshold exposure',
             'cumulative high coloured-water exposure',
             'right-skewed cyclone-wave predictor',
@@ -158,18 +167,27 @@ metadata <- bind_rows(
         units = c(
             'mid-rank percentile against preceding ten event years',
             'current frequency minus preceding-ten-year median',
+            'sum across preceding ten annual wet seasons',
+            'sum of annual wet-season coloured-water frequencies',
             'frequency above 0.50',
             'sum of annual frequency excess above 0.50',
             'log(1 + hours)', 'log(1 + modelled mean COTS per tow)'
         ),
         source_period = c(
             'preceding ten event years only', 'preceding ten event years only',
+            'preceding ten event years only',
+            'current and preceding nine event years',
             'current wet season', 'current and preceding nine event years',
             'Nov 1 to Apr 30', 'Jul 1 to Jun 30'
         ),
         operational_note = c(
             'Current event is excluded from the reference distribution',
             'Current event is excluded from the reference distribution',
+            'Preferred cumulative-history definition; current event is excluded',
+            paste(
+                'Continuous cumulative exposure; avoids imposing a universal',
+                'annual WQC threshold'
+            ),
             'Hinge at 0.50 on the native 0-1 WQC scale',
             'Inclusive rolling window; operationally available only when WQC is released',
             'Retains zero exposure and reduces leverage of rare extremes',

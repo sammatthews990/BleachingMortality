@@ -82,7 +82,8 @@ load_joint_compound_rows <- function() {
     mortality <- bind_rows(lapply(joint_programmes, function(programme) {
         readRDS(validation_files[[programme]]) |>
             mutate(source_observation_id = as.character(source_observation_id))
-    }))
+    })) |>
+        mutate(.mortality_row_id = row_number())
 
     weather <- read_csv(
         'data/processed/era5_weather_reef_year.csv', show_col_types = FALSE
@@ -104,17 +105,99 @@ load_joint_compound_rows <- function() {
             .groups = 'drop'
         )
 
-    rrn <- read_csv(
+    rrn_all <- read_csv(
         'data/processed/rrn_pressure_reef_year.csv', show_col_types = FALSE
-    ) |>
+    )
+    rrn <- rrn_all |>
         select(
             LABEL_ID, event_year, source_summer,
             wqc_freqcc12, wqc_prior10_n,
             wqc_prior10_percentile, wqc_prior10_delta,
-            wqc_excess50, wqc_excess50_10yr_sum,
+            wqc_10yr_sum, wqc_excess50, wqc_excess50_10yr_sum,
             cyc_maxHrs4mw, log1p_cyc_maxHrs4mw,
             cot_meanpertow, cot_idwmeanpertow,
             log1p_cot_idwmeanpertow
+        )
+
+    cyclone_interval <- mortality |>
+        select(
+            .mortality_row_id, ReefID, baseline_survey_date, survey_date
+        ) |>
+        inner_join(
+            rrn_all |>
+                select(
+                    LABEL_ID, pressure_year = event_year, cyc_maxHrs4mw
+                ),
+            by = c('ReefID' = 'LABEL_ID'),
+            relationship = 'many-to-many'
+        ) |>
+        mutate(
+            pressure_start = as.Date(paste0(
+                pressure_year - 1L, '-11-01'
+            )),
+            pressure_end = as.Date(paste0(pressure_year, '-04-30'))
+        ) |>
+        filter(
+            pressure_end >= baseline_survey_date,
+            pressure_start <= survey_date
+        ) |>
+        group_by(.mortality_row_id) |>
+        summarise(
+            cyc_interval_maxHrs4mw = max(cyc_maxHrs4mw, na.rm = TRUE),
+            cyc_interval_sumHrs4mw = sum(cyc_maxHrs4mw, na.rm = TRUE),
+            cyc_interval_peak_year = pressure_year[
+                which.max(replace(
+                    cyc_maxHrs4mw, !is.finite(cyc_maxHrs4mw), -Inf
+                ))
+            ][1],
+            cyclone_summers_in_interval = n(),
+            .groups = 'drop'
+        ) |>
+        mutate(
+            cyc_interval_maxHrs4mw = if_else(
+                is.finite(cyc_interval_maxHrs4mw),
+                cyc_interval_maxHrs4mw, NA_real_
+            ),
+            log1p_cyc_interval_maxHrs4mw = log1p(pmax(
+                cyc_interval_maxHrs4mw, 0
+            ))
+        )
+
+    cots_interval <- mortality |>
+        select(
+            .mortality_row_id, ReefID, baseline_survey_date, survey_date
+        ) |>
+        inner_join(
+            rrn_all |>
+                select(
+                    LABEL_ID, pressure_year = event_year,
+                    cot_idwmeanpertow
+                ),
+            by = c('ReefID' = 'LABEL_ID'),
+            relationship = 'many-to-many'
+        ) |>
+        mutate(
+            pressure_start = as.Date(paste0(
+                pressure_year - 1L, '-07-01'
+            )),
+            pressure_end = as.Date(paste0(pressure_year, '-06-30'))
+        ) |>
+        filter(
+            pressure_end >= baseline_survey_date,
+            pressure_start <= survey_date
+        ) |>
+        group_by(.mortality_row_id) |>
+        summarise(
+            cot_interval_idw_max = if (
+                all(!is.finite(cot_idwmeanpertow))
+            ) NA_real_ else max(cot_idwmeanpertow, na.rm = TRUE),
+            cots_years_in_interval = n(),
+            .groups = 'drop'
+        ) |>
+        mutate(
+            log1p_cot_interval_idw_max = log1p(pmax(
+                cot_interval_idw_max, 0
+            ))
         )
 
     joined <- mortality |>
@@ -134,6 +217,14 @@ load_joint_compound_rows <- function() {
         left_join(
             rrn,
             by = c('ReefID' = 'LABEL_ID', 'event_year'),
+            relationship = 'many-to-one'
+        ) |>
+        left_join(
+            cyclone_interval, by = '.mortality_row_id',
+            relationship = 'many-to-one'
+        ) |>
+        left_join(
+            cots_interval, by = '.mortality_row_id',
             relationship = 'many-to-one'
         ) |>
         group_by(programme_key) |>
@@ -164,7 +255,8 @@ load_joint_compound_rows <- function() {
     missing_rrn <- !complete.cases(
         joined[, c(
             'wqc_freqcc12', 'wqc_prior10_percentile',
-            'cyc_maxHrs4mw', 'log1p_cyc_maxHrs4mw'
+            'wqc_10yr_sum', 'cyc_maxHrs4mw', 'log1p_cyc_maxHrs4mw',
+            'cyc_interval_maxHrs4mw', 'log1p_cyc_interval_maxHrs4mw'
         ), drop = FALSE]
     )
     if (any(missing_rrn)) {

@@ -1,0 +1,246 @@
+terms:
+  - id: ann_maxdhw_z
+    label: Local-first annual maximum DHW
+    units: degree heating weeks
+    class: thermal
+    transformation: local-first calibrated, then fold-standardised
+    source: noaa_dhw_correction_layer_local_first_validation.csv
+    operational: true
+  - id: dhw_excess4_z
+    label: DHW above 4
+    units: degree heating weeks
+    class: thermal
+    transformation: max(DHW - 4, 0), then fold-standardised
+    source: derived
+    operational: true
+  - id: dhw_excess8_z
+    label: DHW above 8
+    units: degree heating weeks
+    class: thermal
+    transformation: max(DHW - 8, 0), then fold-standardised
+    source: derived
+    operational: true
+  - id: prop_acropora_pre_z
+    label: Pre-event Acropora proportion
+    units: proportion
+    class: composition
+    transformation: fold-standardised
+    source: validation mortality data
+    operational: true
+  - id: observed_pre_cover_z
+    label: Pre-event coral cover
+    units: proportion
+    class: composition
+    transformation: fold-standardised
+    source: validation mortality data
+    operational: true
+  - id: dhw10_load4_z
+    label: Ten-year DHW load
+    units: degree heating weeks
+    class: thermal_history
+    transformation: fold-standardised
+    source: NOAA Coral Reef Watch history
+    operational: true
+  - id: dhw_novelty10_z
+    label: DHW novelty
+    units: degree heating weeks
+    class: thermal_history
+    transformation: current minus preceding ten-year maximum, fold-standardised
+    source: NOAA Coral Reef Watch history
+    operational: true
+  - id: dhw_events_since2016_n6_z
+    label: Events above 6 DHW since 2016
+    units: count
+    class: thermal_history
+    transformation: fold-standardised
+    source: NOAA Coral Reef Watch history
+    operational: true
+  - id: dhw_years_since_last_n6_capped8_z
+    label: Years since last event above 6 DHW
+    units: years
+    class: thermal_history
+    transformation: capped at 8 years, fold-standardised
+    source: NOAA Coral Reef Watch history
+    operational: true
+  - id: secc3m_p10_z
+    label: Low Secchi depth
+    units: metres
+    class: water_quality
+    transformation: tenth percentile, fold-standardised
+    source: IMOS and eReefs extraction
+    operational: true
+  - id: cloudp_90_z
+    label: High cloud cover
+    units: proportion
+    class: cooling
+    transformation: ninetieth percentile, fold-standardised
+    source: PATMOS-x
+    operational: true
+  - id: mcur_90_z
+    label: High current speed
+    units: metres per second
+    class: cooling
+    transformation: ninetieth percentile, fold-standardised
+    source: DMS current extraction
+    operational: true
+  - id: sst_summer_skewness_z
+    label: Summer SST skewness
+    units: unitless
+    class: thermal_variability
+    transformation: fold-standardised
+    source: NOAA CoralTemp
+    operational: true
+  - id: sst_summer_excess_kurtosis_z
+    label: Summer SST excess kurtosis
+    units: unitless
+    class: thermal_variability
+    transformation: fold-standardised
+    source: NOAA CoralTemp
+    operational: true
+  - id: chla_wetseason_median_z
+    label: Wet-season median chlorophyll-a
+    units: mg m-3
+    class: water_quality
+    transformation: fold-standardised
+    source: IMOS satellite extraction
+    operational: true
+  - id: log_coastal_rain30_z
+    label: Coastal 30-day rainfall
+    units: log(mm + 1)
+    class: freshwater
+    transformation: log1p then fold-standardised
+    source: ERA5 weather extraction
+    operational: true
+  - id: wqc_freqcc12_z
+    label: Current wet-season coloured-water frequency
+    units: proportion of cloud-free days
+    class: freshwater
+    transformation: fold-standardised
+    source: RRN pressure layer
+    operational: delayed
+  - id: wqc_prior10_percentile_z
+    label: WQC preceding-decade percentile
+    units: percentile
+    class: freshwater
+    transformation: fold-standardised
+    source: RRN pressure layer
+    operational: delayed
+  - id: wqc_prior10_sum_z
+    label: Prior-only ten-year coloured-water exposure
+    units: summed frequency
+    class: freshwater
+    transformation: preceding ten years excluding current event, fold-standardised
+    source: RRN pressure layer
+    operational: delayed
+  - id: wqc_10yr_sum_z
+    label: Continuous ten-year coloured-water exposure
+    units: summed frequency
+    class: freshwater
+    transformation: unthresholded rolling ten-year sum, fold-standardised
+    source: RRN pressure layer
+    operational: delayed
+  - id: log1p_cyc_interval_maxHrs4mw_z
+    label: Interval damaging-wave exposure
+    units: log(hours + 1)
+    class: cyclone
+    transformation: baseline-to-survey maximum, log1p, fold-standardised
+    source: RRN pressure layer
+    operational: true
+  - id: tc_interval_proximity100_z
+    label: Interval cyclone proximity
+    units: relative index
+    class: cyclone
+    transformation: exp(-distance / 100 km), fold-standardised
+    source: BOM cyclone tracks
+    operational: provisional
+  - id: tc_interval_wind_distance_index_z
+    label: Interval cyclone wind-distance index
+    units: relative index
+    class: cyclone
+    transformation: wind excess times proximity, fold-standardised
+    source: BOM cyclone tracks
+    operational: provisional
+  - id: log1p_cot_interval_idw_max_z
+    label: Interval modelled COTS pressure
+    units: log(mean COTS per tow + 1)
+    class: COTS
+    transformation: interval maximum, log1p, fold-standardised
+    source: RRN pressure layer
+    operational: true
+  - id: cots_outbreak_probability_z
+    label: COTS outbreak probability
+    units: probability
+    class: COTS
+    transformation: fold-standardised
+    source: GBR outbreak hindcast
+    operational: true
+  - id: dhw_x_acropora
+    label: DHW above first hinge x Acropora
+    units: standardised interaction
+    class: thermal_interaction
+    transformation: product of fold-standardised hinge and Acropora terms
+    source: derived
+    operational: true
+  - id: dhw_x_novelty
+    label: DHW above first hinge x novelty
+    units: standardised interaction
+    class: thermal_interaction
+    transformation: product of fold-standardised hinge and novelty terms
+    source: derived
+    operational: true
+  - id: dhw_x_cloud
+    label: DHW above first hinge x high cloud
+    units: standardised interaction
+    class: thermal_interaction
+    transformation: product of fold-standardised hinge and cloud p90 terms
+    source: derived
+    operational: true
+  - id: dhw_x_repeat_exposure
+    label: DHW x repeated exposure
+    units: standardised interaction
+    class: thermal_interaction
+    transformation: product of fold-standardised DHW and event-count terms
+    source: derived
+    operational: true
+  - id: dhw_x_recovery_interval
+    label: DHW x years since prior exposure
+    units: standardised interaction
+    class: thermal_interaction
+    transformation: product of fold-standardised DHW and recovery-interval terms
+    source: derived
+    operational: true
+  - id: dhw_x_current
+    label: DHW x high current speed
+    units: standardised interaction
+    class: thermal_interaction
+    transformation: product of fold-standardised DHW and current p90 terms
+    source: derived
+    operational: true
+  - id: dhw_x_rainfall
+    label: DHW above first hinge x coastal rainfall
+    units: standardised interaction
+    class: freshwater_interaction
+    transformation: product of fold-standardised hinge and rainfall terms
+    source: derived
+    operational: true
+  - id: dhw_x_wqc_current
+    label: DHW above first hinge x current coloured water
+    units: standardised interaction
+    class: freshwater_interaction
+    transformation: product of fold-standardised hinge and current WQC terms
+    source: derived
+    operational: delayed
+  - id: dhw_x_wqc_relative
+    label: DHW above first hinge x relative coloured water
+    units: standardised interaction
+    class: freshwater_interaction
+    transformation: product of fold-standardised hinge and preceding-decade percentile terms
+    source: derived
+    operational: delayed
+  - id: dhw_x_wqc_cumulative
+    label: DHW above first hinge x cumulative coloured water
+    units: standardised interaction
+    class: freshwater_interaction
+    transformation: product of fold-standardised hinge and ten-year cumulative WQC terms
+    source: derived
+    operational: delayed

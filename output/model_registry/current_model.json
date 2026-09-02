@@ -1,0 +1,47 @@
+{
+  "registry_version": 7,
+  "analysis": "relative_bleaching_mortality",
+  "best_model": {
+    "id": "operational_rrn_raw_plus_manta_state",
+    "framework": "INLA composite",
+    "purpose": "operational_prediction",
+    "status": "selected",
+    "training_data": "Joint LTMP, manta and MMP mortality observations",
+    "validation_primary": "leave_one_event_out",
+    "validation_secondary": "reef_blocked_5fold",
+    "local_dhw_adjustment": "local_first",
+    "results_dir": "output/prospective_cots_nowcast",
+    "fit_artifact": "output/cause_aware_competing_hazards/full_thermal_component.rds",
+    "comparison_artifact": "output/prospective_cots_nowcast/model_comparison.csv",
+    "thermal_core_id": "persistent_rw1_local_dhw_decomposed_hazards_freshwater_partial_pool",
+    "cyclone_activation": "logistic_center_20h_scale_5h",
+    "cots_intensity": "raw_rrn_event_excess_plus_latest_and_prior3_manta_excess_above_0.22_cots_per_tow",
+    "cots_timing": "rrn_event_pressure_assumed_pre_bleaching_manta_frozen_end_february",
+    "selection_metrics": {
+      "leave_one_event_out_rmse": 0.1485,
+      "leave_one_event_out_predictive_r2": 0.2998,
+      "leave_one_event_out_severe_rmse": 0.3267,
+      "leave_one_event_out_false_extreme_rate": 0.0458
+    },
+    "caveats": [
+      "Gannett Cay 2020 remains a COTS-associated underprediction; treating its undated 9.9 COTS/tow RRN seasonal pressure as pre-bleaching lifts the held-out prediction to about 0.183 but does not resolve the full magnitude.",
+      "Penrith Reef 2017 remains underpredicted despite its Cyclone Debbie hazard uplift.",
+      "Mackay 2024 remains unresolved by the available freshwater and cyclone proxies.",
+      "The logistic cyclone activation centred at 20 damaging-wave hours is provisional for Jasper and Kirrily and must be retested with the forthcoming cyclone data and exposure uncertainty.",
+      {
+        "Targeted culling removals are retained as audit context, not a density predictor": "adding removed COTS per dive and effort slightly worsened held-out transfer."
+      },
+      "RRN event-season density has no within-season date and is assumed to precede bleaching mortality; exact-date Manta and culling information is limited to the end of February. The model combines raw RRN excess with latest/prior-three-year Manta pressure, time since peak and event-year hindcast probability.",
+      "Nested residual BRTs improve reef-blocked skill but worsen event-held-out overall and severe RMSE; they are not part of the operational ensemble.",
+      "Independent full-predictor direct and two-part BRTs, plus predictor-only environmental-envelope blends, improve some reef-blocked interpolation metrics but worsen new-event RMSE and severe RMSE. They are not used for the initial forecast; the direct BRT is retained for within-event interpolation and diagnostic sensitivity.",
+      {
+        "Spatially independent aerial/RHIS early-event updates are implemented but disabled by default": "the only aggregate RMSE gain is limited to 2016/2017/2020 and worsens severe-event RMSE, while RHIS-only transfer worsens the five-event forecast."
+      },
+      "Cause labels are incomplete and annual coral-cover transitions can contain multiple simultaneous causes."
+    ]
+  },
+  "resolved_fit_artifact": "C:/Users/smatthew/Documents/GitKraken/BleachingMortality/output/cause_aware_competing_hazards/full_thermal_component.rds",
+  "fit_md5": "87f0d8f9ca7f63b748b23967b78f4dff",
+  "comparison_md5": "8bc08597e535fde1ea3739757b746bb2",
+  "generated_utc": "2026-09-01T22:09:48Z"
+}

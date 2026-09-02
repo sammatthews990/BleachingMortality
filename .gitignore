@@ -18,7 +18,8 @@ scratch/
 
 output/formal_models/
 output/inla_spatiotemporal
-tmp
+tmp/
+reports/
 output/prediction_uncertainty/
 
 output/salinity_kd490_loyo_minimum_metrics.csv
@@ -36,3 +37,7 @@ output/wind_audit/sar_wind_2024_q1_grid_coverage.csv
 output/wind_audit/sar_wind_2024_q1_reef_coverage.csv
 
 output/wind_audit/wind_product_comparison_metrics.csv
+
+*.rds
+
+*.csv

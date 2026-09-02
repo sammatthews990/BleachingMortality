@@ -1327,6 +1327,406 @@ candidates in `scripts/fit_inla_spatiotemporal_screen.R`,
 `output/dhw_correction/`, and
 `reports/event_dhw_correction_assessment.qmd`.
 
+## 7w. Local-first, peak-qualified DHW calibration - completed screen
+
+- Replace the broad within-event surface with a measurement hierarchy. Use a
+  coverage-qualified reef logger before an automated-station record at the same
+  site-event, prefer shallow/flat reef series, and require matching normalised
+  names plus separation below 5 km for a direct reef match. Otherwise
+  interpolate from no more than four current-event sites inside a hard 25 km
+  radius. Where current local support is absent, retain NOAA unchanged.
+- Qualify records at the actual unconstrained logger-DHW peak. The previous
+  rule could select an earlier peak merely because it had 70 observations in
+  its 84-day window. In 2024 the Lizard relay-pole 5 m record consequently
+  appeared to differ from NOAA by -2.37 DHW, although its later actual peak
+  implied +2.18 DHW with only 66 days. The new rule excludes this incomplete
+  record and retains the complete reef-flat comparison of +4.26 DHW.
+- Do not combine a local measurement with a GBR event offset or historical
+  surface. The previous approximately +0.55 to +0.96 DHW Lizard-cluster
+  corrections resulted from pooling incompatible site records, smoothing over
+  200 km, then adding negative event and historical terms. The revised local
+  estimates are +0.33 at MacGillivray, +4.26 at Lizard NW, +3.52 at Eyrie,
+  +3.84 at Martin, +3.62 at Linnet and +5.38 at North Direction. The first,
+  second, fourth and sixth values are direct matched measurements; Eyrie and
+  Linnet are locally interpolated.
+- Retain ENSO as event context, not a GBR-wide correction. Event-median
+  logger-minus-NOAA discrepancies are +0.34 in 2016, +0.24 in 2017, +0.29 in
+  2020, -0.03 in 2022 and -0.59 DHW in 2024. These do not support a simple
+  phase offset. Allow an ENSO-matched historical fallback only after at least
+  two previous same-phase events at a site and at least 75% agreement in sign;
+  none of the current events meets that prospective evidence rule.
+- Select 25 km despite the marginally lower overall held-out discrepancy RMSE
+  at 50 km: 25 km gives lower MAE (1.59 versus 1.60 DHW), lower extreme RMSE
+  (4.06 versus 4.19 DHW), and better preserves the intended local estimand.
+- Use the same local calibration hierarchy for historical fitting rows and the
+  held-out/current event when those logger records are available. This primary
+  leave-one-event-out candidate reduces INLA mortality RMSE from 0.1973 to
+  0.1720, changes predictive R2 from -0.236 to 0.061, reduces severe-case RMSE
+  from 0.4069 to 0.3562, and lowers the false-extreme rate from 0.113 to 0.087.
+  Retain a current-event-only update as a severe-tail sensitivity: it gives
+  RMSE 0.1827 and severe RMSE 0.3195, but raises the false-extreme rate to
+  0.163. Local calibration remains incomplete without freshwater/WQC,
+  composition, cyclone and COTS modifiers.
+- Preserve the original NOAA exposure and store correction, source, distance,
+  effective logger count and local variability in separate versioned fields.
+  Propagate correction uncertainty in the final INLA model rather than treating
+  the mean local update as error-free.
+
+Implementation: `scripts/build_local_first_dhw_correction.py`, local-first and
+operational-update candidates in `scripts/fit_inla_spatiotemporal_screen.R`,
+`data/processed/noaa_dhw_correction_layer_local_first_validation.csv`, outputs
+under `output/dhw_correction_local_first/`, tests in
+`tests/test_local_first_dhw_correction.py`, and
+`reports/local_first_dhw_correction_assessment.qmd`.
+
+## 7x. Formal fully local-calibrated INLA model - active production stage
+
+### Locked central-estimate contract
+
+- Promote `persistent_rw1_cyclone_cots_local_first_dhw_partial_pool` from a
+  sensitivity candidate to the central local-temperature model. Keep NOAA DHW
+  immutable, retain the correction as a separate field, recompute all derived
+  DHW hinges and novelty terms after correction, and apply the same hierarchy
+  to fitting and prediction rows.
+- This is a multi-event calibration, not a 2024 override. Direct/local support
+  exists for 22 of 29 reef-events in 2016, 37 of 38 in 2017, 56 of 73 in 2020,
+  43 of 61 in 2022 and 83 of 103 in 2024. Unsupported reefs retain NOAA as the
+  point estimate; they do not receive a GBR event offset or inconsistent
+  historical surface.
+- Preserve the direct-measurement precedence rule: coverage-qualified reef
+  logger, then automated station only if no reef logger exists, direct survey
+  match only with normalised name agreement and distance below 5 km, otherwise
+  no more than four sources inside 25 km. Record source, distance, effective
+  source count, correction SD and uncertainty method in every prediction row.
+
+### Validation interpretation
+
+- Pooled leave-one-event-out RMSE improves from 0.1973 to 0.1720 and predictive
+  R2 from -0.236 to 0.061. The gain is not temporally uniform: event-level RMSE
+  improves by 0.011 in 2020, 0.014 in 2022 and 0.059 in 2024, but worsens by
+  0.020 in 2016 and 0.036 in 2017.
+- Do not tune the correction toward mortality to remove those early-event
+  errors. Penrith is a labelled Cyclone Debbie loss, and Carter/Yonge show high
+  mortality despite local evidence that NOAA overestimated heat. These rows
+  indicate unresolved non-thermal processes rather than invalid logger
+  measurements.
+- Retain the current-event-only candidate as a severe-tail ensemble input. Its
+  severe RMSE is 0.319 versus 0.356 for the central fully calibrated model, but
+  its higher false-extreme rate precludes using it as the central estimate.
+
+### Operational uncertainty - implemented first stage
+
+- Estimate DHW-correction uncertainty without mortality outcomes. Direct
+  corrections use replicate logger spread with a pooled 0.61 DHW floor. Local
+  interpolation combines the weighted source spread with a 1.59 DHW held-out
+  floor. Unsupported NOAA values retain zero mean correction with 3.47 DHW
+  uncertainty from omitted-site validation.
+- Translate DHW error to mortality with a non-negative, programme-specific
+  first-order response slope estimated from the unchanged-training/current-
+  event-update contrast. Combine it with the maximum programme-specific 90%
+  conformal residual radius among other events. The resulting intervals attain
+  93.9% pooled coverage for a nominal 90%, with mean total width 0.526 and mean
+  DHW-only width 0.068. Manta 2024 coverage remains lower, so expose event and
+  programme calibration alongside every operational map.
+- Treat this as the operational interval implementation, not the final Bayesian
+  measurement-error fit. The formal endpoint is 20--50 repeated, spatially
+  correlated correction-layer imputations with INLA posterior predictions
+  pooled using within- and between-imputation variance. This is required
+  because corrected DHW enters nonlinear hinges, novelty and multiple
+  interactions; a single linear measurement-error coefficient is insufficient.
+
+### Updated miss register and ordered next improvements
+
+1. **Implemented: separate thermal, cyclone and COTS pressure blocks.** The
+   central INLA candidate is now
+   `persistent_rw1_local_dhw_decomposed_hazards_freshwater_partial_pool`.
+   It retains every observation, uses shared thermal effects, and adds distinct
+   interval-aligned cyclone-wave/track, COTS-surface/hindcast and freshwater
+   terms. This is an additive predictive decomposition, not a hard causal
+   assignment from disturbance notes. Carter and Yonge exposed a material join
+   error: their 2016 cover intervals span Cyclone Nathan, but the event-summer
+   join gave zero wave hours. The new interval calculation assigns 68.72 h at
+   Carter and 64.44 h at Yonge; Agincourt's baseline is after Nathan and stays
+   unexposed.
+2. **Implemented: continuous DHW-by-freshwater/coloured-water screen.** The
+   new central candidate replaces the single freshwater composite with DHW
+   interactions for coastal rainfall, current WQC frequency, reef-relative WQC
+   percentile and the unthresholded rolling 10-year WQC sum. The previous
+   `wqc_excess50_10yr_sum` is retained for diagnostics, but is not imposed as a
+   universal threshold in the selected model. This candidate improves pooled
+   leave-one-event-out RMSE from 0.172 to 0.158, predictive R2 from 0.060 to
+   0.209, severe RMSE from 0.356 to 0.346 and false-extreme rate from 0.143 to
+   0.060. It retains 2024 severe-tail performance (0.316 versus 0.310 severe
+   RMSE for the prior local model).
+3. **COTS probability--intensity combination tested; competing hazards remain
+   required.** The hindcast represents the probability of exceeding 0.22
+   COTS/tow, whereas the RRN interval maximum supplies continuous intensity.
+   A candidate retains outbreak probability and replaces raw log intensity
+   with $p\log[1+\max(I-0.22,0)]$. It improves event-held-out RMSE from 0.1576
+   to 0.1556, predictive R2 from 0.211 to 0.231, severe RMSE from 0.3454 to
+   0.3418 and false-extreme rate from 0.0566 to 0.0523, while reef-blocked RMSE
+   is effectively unchanged. Gannett Cay 2020 has 9.91 COTS/tow and hindcast
+   probability 0.934, but its held-out prediction remains only 0.055 versus
+   0.566 observed. Keep the combined feature as a promising candidate, not a
+   completed attribution. The next model must use labelled disturbance
+   evidence to estimate competing thermal and COTS hazards and audit
+   high-pressure/low-loss rows for interval timing and cover support.
+4. **Operational uncertainty updated.** The matching current-event-local
+   candidate supplies DHW sensitivity for the selected structure. The updated
+   90% interval has 94.6% pooled coverage and mean width 0.495; the DHW-only
+   component averages 0.115. Keep the repeated correction-layer imputation as
+   the formal measurement-error endpoint.
+5. **Replace the current cyclone proxy when the Jasper/Kirrily-resolving layer
+   arrives.** Keep track distance, intensity, damaging-wave exposure and
+   rainfall/runoff as separate mechanisms and repeat the unchanged blocked
+   comparison.
+6. **Use the current-event-only INLA and severe-tail BRT as constrained ensemble
+   members.** Optimise weights against event-blocked RMSE, severe RMSE and
+   false-extreme rate rather than allowing the severe-tail component to
+   dominate the mean prediction.
+7. **Resolve the 2016--2017 northern residuals.** Review survey notes, cover
+   uncertainty, cyclone/COTS evidence and temperature records for Carter,
+   Yonge, Agincourt and St Crispin. Their local corrections mostly reduce DHW,
+   so another heat uplift is not supported.
+8. **Refine composition only with complementary structure.** Retain preceding
+   Acropora; add tabular Acropora and weedy-recovery assemblage information
+   where attainable instead of another correlated total-cover measure.
+
+Implementation: uncertainty fields in
+`scripts/build_local_first_dhw_correction.py`, uncertainty provenance carried
+through `scripts/fit_inla_spatiotemporal_screen.R`, operational propagation in
+`scripts/propagate_local_dhw_uncertainty.py`, outputs under
+`output/local_calibrated_operational/`, regression tests in
+`tests/test_local_dhw_uncertainty.py`, and updated tables and figures in
+`reports/local_first_dhw_correction_assessment.qmd`.
+
+## 7v. Cause-aware COTS and cyclone competing hazards - selected
+
+- Refit the thermal/freshwater INLA response after excluding only rows with
+  explicit COTS, cyclone, storm or flood attribution. Unlabelled mortality is
+  retained, preserving the restricted bleaching-mortality logic while stopping
+  strongly supported non-thermal losses from flattening the thermal curve.
+- Fit separate Bernoulli-beta COTS and cyclone hazards to the longer annual
+  coral-cover transition record. COTS uses hindcast outbreak probability plus
+  probability-weighted RRN excess density above 0.22 COTS/tow. Cyclone uses
+  damaging-wave hours, wind-distance exposure and rainfall. Event-overlapping
+  annual intervals and held-out reefs are excluded within their respective
+  validation folds.
+- Combine hazards on the response scale as
+  $1-(1-T)(1-C)(1-S)$. The operational version activates COTS only above 0.22
+  COTS/tow and cyclone only above 20 hours of waves exceeding 4 m. The ungated
+  version improves the severe tail but creates too much unsupported background
+  mortality and is rejected.
+- Promote `cause_aware_exposure_gated_competing_hazards`. Against the prior
+  selected model, leave-one-event-out RMSE improves from 0.1576 to 0.1507,
+  predictive R2 from 0.211 to 0.279, severe RMSE from 0.345 to 0.326 and the
+  false-extreme rate from 0.0566 to 0.0436. Reef-blocked RMSE is nearly
+  retained (0.1398 versus 0.1390) and severe RMSE improves (0.284 versus
+  0.308).
+- Treat Gannett Cay and Penrith as cause-supported but magnitude-unresolved
+  positive controls. Gannett's held-out prediction rises from 0.060 to 0.228;
+  Penrith's rises from 0.077 to 0.206. Penrith joins Double Cone, Daydream and
+  Shute as a Debbie case with more than 20 damaging-wave hours. Chinaman,
+  Taylor and Rib Reef place their main COTS losses in the 2017-18 transitions;
+  high-pressure/low-loss 2020 rows remain as timing and depleted-cover negative
+  controls.
+- Retest the 20-hour cyclone gate and conditional severity as soon as the
+  improved Jasper/Kirrily dataset arrives. Next refine COTS with time since
+  peak pressure and available starting cover, then rerun the major-miss table.
+
+Implementation: `scripts/fit_cause_aware_competing_hazards.R`, outputs under
+`output/cause_aware_competing_hazards/`, model selection in
+`config/model_registry.yml`, and the complete assessment in
+`reports/cause_aware_competing_hazard_assessment.qmd`.
+
+## 7w. COTS timing, soft cyclone activation and La Nina residuals - completed
+
+- Test event-year-available COTS timing and cover support using preceding
+  three-year pressure, years since the prior outbreak, starting cover and
+  pressure-by-cover interactions. Do not promote this block: event-held-out
+  RMSE is 0.1508 versus 0.1507 for the simpler COTS model, and the two
+  pressure-by-cover features correlate above 0.999 with their parent pressure
+  terms. Starting cover remains in the COTS occurrence and magnitude models;
+  develop the formal biomass constraint in the absolute-cover-change model.
+- Replace the hard 20-hour cyclone switch with a logistic activation
+  $\operatorname{logit}^{-1}[(W-20)/5]$. Promote
+  `baseline_cots_logistic20_5_cyclone`: event-held-out RMSE improves from
+  0.1507 to 0.1492, predictive R2 from 0.279 to 0.293, severe RMSE from 0.3259
+  to 0.3254 and false-extreme rate stays 0.0436. Reef-blocked RMSE improves
+  marginally from 0.13983 to 0.13979. Retest the activation and propagate its
+  uncertainty when the replacement cyclone layer arrives.
+- Audit the negative 2020/2022 predictive R2 values. These events have very low
+  observed means (0.016 and 0.027) and many zeros, while model means are 0.064
+  and 0.059. The problem is primarily a positive occurrence floor plus a small
+  number of opposing outliers, not universally high magnitude error. Test
+  ENSO/SOI and rainfall/runoff anomalies in the Bernoulli occurrence component
+  rather than flattening the conditional DHW response.
+- Retain Gannett, Penrith and Mackay as supported but unresolved focal cases.
+  Add high-DHW zero-loss reefs in 2020 and low-DHW zero-loss reefs in 2022 as
+  counter-controls for composition, cooling and occurrence calibration.
+- Use `reports/_model_next_steps.md` as the canonical next-step list included
+  by every current model report, preventing priorities from drifting between
+  iterations.
+
+Implementation: `scripts/test_cots_timing_cover_and_cyclone_soft_gate.R`,
+outputs under `output/cots_timing_cover_cyclone_soft_gate/`, figures
+`Fig-INLA-13` to `Fig-INLA-15` and `Fig-DATA-03`, and assessment report
+`reports/cots_timing_lanina_residual_assessment.qmd`.
+
+## 7x. Raw COTS intensity, La Nina occurrence state and sequential update - completed
+
+- Compare the selected log COTS interval excess with untransformed interval
+  density, a prospective current-year density plus time-since-peak state, and
+  the same compact state fitted to absolute percentage-point cover loss. The
+  compact predictors are complementary (largest absolute off-diagonal
+  Spearman correlation below 0.42), so rejection is based on transfer rather
+  than redundancy.
+- Promote `cots_raw_interval_logistic20_5_cyclone`. Raw density improves
+  event-held-out RMSE from 0.14922 to 0.14891 and predictive R2 from 0.2928 to
+  0.2957; reef-blocked RMSE improves from 0.13979 to 0.13933. Severe RMSE
+  weakens slightly from 0.3254 to 0.3275 and Gannett 2020 is predicted less
+  well, so retain the log form as a severe-tail sensitivity and require a
+  Gannett-positive-control check for any future COTS tail model.
+- Do not promote current-year density plus time since peak or the
+  absolute-cover-loss component: both worsen event transfer. The selected
+  interval maximum remains retrospectively timed, so reconstruct an
+  event-start COTS pressure nowcast from the latest survey, time since
+  survey/peak, culling and hindcast probability before prospective mapping.
+- Do not promote the RONI or SOI occurrence recalibrations. Coupled indices
+  with reef-centred ERA5 rainfall and WQC anomaly improve 2022 but worsen 2020
+  and suppress 2024. Five events and a coloured-water proxy cannot identify a
+  transferable low-mortality state; true runoff/discharge remains a data gap.
+- Retain the first-20%-of-reefs prevalence model only as a sequential update.
+  On later reefs RMSE improves from 0.1554 to 0.1533 and severe RMSE from
+  0.3655 to 0.3234. Next impose spatial separation and substitute aerial or
+  rapid in-water prevalence where possible.
+- Audit named controls with local-first logger support and survey context.
+  Gannett remains a severe COTS magnitude miss; Havannah has positive direct
+  logger correction; Linnet has programme disagreement; U/N 20-104 lacks a
+  supported local correction; Pandora remains a high-DHW zero-loss control
+  despite positive direct correction; and the named 2022 zero-loss reefs
+  remain occurrence-floor controls.
+
+Implementation: `scripts/test_cots_raw_enso_occurrence_controls.R`, outputs
+under `output/cots_raw_enso_occurrence/`, figures `Fig-INLA-16` to
+`Fig-INLA-18`, model registry version 4, and assessment report
+`reports/04_COTS_ENSO_reef_control_assessment.qmd`.
+
+## 7y. Spatially independent aerial/RHIS early-event update - completed, gated
+
+- Convert RHIS morphology-specific bleaching to the requested 0--4 scale and
+  calculate a cover- and percent-bleached-weighted community burden. Retain
+  recently dead benthos only where bleaching is explicitly present. Use April
+  30 as the primary common cutoff and March 31 as the strict timing
+  sensitivity; never use later post-event mortality observations or cause
+  labels.
+- Treat Hughes aerial `bin.score` as a binary severe-bleaching event-time
+  indicator for 2016, 2017 and 2020. Record the absence of survey dates in the
+  supplied CSV as a blocking provenance limitation rather than assuming exact
+  timing. Add 2022/2024 only when their scores and survey dates are supplied.
+- Validate twice: fit update coefficients with the target event held out, and
+  construct its spatial signal only after excluding the target sector or its
+  full latitude block. Keep the selected initial forecast and its conditional
+  magnitude fixed in the primary occurrence-only comparison.
+- Do not promote the current candidates. RHIS-only updates worsen five-event
+  RMSE and Brier score; aerial-only updates also fail. Aerial plus RHIS lowers
+  RMSE from 0.1380 to 0.1338 and raises predictive R2 from 0.228 to 0.275 on
+  the three available aerial events under sector exclusion, but severe RMSE
+  worsens from 0.381 to 0.409. A two-part occurrence/magnitude update is worse.
+- Avoid a larger early-data predictor block: sector-independent RHIS severity
+  versus burden has Spearman correlation 0.912 and burden versus recently dead
+  is 0.815. The next candidate is aerial severity plus one RHIS burden term.
+- Keep the update disabled by default and separate from the initial forecast.
+  Promotion requires improvement in overall RMSE, occurrence Brier score and
+  severe RMSE under both event-held-out and spatially independent validation.
+
+Implementation: `scripts/test_spatial_early_bleaching_update.R`, processed
+sources `data/processed/rhis_early_bleaching_reef_event.csv` and
+`data/processed/aerial_early_bleaching_reef_event.csv`, outputs under
+`output/spatial_early_bleaching_update/`, figures `Fig-NOWCAST-01` to
+`Fig-NOWCAST-03`, model registry version 5, and assessment report
+`reports/05_spatial_early_bleaching_update_assessment.qmd`.
+
+## 7z. Prospective COTS nowcast and cross-fitted residual BRT - completed
+
+- Treat undated RRN event-season density as pre-bleaching pressure, following
+  the data-owner interpretation. Freeze exact-date Manta and culling evidence
+  at the end of February. Construct reef-event features from raw/log RRN
+  excess, latest Manta density, the prior three-year Manta peak, time since
+  that peak and the event-year outbreak hindcast probability.
+- Audit the targeted Cull table over the preceding 365 days using total
+  removals, dive effort, removals per dive and positive-dive fraction. Do not
+  interpret removals as spatially standardised density. Culling terms slightly
+  worsen both event-held-out and reef-blocked transfer and are retained only as
+  ecological context.
+- Promote `operational_rrn_raw_plus_manta_state`. Relative to the prior raw
+  interval reference, leave-one-event-out RMSE improves from 0.14891 to
+  0.14848 and predictive R-squared from 0.296 to 0.300; severe RMSE improves
+  from 0.3275 to 0.3267. Reef-blocked RMSE is 0.13958. The raw RRN signal lifts
+  Gannett's held-out prediction from the Manta-only 0.121 to 0.183. The log
+  hybrid lifts it further but slightly worsens aggregate event transfer.
+- Fit balanced and four-times severe-weighted residual BRTs inside nested
+  leave-one-event-out and reef-blocked folds. Learn the INLA--BRT blend weight
+  inside each training fold. Neither BRT passes promotion: balanced BRT
+  event-held-out RMSE is 0.14923 and severe RMSE 0.33218; the severe-weighted
+  version is 0.15019 and 0.33585. Both improve reef-blocked severe RMSE, which
+  identifies within-event spatial structure rather than transferable
+  new-event skill.
+- Retain the residual BRT importance and partial-dependence plots as diagnostic
+  evidence. Rainfall, the base INLA prediction, starting cover and SST
+  skewness are its strongest signals, but they do not yet yield a safe
+  prospective correction.
+
+Implementation: `scripts/test_prospective_cots_nowcast.R`,
+`scripts/test_inla_brt_residual_ensemble.R`, outputs under
+`output/prospective_cots_nowcast/` and
+`output/inla_brt_residual_ensemble/`, model registry version 6, and assessment
+report `reports/06_prospective_cots_and_inla_brt_assessment.qmd`.
+
+## 7aa. Independent full BRTs and environmental-envelope ensemble - completed
+
+- Correct the scope of the machine-learning comparison. The preceding residual
+  BRT estimated only errors left by INLA; it was not the independently fitted
+  all-predictor BRT requested for model comparison. Fit two independent BRT
+  candidates from the same operational predictor matrix: a direct bounded
+  mortality BRT and a two-part occurrence times positive-magnitude BRT.
+- Use the selected local-first DHW, composition and starting cover, thermal
+  history and novelty, cloud/current/Secchi/SST shape, rainfall and coloured
+  water, wind, cyclone, COTS, disease, depth, programme and region predictors.
+  Apply the fixed outcome-free Spearman screen before fitting. Disease-risk
+  applicability is removed because its absolute correlation with disease risk
+  is 0.999; SST kurtosis and median chlorophyll remain excluded by the earlier
+  complementarity decision in favour of SST skewness and Secchi.
+- Tune interaction depth inside every outer fold. Evaluate both
+  leave-one-event-out and five-fold reef-blocked transfer. Do not use event
+  identity as an operational predictor.
+- Define a fold-local environmental envelope from training predictors only:
+  training-median imputation, standardisation, PCA retaining 90% variance
+  (maximum eight components), whitening and ten-neighbour distance. Test hard,
+  smooth 50% and full-applicability INLA--BRT weights. No observed mortality or
+  residual enters the gate.
+- Do not promote any BRT or envelope blend to the initial forecast. The direct
+  BRT improves reef-blocked RMSE from 0.13958 to 0.13540, and the direct
+  applicability blend reaches 0.12817, but leave-one-event-out RMSE worsens
+  from 0.14848 for INLA to 0.17994 for the direct BRT. Severe RMSE worsens from
+  0.32666 to 0.46502. The smooth direct blend is closer but still worse
+  (RMSE 0.15079; severe RMSE 0.35539).
+- Reject the proposed rule that BRT should dominate merely because a reef is
+  inside the training environmental envelope. In event-held-out rows inside
+  the envelope, INLA RMSE is 0.13541 versus 0.16916 for the direct BRT. This
+  shows that represented covariate space does not guarantee representation of
+  the event-level mortality process.
+- Retain the direct BRT for nonlinear effect inspection, within-event
+  interpolation after the event state is represented, and future spatially
+  independent early-event updating. Preserve the two-part BRT as a likelihood
+  sensitivity; it better controls low-event mortality in some years but
+  severely underpredicts 2024 magnitude.
+
+Implementation: `scripts/fit_standalone_brt_envelope_ensemble.R`, outputs
+under `output/standalone_brt_envelope_ensemble/`, figures `Fig-FULLBRT-01` to
+`Fig-FULLBRT-08`, model registry version 7, and assessment report
+`reports/07_standalone_brt_envelope_ensemble_assessment.qmd`.
+
 ## 8. Refactor the reports into a research-grade narrative
 
 ### Addendum: SST distribution shape and median chlorophyll screen

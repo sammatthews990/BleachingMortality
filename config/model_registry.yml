@@ -1,0 +1,191 @@
+registry_version: 7
+analysis: relative_bleaching_mortality
+best_model:
+  id: operational_rrn_raw_plus_manta_state
+  framework: INLA composite
+  purpose: operational_prediction
+  status: selected
+  training_data: Joint LTMP, manta and MMP mortality observations
+  validation_primary: leave_one_event_out
+  validation_secondary: reef_blocked_5fold
+  local_dhw_adjustment: local_first
+  results_dir: output/prospective_cots_nowcast
+  fit_artifact: output/cause_aware_competing_hazards/full_thermal_component.rds
+  comparison_artifact: output/prospective_cots_nowcast/model_comparison.csv
+  thermal_core_id: persistent_rw1_local_dhw_decomposed_hazards_freshwater_partial_pool
+  cyclone_activation: logistic_center_20h_scale_5h
+  cots_intensity: raw_rrn_event_excess_plus_latest_and_prior3_manta_excess_above_0.22_cots_per_tow
+  cots_timing: rrn_event_pressure_assumed_pre_bleaching_manta_frozen_end_february
+  selection_metrics:
+    leave_one_event_out_rmse: 0.1485
+    leave_one_event_out_predictive_r2: 0.2998
+    leave_one_event_out_severe_rmse: 0.3267
+    leave_one_event_out_false_extreme_rate: 0.0458
+  caveats:
+    - Gannett Cay 2020 remains a COTS-associated underprediction; treating its undated 9.9 COTS/tow RRN seasonal pressure as pre-bleaching lifts the held-out prediction to about 0.183 but does not resolve the full magnitude.
+    - Penrith Reef 2017 remains underpredicted despite its Cyclone Debbie hazard uplift.
+    - Mackay 2024 remains unresolved by the available freshwater and cyclone proxies.
+    - The logistic cyclone activation centred at 20 damaging-wave hours is provisional for Jasper and Kirrily and must be retested with the forthcoming cyclone data and exposure uncertainty.
+    - Targeted culling removals are retained as audit context, not a density predictor: adding removed COTS per dive and effort slightly worsened held-out transfer.
+    - RRN event-season density has no within-season date and is assumed to precede bleaching mortality; exact-date Manta and culling information is limited to the end of February. The model combines raw RRN excess with latest/prior-three-year Manta pressure, time since peak and event-year hindcast probability.
+    - Nested residual BRTs improve reef-blocked skill but worsen event-held-out overall and severe RMSE; they are not part of the operational ensemble.
+    - Independent full-predictor direct and two-part BRTs, plus predictor-only environmental-envelope blends, improve some reef-blocked interpolation metrics but worsen new-event RMSE and severe RMSE. They are not used for the initial forecast; the direct BRT is retained for within-event interpolation and diagnostic sensitivity.
+    - Spatially independent aerial/RHIS early-event updates are implemented but disabled by default: the only aggregate RMSE gain is limited to 2016/2017/2020 and worsens severe-event RMSE, while RHIS-only transfer worsens the five-event forecast.
+    - Cause labels are incomplete and annual coral-cover transitions can contain multiple simultaneous causes.
+candidates:
+  - id: persistent_rw1_cyclone_cots_partial_pool
+    framework: INLA
+    role: NOAA_DHW_baseline
+    status: comparator
+  - id: persistent_rw1_cyclone_cots_local_first_dhw_partial_pool
+    framework: INLA
+    role: prior_local_temperature_comparator
+    status: comparator
+  - id: persistent_rw1_local_dhw_decomposed_hazards_partial_pool
+    framework: INLA
+    role: disturbance_ablation
+    status: comparator
+  - id: persistent_rw1_local_dhw_decomposed_hazards_freshwater_partial_pool
+    framework: INLA
+    role: prior_operational_reference
+    status: comparator
+  - id: cause_aware_exposure_gated_competing_hazards
+    framework: INLA composite
+    role: prior_hard_cyclone_gate_reference
+    status: comparator
+  - id: baseline_cots_logistic20_5_cyclone
+    framework: INLA composite
+    role: prior_log_cots_intensity_reference
+    status: comparator
+  - id: cots_raw_interval_logistic20_5_cyclone
+    framework: INLA composite
+    role: retrospective_cots_interval_reference
+    status: comparator
+  - id: prospective_cots_log_peak_recency
+    framework: INLA composite
+    role: dated_manta_only_aggregate_comparator
+    status: comparator
+  - id: operational_rrn_raw_plus_manta_state
+    framework: INLA composite
+    role: operational_prediction
+    status: selected
+  - id: operational_rrn_raw_event_pressure
+    framework: INLA composite
+    role: rrn_event_pressure_ablation
+    status: comparator
+  - id: operational_rrn_log_plus_manta_state
+    framework: INLA composite
+    role: severe_cots_tail_sensitivity
+    status: comparator
+  - id: operational_rrn_log_event_pressure
+    framework: INLA composite
+    role: log_rrn_pressure_sensitivity
+    status: comparator
+  - id: prospective_cots_raw_peak_recency
+    framework: INLA composite
+    role: prospective_raw_cots_pressure_comparator
+    status: comparator
+  - id: prospective_cots_log_latest_recency_cull
+    framework: INLA composite
+    role: targeted_culling_context_sensitivity
+    status: rejected
+  - id: inla_brt_balanced_residual
+    framework: INLA-BRT
+    role: cross_fitted_residual_ensemble
+    status: rejected
+  - id: inla_brt_severe_weighted_residual
+    framework: INLA-BRT
+    role: severe_tail_residual_ensemble
+    status: rejected
+  - id: standalone_direct_brt_full_predictors
+    framework: BRT
+    role: independent_operational_machine_learning
+    status: ensemble_or_uncertainty_only
+  - id: standalone_two_part_brt_full_predictors
+    framework: two-part BRT
+    role: independent_occurrence_magnitude_machine_learning
+    status: rejected
+  - id: direct_brt_smooth_environmental_envelope
+    framework: INLA-BRT
+    role: predictor_only_environmental_envelope_ensemble
+    status: ensemble_or_uncertainty_only
+  - id: direct_brt_applicability_environmental_envelope
+    framework: INLA-BRT
+    role: within_event_applicability_ensemble
+    status: ensemble_or_uncertainty_only
+  - id: cots_raw_current_timing_relative
+    framework: INLA composite
+    role: prospective_cots_timing_sensitivity
+    status: rejected
+  - id: cots_raw_current_timing_absolute
+    framework: INLA composite
+    role: absolute_cover_loss_biomass_sensitivity
+    status: rejected
+  - id: occurrence_roni_rain_wqc
+    framework: INLA occurrence calibration
+    role: initial_forecast_event_state_sensitivity
+    status: rejected
+  - id: occurrence_soi_rain_wqc
+    framework: INLA occurrence calibration
+    role: initial_forecast_event_state_sensitivity
+    status: rejected
+  - id: sequential_early_prevalence_update
+    framework: INLA occurrence calibration
+    role: within_event_operational_update
+    status: ensemble_or_uncertainty_only
+  - id: spatial_early_bleaching_occurrence_update
+    framework: INLA occurrence calibration
+    role: spatially_independent_within_event_update
+    status: ensemble_or_uncertainty_only
+  - id: spatial_early_bleaching_two_part_update
+    framework: INLA Bernoulli-beta calibration
+    role: early_occurrence_and_magnitude_sensitivity
+    status: rejected
+  - id: cots_timing_cover_hard20_cyclone
+    framework: INLA composite
+    role: cots_timing_cover_sensitivity
+    status: rejected
+  - id: cots_timing_cover_logistic20_5_cyclone
+    framework: INLA composite
+    role: combined_timing_cover_soft_cyclone_sensitivity
+    status: rejected
+  - id: baseline_cots_ramp5_20_cyclone
+    framework: INLA composite
+    role: linear_cyclone_activation_sensitivity
+    status: rejected
+  - id: cause_aware_thermal_only
+    framework: INLA
+    role: cause_filtered_thermal_ablation
+    status: comparator
+  - id: cause_aware_competing_hazards
+    framework: INLA composite
+    role: ungated_cause_hazard_ablation
+    status: rejected
+  - id: persistent_rw1_operational_update_decomposed_hazards_freshwater_partial_pool
+    framework: INLA
+    role: current_event_temperature_sensitivity
+    status: ensemble_or_uncertainty_only
+  - id: explanatory_event_dhw_interaction_full_data
+    framework: INLA
+    role: retrospective_explanation
+    status: explanatory_only
+  - id: test_hinge6_plus8
+    framework: INLA
+    role: first_DHW_hinge_sensitivity
+    status: rejected
+  - id: test_collinearity_reduced
+    framework: INLA
+    role: redundant_predictor_ablation
+    status: rejected
+  - id: test_cots_probability_severity
+    framework: INLA
+    role: cots_probability_weighted_intensity
+    status: promising_not_selected
+  - id: operational_brt_collinearity_screened
+    framework: BRT
+    role: superseded_machine_learning_diagnostic
+    status: rejected
+  - id: dhw_only_full_data
+    framework: INLA
+    role: explanatory_DHW_only_reference
+    status: explanatory_only

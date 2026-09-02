@@ -52,7 +52,20 @@ candidates <- tribble(
     'persistent_rw1_cyclone_cots_rolling_dhw_partial_pool',
     'persistent', TRUE, 'current_sst_chla_pressure', TRUE, 'rolling_prior',
     'persistent_rw1_cyclone_cots_event_dhw_partial_pool',
-    'persistent', TRUE, 'current_sst_chla_pressure', TRUE, 'within_event'
+    'persistent', TRUE, 'current_sst_chla_pressure', TRUE, 'within_event',
+    'persistent_rw1_cyclone_cots_enso_fallback_dhw_partial_pool',
+    'persistent', TRUE, 'current_sst_chla_pressure', TRUE, 'enso_fallback',
+    'persistent_rw1_cyclone_cots_local_first_dhw_partial_pool',
+    'persistent', TRUE, 'current_sst_chla_pressure', TRUE, 'local_first',
+    'persistent_rw1_cyclone_cots_operational_local_update_partial_pool',
+    'persistent', TRUE, 'current_sst_chla_pressure', TRUE, 'local_update_only',
+    'persistent_rw1_local_dhw_decomposed_hazards_partial_pool',
+    'persistent', TRUE, 'decomposed_hazards', TRUE, 'local_first',
+    'persistent_rw1_local_dhw_decomposed_hazards_freshwater_partial_pool',
+    'persistent', TRUE, 'decomposed_hazards_freshwater', TRUE, 'local_first',
+    'persistent_rw1_operational_update_decomposed_hazards_freshwater_partial_pool',
+    'persistent', TRUE, 'decomposed_hazards_freshwater', TRUE,
+    'local_update_only'
 )
 
 lizard_cluster_reef_ids <- c(
@@ -85,10 +98,13 @@ raw_predictors <- c(
     'dhw_events_since2016_n6', 'dhw_years_since_last_n6_capped8',
     'secc3m_p10', 'cloudp_90',
     'log_coastal_rain30', 'wqc_prior10_percentile',
+    'wqc_freqcc12', 'wqc_10yr_sum',
     'log1p_cyc_maxHrs4mw', 'log1p_cot_idwmeanpertow',
+    'log1p_cyc_interval_maxHrs4mw', 'log1p_cot_interval_idw_max',
     'mcur_90', 'sst_summer_skewness',
     'sst_summer_excess_kurtosis', 'chla_wetseason_median',
     'tc_proximity100', 'tc_wind_distance_index',
+    'tc_interval_proximity100', 'tc_interval_wind_distance_index',
     'cots_outbreak_probability',
     'disease_risk_max', 'disease_risk_days_ge1'
 )
@@ -97,7 +113,10 @@ core_shared_terms <- c(
     paste0(raw_predictors[!raw_predictors %in% c(
         'mcur_90', 'sst_summer_skewness',
         'sst_summer_excess_kurtosis', 'chla_wetseason_median',
+        'wqc_freqcc12', 'wqc_10yr_sum',
+        'log1p_cyc_interval_maxHrs4mw', 'log1p_cot_interval_idw_max',
         'tc_proximity100', 'tc_wind_distance_index',
+        'tc_interval_proximity100', 'tc_interval_wind_distance_index',
         'cots_outbreak_probability',
         'disease_risk_max', 'disease_risk_days_ge1'
     )], '_z'),
@@ -113,12 +132,31 @@ pressure_shared_terms <- c(
     'tc_proximity100_z', 'tc_wind_distance_index_z',
     'cots_outbreak_probability_z'
 )
+decomposed_hazard_terms <- c(
+    'log1p_cyc_interval_maxHrs4mw_z',
+    'tc_interval_proximity100_z', 'tc_interval_wind_distance_index_z',
+    'log1p_cot_interval_idw_max_z',
+    'cots_outbreak_probability_z'
+)
+expanded_freshwater_terms <- c(
+    'wqc_freqcc12_z', 'wqc_10yr_sum_z',
+    'dhw_x_rainfall', 'dhw_x_wqc_current',
+    'dhw_x_wqc_relative', 'dhw_x_wqc_cumulative'
+)
+decomposed_core_terms <- setdiff(
+    core_shared_terms,
+    c(
+        'log1p_cyc_maxHrs4mw_z', 'log1p_cot_idwmeanpertow_z',
+        'dhw_x_freshwater'
+    )
+)
 disease_shared_terms <- c(
     'disease_risk_max_z', 'disease_risk_days_ge1_z'
 )
 shared_terms <- c(
     core_shared_terms, current_shared_terms, sst_chla_shared_terms,
     pressure_shared_terms, disease_shared_terms
+    , decomposed_hazard_terms, expanded_freshwater_terms
 )
 
 candidate_shared_terms <- function(candidate) {
@@ -137,6 +175,15 @@ candidate_shared_terms <- function(candidate) {
             core_shared_terms, current_shared_terms, sst_chla_shared_terms,
             pressure_shared_terms, disease_shared_terms
         ),
+        decomposed_hazards = c(
+            decomposed_core_terms, current_shared_terms,
+            sst_chla_shared_terms, decomposed_hazard_terms
+        ),
+        decomposed_hazards_freshwater = c(
+            decomposed_core_terms, current_shared_terms,
+            sst_chla_shared_terms, decomposed_hazard_terms,
+            expanded_freshwater_terms
+        ),
         stop('Unknown feature set: ', candidate$feature_set)
     )
 }
@@ -150,9 +197,10 @@ new_features <- read_csv(
         sst_summer_excess_kurtosis, chla_wetseason_median
     )
 
-cyclone <- read_csv(
+cyclone_all <- read_csv(
     'data/processed/bom_cyclone_reef_year.csv', show_col_types = FALSE
-) |>
+)
+cyclone <- cyclone_all |>
     select(
         ReefID, event_year, tc_min_distance_km,
         tc_nearest_name, tc_nearest_max_wind_ms
@@ -182,8 +230,20 @@ dhw_correction_path <- paste0(
 dhw_correction_hash <- substr(
     unname(tools::md5sum(dhw_correction_path)), 1, 8
 )
+local_correction_path <- paste0(
+    'data/processed/',
+    'noaa_dhw_correction_layer_local_first_validation.csv'
+)
+local_correction_hash <- substr(
+    unname(tools::md5sum(local_correction_path)), 1, 8
+)
 candidate_cache_version <- function(candidate_name) {
-    if (grepl('_(rolling|event)_dhw_', candidate_name)) {
+    if (grepl(
+        '_(local_first|enso_fallback)_dhw_|_operational_local_update_',
+        candidate_name
+    )) {
+        paste0('v4_', local_correction_hash)
+    } else if (grepl('_(rolling|event)_dhw_', candidate_name)) {
         paste0('v3_', dhw_correction_hash)
     } else {
         'v2'
@@ -200,7 +260,61 @@ dhw_correction <- read_csv(
         effective_current_loggers
     )
 
-data <- load_joint_compound_rows() |>
+local_correction <- read_csv(
+    local_correction_path,
+    show_col_types = FALSE
+) |>
+    select(
+        ReefID, event_year,
+        local_first_correction, enso_historical_correction,
+        correction_source, correction_sd,
+        correction_uncertainty_method, nearest_local_logger_km,
+        effective_local_loggers, local_loggers_used
+    )
+
+base_data <- load_joint_compound_rows()
+cyclone_interval_track <- base_data |>
+    select(
+        .mortality_row_id, ReefID, baseline_survey_date, survey_date
+    ) |>
+    inner_join(
+        cyclone_all |>
+            transmute(
+                ReefID, pressure_year = event_year,
+                tc_min_distance_km, tc_nearest_name,
+                tc_nearest_max_wind_ms,
+                annual_wind_distance_index = pmax(
+                    tc_nearest_max_wind_ms - 17, 0
+                ) * exp(-pmin(tc_min_distance_km, 1000) / 100)
+            ),
+        by = 'ReefID', relationship = 'many-to-many'
+    ) |>
+    mutate(
+        pressure_start = as.Date(paste0(pressure_year - 1L, '-11-01')),
+        pressure_end = as.Date(paste0(pressure_year, '-04-30'))
+    ) |>
+    filter(
+        pressure_end >= baseline_survey_date,
+        pressure_start <= survey_date
+    ) |>
+    group_by(.mortality_row_id) |>
+    summarise(
+        tc_interval_min_distance_km = min(
+            tc_min_distance_km, na.rm = TRUE
+        ),
+        tc_interval_wind_distance_index = max(
+            annual_wind_distance_index, na.rm = TRUE
+        ),
+        tc_interval_peak_name = tc_nearest_name[
+            which.max(replace(
+                annual_wind_distance_index,
+                !is.finite(annual_wind_distance_index), -Inf
+            ))
+        ][1],
+        .groups = 'drop'
+    )
+
+data <- base_data |>
     left_join(
         new_features,
         by = c('ReefID', 'event_year' = 'year'),
@@ -208,6 +322,10 @@ data <- load_joint_compound_rows() |>
     ) |>
     left_join(
         cyclone, by = c('ReefID', 'event_year'),
+        relationship = 'many-to-one'
+    ) |>
+    left_join(
+        cyclone_interval_track, by = '.mortality_row_id',
         relationship = 'many-to-one'
     ) |>
     left_join(
@@ -222,11 +340,18 @@ data <- load_joint_compound_rows() |>
         dhw_correction, by = c('ReefID', 'event_year'),
         relationship = 'many-to-one'
     ) |>
+    left_join(
+        local_correction, by = c('ReefID', 'event_year'),
+        relationship = 'many-to-one'
+    ) |>
     mutate(
         tc_proximity100 = exp(-pmin(tc_min_distance_km, 1000) / 100),
         tc_wind_distance_index = pmax(
             tc_nearest_max_wind_ms - 17, 0
         ) * tc_proximity100,
+        tc_interval_proximity100 = exp(
+            -pmin(tc_interval_min_distance_km, 1000) / 100
+        ),
         event_index = match(as.integer(event_year), event_years),
         reef_event_key = paste(ReefID, event_year, sep = '__')
     )
@@ -280,6 +405,20 @@ add_derived_terms <- function(rows) {
             dhw_x_acropora = dhw_excess4_z * prop_acropora_pre_z,
             dhw_x_novelty = dhw_excess4_z * dhw_novelty10_z,
             dhw_x_freshwater = dhw_excess4_z * freshwater_joint_z,
+            dhw_x_rainfall = dhw_excess4_z * log_coastal_rain30_z,
+            dhw_x_wqc_current = dhw_excess4_z * wqc_freqcc12_z,
+            dhw_x_wqc_relative =
+                dhw_excess4_z * wqc_prior10_percentile_z,
+            dhw_x_wqc_cumulative = dhw_excess4_z * wqc_10yr_sum_z,
+            freshwater_amplification_weight = (
+                dhw_x_rainfall + dhw_x_wqc_current +
+                    dhw_x_wqc_relative + dhw_x_wqc_cumulative
+            ) / 2,
+            cyclone_hazard_weight = log1p_cyc_interval_maxHrs4mw_z,
+            cots_hazard_weight = (
+                log1p_cot_interval_idw_max_z +
+                    cots_outbreak_probability_z
+            ) / sqrt(2),
             dhw_x_cloud = dhw_excess4_z * cloudp_90_z,
             dhw_x_repeat_exposure = ann_maxdhw_z *
                 dhw_events_since2016_n6_z,
@@ -315,6 +454,12 @@ apply_candidate_dhw <- function(rows, candidate) {
                     coalesce(rolling_prior_correction, 0),
                 adjustment == 'within_event' ~
                     coalesce(within_event_correction, 0),
+                adjustment == 'enso_fallback' ~
+                    coalesce(enso_historical_correction, 0),
+                adjustment == 'local_first' ~
+                    coalesce(local_first_correction, 0),
+                adjustment == 'local_update_only' ~
+                    coalesce(local_first_correction, 0),
                 fixed_uplift > 0 & event_year == 2024L &
                     ReefID %in% lizard_cluster_reef_ids ~ fixed_uplift,
                 TRUE ~ 0
@@ -375,6 +520,13 @@ make_fixed_rows <- function(rows, component, observed_event_keys,
                 pool_cloud_weight = dhw_x_cloud,
                 pool_current_index = columns,
                 pool_current_weight = dhw_x_current,
+                pool_cyclone_index = columns,
+                pool_cyclone_weight = cyclone_hazard_weight,
+                pool_cots_index = columns,
+                pool_cots_weight = cots_hazard_weight,
+                pool_freshwater_expanded_index = columns,
+                pool_freshwater_expanded_weight =
+                    freshwater_amplification_weight,
                 likelihood_column = columns,
                 x_km, y_km
             )
@@ -471,12 +623,46 @@ make_formula <- function(candidate) {
             )
         )
     }
+    if (
+        isTRUE(candidate$partial_pool) &&
+        grepl('^decomposed_hazards', candidate$feature_set)
+    ) {
+        rhs <- c(
+            rhs,
+            paste0(
+                'f(pool_cyclone_index, pool_cyclone_weight, model=\'iid\', ',
+                'constr=TRUE, hyper=pc_pool_prec)'
+            ),
+            paste0(
+                'f(pool_cots_index, pool_cots_weight, model=\'iid\', ',
+                'constr=TRUE, hyper=pc_pool_prec)'
+            )
+        )
+    }
+    if (
+        isTRUE(candidate$partial_pool) &&
+        identical(
+            as.character(candidate$feature_set),
+            'decomposed_hazards_freshwater'
+        )
+    ) {
+        rhs <- c(rhs, paste0(
+            'f(pool_freshwater_expanded_index, ',
+            'pool_freshwater_expanded_weight, model=\'iid\', ',
+            'constr=TRUE, hyper=pc_pool_prec)'
+        ))
+    }
     as.formula(paste('response ~ -1 +', paste(rhs, collapse = ' + ')))
 }
 
 fit_candidate <- function(analysis, assessment, candidate,
                           compute_criteria = FALSE, seed = 1L) {
-    analysis <- apply_candidate_dhw(analysis, candidate)
+    analysis_candidate <- candidate
+    if (as.character(candidate$lizard_dhw_adjustment) ==
+            'local_update_only') {
+        analysis_candidate$lizard_dhw_adjustment <- 'none'
+    }
+    analysis <- apply_candidate_dhw(analysis, analysis_candidate)
     assessment <- apply_candidate_dhw(assessment, candidate)
     prepared <- prepare_fold(analysis, assessment)
     analysis <- prepared$analysis
@@ -562,7 +748,16 @@ fit_candidate <- function(analysis, assessment, candidate,
         transmute(
             programme_key, source_observation_id, ReefID, ReefName,
             event_year, ann_maxdhw_original, applied_dhw_uplift,
-            ann_maxdhw,
+            ann_maxdhw, correction_source, correction_sd,
+            correction_uncertainty_method,
+            nearest_local_logger_km, effective_local_loggers,
+            local_loggers_used,
+            cyc_interval_maxHrs4mw, cyc_interval_peak_year,
+            tc_interval_min_distance_km, tc_interval_peak_name,
+            tc_interval_wind_distance_index,
+            cot_interval_idw_max, cots_outbreak_probability,
+            wqc_freqcc12, wqc_prior10_percentile, wqc_10yr_sum,
+            log_coastal_rain30,
             observed_mortality = mortality_prop,
             observed_occurrence = as.numeric(mortality_prop > 0),
             predicted_occurrence = occurrence,
@@ -736,7 +931,8 @@ if (identical(Sys.getenv('INLA_ST_RUN'), '1')) {
             c(
                 'pool_acropora_index', 'pool_novelty_index',
                 'pool_freshwater_index', 'pool_cloud_index',
-                'pool_current_index'
+                'pool_current_index', 'pool_cyclone_index',
+                'pool_cots_index', 'pool_freshwater_expanded_index'
             )
         )
         for (pooled_effect in pooled_effects) {
