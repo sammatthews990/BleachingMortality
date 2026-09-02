@@ -1,0 +1,274 @@
+---
+title: 'Can the models recover severe mortality at high DHW?'
+subtitle: 'Event-held-out comparison of the formal benchmark and shape-aware candidates'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+input_dir <- '../../output/shape_aware_models'
+metrics <- read_csv(file.path(input_dir, 'comparison_metrics.csv'), show_col_types = FALSE)
+events <- read_csv(file.path(input_dir, 'event_metrics.csv'), show_col_types = FALSE)
+rows <- read_csv(file.path(input_dir, 'comparison_rows.csv'), show_col_types = FALSE)
+curves <- read_csv(file.path(input_dir, 'production_dose_curves.csv'), show_col_types = FALSE)
+weights <- read_csv(file.path(input_dir, 'shape_production_weights.csv'), show_col_types = FALSE)
+diagnostics <- read_csv(file.path(input_dir, 'shape_brms_diagnostics.csv'), show_col_types = FALSE)
+routes <- read_csv(file.path(input_dir, 'recommended_model_routes.csv'), show_col_types = FALSE)
+
+programme_labels <- c(ltmp = 'LTMP benthic', manta = 'Manta tow', mmp = 'MMP inshore')
+model_labels <- c(
+  benchmark_brms = 'Benchmark BRMS', benchmark_brt = 'Benchmark BRT',
+  benchmark_ensemble = 'Benchmark ensemble', shape_brms = 'Shape-aware BRMS',
+  shape_brt = 'Shape-aware BRT', shape_ensemble = 'Shape-aware ensemble',
+  recommended_route = 'Recommended routed model'
+)
+```
+
+# The candidate being tested
+
+The shape-aware candidate is not a forced 50% mortality rule. It makes four
+specific changes and leaves the existing benchmark untouched:
+
+- proportional Acropora cover is the primary community-susceptibility term;
+- total preceding coral cover replaces the strongly correlated absolute
+  Acropora-cover term;
+- the response can steepen above 8 DHW and the DHW--Acropora interaction enters
+  both mortality occurrence and positive magnitude;
+- event identity is excluded from the ecological mean so it cannot absorb a
+  relationship that must transfer to a future event.
+
+The BRT additionally constrains DHW and proportional Acropora effects to be
+non-decreasing, gives each reef-year equal fitting weight, and tunes against
+overall, event-balanced, and high-DHW errors. The Bayesian model uses
+directional but non-binding ecological priors.
+
+# Recommended production route
+
+No single candidate wins for every observation programme. The recommended
+predictor therefore uses the best event-held-out route for each programme and
+does not ask a tree model to extrapolate beyond the largest DHW in its training
+data.
+
+```{r route-table}
+routes |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    `Within observed DHW support` = model_labels[within_support_model],
+    `Beyond observed DHW support` = model_labels[outside_support_model]
+  ) |>
+  select(
+    Programme, `Within observed DHW support`,
+    `Beyond observed DHW support`, Reason = reason
+  ) |>
+  kable(caption = 'Programme-specific model routing rule')
+```
+
+This promotes the shape-aware ensemble for LTMP within support, retains the
+benchmark for manta tow, and promotes the shape-aware BRMS for MMP. BRMS alone
+is used beyond observed DHW support because boosted trees cannot extrapolate a
+new dose-response slope.
+
+# Held-out predictive performance
+
+```{r overall-table}
+metrics |>
+  filter(learner %in% c(
+    'benchmark_ensemble', 'shape_brms', 'shape_ensemble',
+    'recommended_route'
+  )) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner],
+    across(where(is.numeric), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, Model, n, RMSE = rmse, MAE = mae,
+    `Predictive R2` = predictive_r2,
+    `Observed - predicted` = bias_observed_minus_predicted,
+    `Severe-loss MAE` = severe_mae,
+    `High-DHW MAE` = high_dhw_mae,
+    `High-DHW/Acropora MAE` = high_dhw_high_acropora_mae,
+    `2020/22 MAE` = low_event_mae
+  ) |>
+  arrange(Programme, RMSE) |>
+  kable(caption = 'Leave-one-event-out performance; lower error is better')
+```
+
+Overall RMSE is retained because it measures GBR-wide average error, but it is
+not allowed to hide the severe tail. High-DHW/Acropora rows have at least 10 DHW
+and at least 70% proportional Acropora cover. Positive bias below means the
+model is still underpredicting mortality.
+
+```{r bias-table}
+metrics |>
+  filter(learner %in% c('benchmark_ensemble', 'recommended_route')) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner],
+    across(
+      c(high_dhw_bias, high_dhw_high_acropora_bias, low_event_bias),
+      ~ round(.x, 3)
+    )
+  ) |>
+  select(
+    Programme, Model,
+    `High-DHW observed - predicted` = high_dhw_bias,
+    `High-DHW/Acropora observed - predicted` = high_dhw_high_acropora_bias,
+    `2020/22 observed - predicted` = low_event_bias
+  ) |>
+  kable(caption = 'The high-tail versus low-event calibration trade-off')
+```
+
+```{r event-table}
+events |>
+  filter(learner %in% c('benchmark_ensemble', 'recommended_route')) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner],
+    across(c(observed_mean, predicted_mean, bias_observed_minus_predicted, rmse), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, Model, Event = event_year,
+    `Observed mean` = observed_mean, `Predicted mean` = predicted_mean,
+    `Observed - predicted` = bias_observed_minus_predicted, RMSE = rmse
+  ) |>
+  kable(caption = 'Calibration in each held-out event')
+```
+
+# Does 12 DHW now produce ecologically plausible mortality?
+
+The production curves below use all five events for fitting. "Acropora
+dominated" means 90% proportional Acropora and 55% total pre-event coral cover;
+other attainable predictors are held at programme-specific medians. These are
+scenario predictions, not a replacement for held-out validation.
+
+```{r dhw12-table}
+curves |>
+  filter(
+    abs(ann_maxdhw - 12) < 1e-8,
+    composition == 'Acropora dominated',
+    learner %in% c('benchmark_ensemble', 'shape_brms', 'recommended_route')
+  ) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner],
+    across(c(occurrence, positive, mortality), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, Model,
+    `Mortality occurrence` = occurrence,
+    `Mortality when present` = positive,
+    `Expected mortality` = mortality
+  ) |>
+  arrange(Programme, desc(`Expected mortality`)) |>
+  kable(caption = 'Production response at 12 DHW in an Acropora-dominated community')
+```
+
+```{r dose-curves, fig.width=11, fig.height=8}
+curves |>
+  filter(learner %in% c(
+    'benchmark_ensemble', 'shape_brms', 'recommended_route'
+  )) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner]
+  ) |>
+  ggplot(aes(ann_maxdhw, mortality, colour = Model)) +
+  geom_hline(yintercept = 0.5, colour = 'grey55', linetype = 3) +
+  geom_vline(xintercept = 12, colour = 'grey55', linetype = 3) +
+  geom_line(linewidth = 1) +
+  facet_grid(Programme ~ composition) +
+  scale_colour_manual(values = c(
+    'Benchmark ensemble' = '#4D4D4D',
+    'Shape-aware BRMS' = '#D95F02',
+    'Recommended routed model' = '#1B9E77'
+  )) +
+  scale_y_continuous(labels = percent, limits = c(0, 1)) +
+  labs(
+    x = 'Annual maximum DHW', y = 'Expected coral mortality',
+    colour = NULL,
+    title = 'Composition-specific production dose responses',
+    subtitle = 'Other environmental predictors held at programme medians'
+  ) +
+  theme(legend.position = 'top')
+```
+
+# Where does held-out underprediction remain?
+
+```{r residual-curves, fig.width=11, fig.height=7}
+rows |>
+  filter(learner %in% c('benchmark_ensemble', 'recommended_route')) |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    Model = model_labels[learner]
+  ) |>
+  ggplot(aes(ann_maxdhw, residual, colour = Model)) +
+  geom_hline(yintercept = 0, colour = 'grey40') +
+  geom_point(alpha = 0.22, size = 1) +
+  geom_smooth(method = 'loess', se = TRUE, linewidth = 0.9) +
+  facet_grid(Programme ~ event_year) +
+  scale_colour_manual(values = c(
+    'Benchmark ensemble' = '#4D4D4D',
+    'Recommended routed model' = '#1B9E77'
+  )) +
+  labs(
+    x = 'Annual maximum DHW',
+    y = 'Observed - predicted mortality', colour = NULL,
+    title = 'Event-held-out residuals across thermal stress',
+    subtitle = 'Positive values indicate underprediction'
+  ) +
+  theme(legend.position = 'top')
+```
+
+# Ensemble and sampling diagnostics
+
+```{r weights}
+weights |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    across(c(weight_brms, weight_brt), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, n,
+    `Shape-aware BRMS weight` = weight_brms,
+    `Shape-aware BRT weight` = weight_brt
+  ) |>
+  kable(caption = 'Candidate production weights estimated from event-held-out predictions')
+```
+
+```{r diagnostics}
+diagnostics |>
+  mutate(
+    Programme = programme_labels[programme_key],
+    across(c(max_rhat, min_bulk_ess, min_tail_ess), ~ round(.x, 3))
+  ) |>
+  select(
+    Programme, Event = fold,
+    `Maximum R-hat` = max_rhat,
+    `Minimum bulk ESS` = min_bulk_ess,
+    `Minimum tail ESS` = min_tail_ess,
+    Divergences = divergences,
+    `Tree-depth hits` = max_treedepth_hits
+  ) |>
+  kable(caption = 'Shape-aware BRMS sampling diagnostics')
+```
+
+Promotion requires more than producing a steeper curve. The candidate must
+improve held-out high-DHW and severe-loss calibration, retain acceptable
+overall error, avoid inflating the low-mortality 2020/22 events, and pass all
+sampling diagnostics. Any failure remains visible rather than being averaged
+away by the production scenario.

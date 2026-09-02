@@ -1,0 +1,296 @@
+---
+title: "Independent BRT and environmental-envelope ensemble assessment"
+subtitle: "Operational mortality prediction and within-event interpolation"
+format:
+  html:
+    toc: true
+    toc-location: left
+    number-sections: true
+    embed-resources: false
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(readr)
+  library(knitr)
+})
+source('../../src/lib/model_registry.R')
+root <- project_root()
+out_dir <- file.path(root, 'output', 'standalone_brt_envelope_ensemble')
+comparison <- read_csv(file.path(out_dir, 'model_comparison.csv'), show_col_types = FALSE)
+event_metrics <- read_csv(file.path(out_dir, 'event_metrics.csv'), show_col_types = FALSE)
+envelope_metrics <- read_csv(file.path(out_dir, 'envelope_metrics.csv'), show_col_types = FALSE)
+promotion <- read_csv(file.path(out_dir, 'promotion_assessment.csv'), show_col_types = FALSE)
+screen <- read_csv(file.path(out_dir, 'collinearity_screen.csv'), show_col_types = FALSE)
+tuning <- read_csv(file.path(out_dir, 'nested_tuning.csv'), show_col_types = FALSE)
+fig_dir <- file.path(root, 'output', 'fig')
+include_figure <- function(id) {
+  match <- list.files(fig_dir, pattern = paste0('^', id, '.*[.]png$'), full.names = TRUE)
+  if (!length(match)) cat('*Figure has not yet been generated.*\n')
+  else cat(sprintf('![](../../output/fig/%s)\n', basename(match[[1]])))
+}
+round_table <- function(x) mutate(x, across(where(is.numeric), ~round(.x, 4)))
+```
+
+## Purpose
+
+This assessment implements the intended machine-learning comparison: a BRT
+fitted independently to the full operational predictor set. It is distinct
+from the earlier **residual BRT**, which attempted only to correct errors left
+after fitting INLA. The independent BRT can compete directly with INLA and can
+be blended with it without treating the INLA prediction as a required input.
+
+The primary question is prospective: can the BRT predict a bleaching event not
+represented during training? Reef-blocked validation is retained as a
+secondary test of spatial interpolation within event states already represented.
+
+## Models
+
+### Selected INLA reference
+
+The reference is the selected cause-aware INLA composite. It estimates a
+two-part thermal/freshwater response with partially pooled programme layers,
+then combines separate cyclone and COTS hazards on the mortality scale. It uses
+local-first DHW and the current prospective COTS state.
+
+### Direct standalone BRT
+
+For mortality proportion $M_i$ and operational predictors $\mathbf X_i$:
+
+$$
+\widehat M_i^{\mathrm{BRT}}=
+\mathrm{clip}_{[0,1]}\{f_{\mathrm{GBM}}(\mathbf X_i)\}.
+$$
+
+The Gaussian-loss tree fit reproduces the direct-mortality BRT approach used in
+the earlier work. Clipping is applied only when converting output to a valid
+mortality proportion.
+
+### Two-part standalone BRT
+
+The occurrence/magnitude sensitivity separates zero loss from positive loss:
+
+$$
+\widehat M_i^{\mathrm{2BRT}}=\widehat p_i\widehat\mu_i,
+\qquad
+\widehat p_i=f_{\mathrm{Bernoulli}}(\mathbf X_i),
+\qquad
+\operatorname{logit}(\widehat\mu_i)=
+f_{\mathrm{Gaussian}}(\mathbf X_i\mid M_i>0).
+$$
+
+This can lower the mortality floor, but can compound underprediction when both
+occurrence and positive magnitude are conservative.
+
+## Predictor contract and complementarity
+
+Both BRTs receive the same forecastable information: local-first DHW,
+pre-event Acropora and starting cover, heat history and novelty, Secchi, cloud,
+current speed, SST skewness, rainfall, coloured water, calm winds, cyclone
+exposures, COTS pressure/history, NOAA disease risk, depth, programme and
+region. Event identity is excluded.
+
+The Spearman screen is fixed before fitting and uses no mortality values.
+Disease applicability is removed because it is effectively a duplicate of
+disease risk. SST kurtosis and median chlorophyll are not restored because the
+preceding complementarity assessment retained SST skewness and Secchi as the
+less redundant representatives.
+
+```{r}
+screen |>
+  transmute(
+    Predictor = predictor,
+    Retained = retained,
+    `Closest earlier predictor` = competing_predictor,
+    `Absolute Spearman correlation` = round(absolute_correlation, 3)
+  ) |>
+  kable(caption = 'Outcome-free predictor collinearity screen used by both BRTs.')
+```
+
+## Validation and tuning
+
+Interaction depth is tuned inside every outer fold. The primary folds hold out
+2016, 2017, 2020, 2022 or 2024 in turn. The secondary design holds out reefs in
+five spatially balanced groups. Reef-event and programme weights prevent repeat
+observations or a single programme from dominating the fit.
+
+```{r}
+tuning |>
+  filter(selected_two_part | selected_direct) |>
+  select(scheme, fold, setting_id, depth, selected_two_part, selected_direct,
+         inner_rmse, direct_inner_rmse) |>
+  round_table() |>
+  kable(caption = 'Nested tuning choices in each outer validation fold.')
+```
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-01_validation')
+```
+
+```{r}
+comparison |>
+  filter(candidate %in% c(
+    'INLA explicit hazards', 'Standalone direct BRT',
+    'Standalone two-part BRT', 'Direct smooth 50% ensemble',
+    'Direct applicability champion'
+  )) |>
+  select(candidate, scheme, rmse, predictive_r2, severe_rmse,
+         occurrence_brier, false_extreme_rate, mean_bias) |>
+  round_table() |>
+  kable(caption = 'Matched validation of the reference, independent BRTs and leading envelope blends.')
+```
+
+The direct BRT improves reef-blocked RMSE from 0.1396 to 0.1354, and the direct
+applicability blend reaches 0.1282. However, direct-BRT leave-one-event-out RMSE
+is 0.1799 versus 0.1485 for INLA, while severe RMSE is 0.4650 versus 0.3267.
+The direct BRT therefore learns useful interpolation within represented events
+but does not transfer safely to a new event.
+
+## Environmental-envelope ensemble
+
+The ensemble gate is calculated separately within every training fold and is
+independent of mortality. Numeric predictors are imputed with training
+medians, standardised, projected onto whitened principal components retaining
+90% of predictor variance (maximum eight), and scored by mean distance to the
+ten nearest training neighbours. The nominal envelope is the 95th percentile
+of training-neighbour distance with a penalty for predictors outside training
+ranges.
+
+Three pre-specified weights are evaluated:
+
+$$
+\widehat M_i^{\mathrm{ens}}=
+w_i\widehat M_i^{\mathrm{BRT}}+(1-w_i)\widehat M_i^{\mathrm{INLA}},
+$$
+
+where $w_i$ is a hard inside-envelope indicator, half the smooth applicability
+score, or the full applicability score. The gate never sees the outcome or
+which model happened to have the smaller error.
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-03_envelope_performance')
+```
+
+The proposed inside-envelope preference is not supported for a new-event
+forecast. Among event-held-out rows inside the envelope, INLA RMSE is 0.1354
+compared with 0.1692 for the direct BRT. Represented covariate space does not
+guarantee representation of the event-level mortality process.
+
+```{r}
+envelope_metrics |>
+  filter(candidate %in% c(
+    'INLA explicit hazards', 'Standalone direct BRT',
+    'Standalone two-part BRT'
+  )) |>
+  select(candidate, scheme, domain, n, rmse, predictive_r2, severe_rmse) |>
+  round_table() |>
+  kable(caption = 'Performance inside and outside each training-fold environmental envelope.')
+```
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-05_local_competence')
+```
+
+## Event transfer and calibration
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-02_event_transfer')
+```
+
+The direct BRT is the stronger independent BRT, but it loses substantial skill
+when 2017 or 2024 is absent from training. The two-part model gives lower RMSE
+than INLA in 2020 and 2022 by suppressing the low-mortality floor, but then
+underpredicts the severe 2024 magnitude. This is the trade-off that aggregate
+reef-blocked validation hides.
+
+```{r}
+event_metrics |>
+  filter(candidate %in% c(
+    'INLA explicit hazards', 'Standalone direct BRT',
+    'Standalone two-part BRT', 'Direct smooth 50% ensemble'
+  )) |>
+  select(candidate, event_year, rmse, predictive_r2, severe_rmse,
+         false_extreme_rate, mean_bias) |>
+  round_table() |>
+  kable(caption = 'Leave-one-event-out performance by held-out bleaching event.')
+```
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-04_calibration')
+```
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-08_severe_controls')
+```
+
+## Model inspection
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-06_variable_importance')
+```
+
+The full-data direct BRT is led by local-first DHW, Acropora, DHW novelty and
+starting cover. Cyclone wind-distance, cloud, rainfall and damaging-wave hours
+also receive material influence. Importance is descriptive: it can be shared
+among related variables and does not override held-out validation.
+
+```{r}
+#| results: asis
+include_figure('Fig-FULLBRT-07_bootstrap_pdp')
+```
+
+The ribbons are 95% reef-event cluster-bootstrap intervals from 25 complete
+refits. They show stability of marginal curves, not prediction intervals or
+causal effects.
+
+## Promotion decision
+
+```{r}
+promotion |>
+  select(candidate, rmse, severe_rmse, reef_rmse,
+         max_lanina_rmse_increase, false_extremes_safe,
+         reef_transfer_safe, lanina_safe, passes) |>
+  round_table() |>
+  kable(caption = 'Pre-specified promotion safeguards for standalone and ensemble candidates.')
+```
+
+No BRT or ensemble passes. The initial-forecast model remains
+`operational_rrn_raw_plus_manta_state`. This does not imply that INLA is
+universally better. The BRT interpolation gains are useful after the event
+state is represented, but they do not transfer to a genuinely unseen event.
+
+Operational roles are therefore separated:
+
+- **Initial forecast:** selected cause-aware INLA composite.
+- **Within-event spatial interpolation or sensitivity:** independent direct
+  BRT and applicability blend, after a spatially independent update is
+  validated.
+- **Occurrence-floor research:** two-part BRT, retained as a sensitivity for
+  low-mortality 2020/2022 states.
+- **Mechanism inspection:** full-data importance and bootstrap partial
+  dependence from both BRT formulations.
+
+## Most important next steps
+
+{{< include ../../docs/model-next-steps.md >}}
+
+## Reproducibility
+
+The pipeline is in `src/models/fit_standalone_brt_envelope_ensemble.R`.
+Machine-readable predictions, tuning, collinearity decisions, metrics,
+promotion tests and full fits are stored under
+`output/standalone_brt_envelope_ensemble/`. Publication PNG, PDF and plotted
+data are stored under `output/fig/`.

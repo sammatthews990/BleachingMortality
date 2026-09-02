@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from scripts.extract_ereefs_salinity import summarise_salinity
+from src.data.extract_ereefs_salinity import summarise_salinity
 
 
 class EReefsSalinityTests(unittest.TestCase):

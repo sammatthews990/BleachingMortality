@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from scripts.extract_ereefs_wind import summarise_wind_matrix
+from src.data.extract_ereefs_wind import summarise_wind_matrix
 
 
 class EreefsWindTests(unittest.TestCase):

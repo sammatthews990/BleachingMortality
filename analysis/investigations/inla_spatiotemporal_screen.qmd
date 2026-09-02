@@ -1,0 +1,539 @@
+---
+title: 'INLA spatial and spatio-temporal mortality screen'
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+out <- '../../output/inla_spatiotemporal'
+comparison <- read_csv(file.path(out, 'model_comparison.csv'), show_col_types = FALSE)
+predictions <- read_csv(file.path(out, 'cv_predictions.csv'), show_col_types = FALSE)
+fixed <- read_csv(file.path(out, 'full_fixed_effects.csv'), show_col_types = FALSE)
+hyper <- read_csv(file.path(out, 'full_hyperparameters.csv'), show_col_types = FALSE)
+slopes <- read_csv(file.path(out, 'temporal_dhw_slopes.csv'), show_col_types = FALSE)
+fields <- read_csv(file.path(out, 'spatial_field_nodes.csv'), show_col_types = FALSE)
+deviations <- read_csv(
+  file.path(out, 'partial_pool_deviations.csv'), show_col_types = FALSE
+)
+mesh_summary <- read_csv(file.path(out, 'mesh_summary.csv'), show_col_types = FALSE)
+
+candidate_labels <- c(
+  nonspatial = 'No spatial field',
+  persistent_spatial = 'Persistent spatial field',
+  event_spatial_iid = 'Event fields: independent',
+  event_spatial_ar1 = 'Event fields: AR1',
+  persistent_plus_dhw_rw1 = 'Persistent field + varying DHW slope',
+  persistent_rw1_current = 'Add current speed',
+  persistent_rw1_current_sst_chla = 'Add current + SST shape + Chl-a',
+  persistent_rw1_full_partial_pool = 'Full features + partial pooling'
+)
+scheme_labels <- c(
+  reef_blocked_5fold = 'New reefs within observed events',
+  leave_one_event_out = 'Entire event held out'
+)
+programme_labels <- c(ltmp = 'LTMP', manta = 'Manta tow', mmp = 'MMP')
+theme_set(theme_minimal(base_size = 12))
+
+all_metrics <- comparison |>
+  mutate(
+    Model = factor(recode(candidate, !!!candidate_labels),
+                   levels = unname(candidate_labels)),
+    Validation = recode(scheme, !!!scheme_labels)
+  )
+
+event_summary <- predictions |>
+  group_by(candidate, scheme, event_year) |>
+  summarise(
+    n = n(),
+    observed_mean = mean(observed_mortality),
+    predicted_mean = mean(predicted_mortality),
+    rmse = sqrt(mean((observed_mortality - predicted_mortality)^2)),
+    predictive_r2 = 1 -
+      sum((observed_mortality - predicted_mortality)^2) /
+      sum((observed_mortality - mean(observed_mortality))^2),
+    severe_n = sum(observed_mortality >= 0.50),
+    severe_observed = if_else(
+      severe_n > 0,
+      mean(observed_mortality[observed_mortality >= 0.50]), NA_real_
+    ),
+    severe_predicted = if_else(
+      severe_n > 0,
+      mean(predicted_mortality[observed_mortality >= 0.50]), NA_real_
+    ),
+    .groups = 'drop'
+  )
+```
+
+## Decision
+
+Use **INLA as the main bounded-response driver**, with a Bernoulli model for
+whether mortality occurred and a conditional beta model for positive
+mortality. Carry the persistent spatial field into the operational GBR model.
+It improves prediction at unsurveyed reefs and can represent persistent
+unmeasured susceptibility or buffering.
+
+Keep independent event-specific spatial fields as a diagnostic and nowcasting
+extension. They are marginally better when other reefs from the same event are
+available, but their latent event surface is not known before mortality data
+arrive. The AR1 event field should not be the default: the estimated correlation
+between adjacent event surfaces is negative, and the five events are unevenly
+spaced in time.
+
+Restore current speed to the operational ecological core and carry summer SST
+skewness, summer excess kurtosis and wet-season median chlorophyll as a grouped,
+regularised candidate. Together they improve pooled reef-blocked RMSE to 13.9%
+and predictive R2 to 38.4%. Partially pooling the five prespecified DHW
+interactions improves these further to 13.7% and 40.5%. Individual coefficients
+remain uncertain and held-event gains vary among programmes, so predictions
+take precedence over single-coefficient claims.
+
+The time-varying DHW response is worth retaining as a sensitivity, but it does
+not currently demonstrate adaptation. Its event deviations and the direct
+DHW-by-repeat-exposure interaction remain uncertain. Repeat exposure could
+also represent acclimatisation, community filtering, selective mortality or
+changes in observation coverage.
+
+## What was fitted
+
+The screen uses 537 observations, 139 reefs, 304 reef-events and five mass
+bleaching events (2016, 2017, 2020, 2022 and 2024). Six likelihood columns are
+fitted jointly: occurrence and positive magnitude for LTMP, Manta tow and MMP.
+Programme/component intercepts and beta precisions differ, while the ecological
+coefficients and latent reef-event, event and spatial effects are shared.
+
+This is a deliberately strong shared-response screen. The formal model should
+estimate programme/component calibration loadings rather than assume every
+layer has exactly the same logit-scale response. Predictions in this screen
+multiply the posterior marginal means for occurrence and magnitude. Posterior
+sampling should be used for the final expected mortality and uncertainty maps.
+
+| Candidate | Scientific role | Operational use |
+|---|---|---|
+| No spatial field | Baseline joint bounded model | Yes |
+| Persistent spatial field | Stable reef-scale susceptibility/refugia | Yes |
+| Independent event fields | Event-specific residual geography | With partial event surveys |
+| AR1 event fields | Temporal borrowing between event surfaces | Sensitivity only |
+| Persistent field + varying DHW slope | Changing thermal response across events | Yes, if validated |
+| Add current speed | Hydrodynamic buffering and DHW modification | Yes; 2024 partly climatological |
+| Add current, SST shape and Chl-a | Thermal trajectory and productivity candidate | Carry into formal partial pooling |
+| Full features with partial pooling | Layer deviations for five DHW interactions | Preferred within-event mapping candidate |
+
+The mesh has `r mesh_summary$nodes` nodes. Its PC prior assigns 50% probability
+that the spatial range is below 200 km and 5% probability that latent-field
+standard deviation exceeds 0.7 on the shared linear predictor.
+
+## Predictive comparison
+
+```{r}
+all_metrics |>
+  ggplot(aes(rmse, Model, colour = Validation)) +
+  geom_point(size = 3) +
+  scale_x_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    x = 'Cross-validated RMSE', y = NULL, colour = NULL,
+    title = 'Spatial fields improve transfer to new reefs',
+    subtitle = 'Holding out an entire event remains a substantially harder task'
+  )
+```
+
+```{r}
+comparison |>
+  select(candidate, scheme, rmse, predictive_r2, bias,
+         severe_observed, severe_predicted, severe_rmse,
+         false_extreme_rate) |>
+  mutate(
+    candidate = recode(candidate, !!!candidate_labels),
+    scheme = recode(scheme, !!!scheme_labels),
+    across(c(rmse, bias, severe_observed, severe_predicted,
+             severe_rmse, false_extreme_rate), percent, accuracy = 0.1),
+    predictive_r2 = number(predictive_r2, accuracy = 0.01)
+  ) |>
+  rename(
+    Model = candidate, Validation = scheme, RMSE = rmse,
+    `Predictive R2` = predictive_r2, Bias = bias,
+    `Severe observed` = severe_observed,
+    `Severe predicted` = severe_predicted,
+    `Severe RMSE` = severe_rmse,
+    `False extreme rate` = false_extreme_rate
+  ) |>
+  arrange(Validation, RMSE) |>
+  kable()
+```
+
+For new reefs within known events, the non-spatial model explains 24.8% of
+held-out variation. Spatial candidates explain 31.1% to 33.2%, with RMSE
+falling from 15.4% to about 14.5%. The independent event field is the narrow
+winner, but the persistent field is operationally preferable because it can be
+projected before event mortality observations exist.
+
+All candidates have negative predictive R2 when a whole event is omitted. This
+is a warning about extrapolating across only five heterogeneous events, not a
+reason to abandon the bounded model. The persistent field plus varying DHW
+slope has the lowest held-event RMSE (21.2%, versus 22.3% without a spatial
+field), but the difference is small.
+
+## Restored current and SST-shape features
+
+The feature comparison holds the selected latent structure fixed: a persistent
+spatial field and event-varying DHW slope. It therefore tests added information,
+not a change in spatial complexity.
+
+```{r}
+feature_candidates <- c(
+  'persistent_plus_dhw_rw1',
+  'persistent_rw1_current',
+  'persistent_rw1_current_sst_chla',
+  'persistent_rw1_full_partial_pool'
+)
+
+comparison |>
+  filter(candidate %in% feature_candidates) |>
+  mutate(
+    Model = factor(recode(candidate, !!!candidate_labels),
+                   levels = unname(candidate_labels[feature_candidates])),
+    Validation = recode(scheme, !!!scheme_labels)
+  ) |>
+  ggplot(aes(Model, rmse, colour = Validation, group = Validation)) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    x = NULL, y = 'Cross-validated RMSE', colour = NULL,
+    title = 'Current speed and SST-shape features improve pooled prediction'
+  ) +
+  theme(axis.text.x = element_text(angle = 22, hjust = 1))
+```
+
+Current speed reduces pooled reef-blocked RMSE from 14.6% to 14.2% and
+leave-event-out RMSE from 21.2% to 20.2%. Adding SST skewness, excess kurtosis
+and wet-season Chl-a reduces them further to 13.9% and 19.8%. Pooled
+reef-blocked predictive R2 rises from 32.7% to 38.4%. Partial pooling reaches
+13.7% RMSE and 40.5% predictive R2, while leave-event-out RMSE is 20.1%--a
+small loss relative to the completely shared full-feature model.
+
+```{r}
+programme_feature <- read_csv(
+  file.path(out, 'cv_metrics.csv'), show_col_types = FALSE
+) |>
+  filter(
+    candidate %in% feature_candidates,
+    programme_key != 'all'
+  ) |>
+  mutate(
+    Model = factor(recode(candidate, !!!candidate_labels),
+                   levels = unname(candidate_labels[feature_candidates])),
+    Programme = recode(programme_key, !!!programme_labels),
+    Validation = recode(scheme, !!!scheme_labels)
+  )
+
+programme_feature |>
+  ggplot(aes(Model, rmse, colour = Validation, group = Validation)) +
+  geom_line() +
+  geom_point(size = 2.4) +
+  facet_wrap(~Programme) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = NULL, y = 'Cross-validated RMSE', colour = NULL,
+    title = 'The feature gain is programme dependent',
+    subtitle = 'MMP improves at new reefs but worsens when an entire event is held out'
+  ) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+
+The shared full-feature candidate improves reef-blocked R2 to 40.9% for LTMP
+and 25.7% for MMP, while Manta is essentially unchanged near 40%. Partial
+pooling raises these to 45.7%, 26.9% and 40.3%, respectively. Under
+leave-event-out validation partial pooling improves MMP relative to the shared
+full model but is slightly worse for LTMP and Manta. This is a genuine mapping
+versus future-event trade-off, not a universal winner.
+
+```{r}
+feature_term_labels <- c(
+  mcur_90_z = 'Current speed',
+  dhw_x_current = 'DHW x current speed',
+  sst_summer_skewness_z = 'Summer SST skewness',
+  sst_summer_excess_kurtosis_z = 'Summer SST excess kurtosis',
+  chla_wetseason_median_z = 'Wet-season median Chl-a'
+)
+
+fixed |>
+  filter(
+    candidate == 'persistent_rw1_current_sst_chla',
+    term %in% names(feature_term_labels)
+  ) |>
+  mutate(
+    Term = factor(recode(term, !!!feature_term_labels),
+                  levels = rev(unname(feature_term_labels))),
+    lower = .data[['0.025quant']],
+    upper = .data[['0.975quant']]
+  ) |>
+  ggplot(aes(mean, Term)) +
+  geom_vline(xintercept = 0, colour = 'grey55') +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.18) +
+  geom_point(size = 2.5, colour = '#2C7FB8') +
+  labs(
+    x = 'Shared standardised logit-scale coefficient', y = NULL,
+    title = 'Feature group improves prediction without a decisive single coefficient'
+  )
+```
+
+The current-speed main effect and DHW interaction are negative, consistent
+with hydrodynamic buffering, but their 95% intervals narrowly include zero.
+Excess kurtosis has the strongest new thermal-shape coefficient; skewness and
+Chl-a are more uncertain. Because summer skewness and kurtosis are strongly
+correlated, these coefficients should not be interpreted independently.
+
+All 537 mortality rows contain current speed. The post-January 2024 eReefs
+values were completed with a reef climatology, so 2024 current speed primarily
+represents persistent exposure rather than the full event anomaly. SST-shape
+and Chl-a cover 304 of 306 distinct joint reef-event keys; Mackay Reef in 2016
+and 2024 is imputed from each analysis fold.
+
+## What partial pooling changed
+
+The agreed interactions for Acropora, novelty, freshwater/coloured water,
+cloud and current retain a common ecological coefficient. Each also receives
+six zero-centred deviations: occurrence and positive magnitude for LTMP, Manta
+and MMP. A PC prior shrinks unnecessary deviations back toward the common
+response.
+
+```{r}
+deviation_labels <- c(
+  acropora = 'DHW x Acropora',
+  novelty = 'DHW x novelty',
+  freshwater = 'DHW x freshwater',
+  cloud = 'DHW x cloud',
+  current = 'DHW x current speed'
+)
+
+deviations |>
+  mutate(
+    Interaction = factor(
+      recode(interaction, !!!deviation_labels),
+      levels = rev(unname(deviation_labels))
+    ),
+    Programme = recode(programme_key, !!!programme_labels),
+    Component = recode(
+      component, occurrence = 'Occurrence', magnitude = 'Positive magnitude'
+    ),
+    lower = .data[['0.025quant']],
+    upper = .data[['0.975quant']]
+  ) |>
+  ggplot(aes(mean, Interaction, colour = Programme, shape = Component)) +
+  geom_vline(xintercept = 0, colour = 'grey60') +
+  geom_errorbarh(
+    aes(xmin = lower, xmax = upper), height = 0,
+    position = position_dodge(width = 0.6), alpha = 0.55
+  ) +
+  geom_point(position = position_dodge(width = 0.6), size = 2) +
+  labs(
+    x = 'Deviation from shared interaction', y = NULL,
+    colour = NULL, shape = NULL,
+    title = 'Most observation-layer interaction deviations shrink toward zero'
+  )
+```
+
+Most layer deviations are small and uncertain, supporting substantial sharing.
+The clearest exception is a more negative novelty effect in MMP positive
+mortality, while LTMP occurrence tends in the opposite direction. This is
+consistent with allowing limited programme/component flexibility rather than
+fitting unrelated ecological models.
+
+Partial pooling raises the reef-blocked severe-case mean prediction from 33.1%
+to 35.4% and reduces severe RMSE from 34.4% to 33.1%. The observed severe mean
+is still 61.7%, so the severe-tail learner remains necessary.
+
+## Severe mortality remains the key miss
+
+```{r}
+all_metrics |>
+  filter(scheme == 'reef_blocked_5fold') |>
+  ggplot(aes(Model, severe_predicted)) +
+  geom_hline(aes(yintercept = severe_observed), linetype = 2,
+             colour = 'grey35') +
+  geom_col(fill = '#2C7FB8') +
+  scale_y_continuous(labels = percent, limits = c(0, 0.70)) +
+  labs(
+    x = NULL, y = 'Mean mortality among observations >=50%',
+    title = 'Spatial structure helps, but severe mortality is still underpredicted',
+    subtitle = 'Dashed line is the observed severe-case mean (61.7%)'
+  ) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+
+The persistent field raises the severe-case mean prediction from 26.3% to
+30.5%; the varying-slope version reaches 31.0%. This remains far below the
+observed 61.7%. Spatial effects therefore recover structured residual risk but
+do not replace the planned severe-tail component or the nonlinear BRT expert.
+
+For 2024 reef-blocked predictions, spatial models improve predictive R2 from
+13.7% to 26.5--28.2%. Nevertheless, the 23 observations above 50% mortality
+average 62.3% observed and only about 33% predicted. When 2024 is completely
+held out, the persistent varying-slope model predicts the overall event mean
+slightly high (21.3% versus 17.6%) while still underpredicting its severe cases
+(40.0% versus 62.3%). Mean calibration can therefore conceal failure in the
+upper tail.
+
+```{r}
+event_summary |>
+  filter(event_year == 2024) |>
+  mutate(
+    Model = recode(candidate, !!!candidate_labels),
+    Validation = recode(scheme, !!!scheme_labels)
+  ) |>
+  select(Model, Validation, n, observed_mean, predicted_mean,
+         rmse, predictive_r2, severe_n, severe_observed, severe_predicted) |>
+  mutate(
+    across(c(observed_mean, predicted_mean, rmse,
+             severe_observed, severe_predicted), percent, accuracy = 0.1),
+    predictive_r2 = number(predictive_r2, accuracy = 0.01)
+  ) |>
+  rename(
+    N = n, `Observed mean` = observed_mean,
+    `Predicted mean` = predicted_mean, RMSE = rmse,
+    `Predictive R2` = predictive_r2, `Severe N` = severe_n,
+    `Severe observed` = severe_observed,
+    `Severe predicted` = severe_predicted
+  ) |>
+  arrange(Validation, RMSE) |>
+  kable()
+```
+
+## Spatial signal
+
+The persistent field has a posterior median range of about 223 km, but its 95%
+interval is wide (39--1106 km). Its latent standard deviation is about 0.65
+(0.28--1.42). This is meaningful residual spatial structure, but the range is
+not yet sharply identified by 139 irregularly sampled reefs.
+
+```{r}
+fields |>
+  filter(candidate == 'persistent_spatial') |>
+  ggplot(aes(x_km, y_km, colour = mean)) +
+  geom_point(size = 2.1) +
+  coord_equal() +
+  scale_colour_gradient2(
+    low = '#2166AC', mid = 'white', high = '#B2182B', midpoint = 0
+  ) +
+  labs(
+    x = 'Easting (km)', y = 'Northing (km)', colour = 'Latent effect',
+    title = 'Persistent residual mortality field',
+    subtitle = 'Red: higher mortality than measured covariates explain; blue: buffering'
+  )
+```
+
+The field is a hypothesis generator, not a causal map. Persistent negative
+areas may point to cooling, upwelling, exposure or community features not yet
+represented. Positive areas may identify persistent freshwater, cyclone,
+COTS, composition or survey-process gaps. Field uncertainty and distance from
+observed reefs must accompany any GBR-wide projection.
+
+## Event-specific geography
+
+```{r}
+fields |>
+  filter(candidate == 'event_spatial_ar1') |>
+  ggplot(aes(x_km, y_km, colour = mean)) +
+  geom_point(size = 1.25) +
+  coord_equal() +
+  facet_wrap(~event_year, ncol = 3) +
+  scale_colour_gradient2(
+    low = '#2166AC', mid = 'white', high = '#B2182B', midpoint = 0
+  ) +
+  labs(
+    x = 'Easting (km)', y = 'Northing (km)', colour = 'Latent effect',
+    title = 'Event-specific residual fields',
+    subtitle = 'Useful for diagnosing event geography after some observations are available'
+  )
+```
+
+The AR1 event field has median spatial range near 138 km and latent standard
+deviation near 0.74. Its adjacent-event correlation is -0.49, with a 95%
+interval from -0.80 to approximately zero. That is evidence against treating
+the five observed event surfaces as a smoothly persistent temporal process.
+Independent event fields are simpler and slightly better under reef-blocked
+validation. They are suitable for retrospective inference or updating a map
+as event observations arrive, but not as an unobserved pre-survey correction.
+
+## Repeat exposure and a changing DHW relationship
+
+```{r}
+slopes |>
+  filter(candidate == 'persistent_rw1_full_partial_pool') |>
+  mutate(
+    lower = .data[['0.025quant']],
+    upper = .data[['0.975quant']]
+  ) |>
+  ggplot(aes(event_year, mean)) +
+  geom_hline(yintercept = 0, colour = 'grey50') +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.18,
+              fill = '#2C7FB8') +
+  geom_line(colour = '#2C7FB8') +
+  geom_point(size = 2.5, colour = '#2C7FB8') +
+  scale_x_continuous(breaks = unique(slopes$event_year)) +
+  labs(
+    x = 'Bleaching event', y = 'Event deviation in DHW slope',
+    title = 'No event-specific DHW slope is clearly different from zero',
+    subtitle = 'Full feature model; deviations are shared across occurrence, magnitude and programmes'
+  )
+```
+
+The posterior means decline across the sequence, but every 95% interval crosses
+zero. The direct DHW-by-number-of-events interaction is also centred close to
+zero in all candidates. This screen therefore does not establish adaptation.
+With only four reefs observed in all five events and 46 reefs observed in only
+one, the distinction between within-reef change and changing spatial/community
+composition is weak.
+
+The adaptation question is better tested in the next model by separating:
+
+1. within-reef repeat exposure and years since damaging exposure;
+2. between-reef historical exposure;
+3. event-specific environmental severity and composition;
+4. persistent reef susceptibility; and
+5. observation-programme calibration.
+
+A continuous-time temporal model is preferable if enough events become
+available. In this screen, AR1 groups are adjacent event positions, not equal
+calendar intervals.
+
+## Recommended formal INLA model
+
+1. Keep the Bernoulli occurrence and conditional beta magnitude layers, with
+   exact boundary handling and programme-specific intercepts and precision.
+2. Restore current speed and its DHW interaction to the ecological core. Carry
+   summer SST skewness, excess kurtosis and wet-season Chl-a as a jointly
+   regularised feature group.
+3. Use the persistent SPDE field in the operational model. Compare it with an
+   independent event-field update when partial event data are available.
+4. Retain repeat exposure, recovery interval and their DHW interactions as
+   explicit hypotheses. Keep the RW1 event-varying DHW slope as a sensitivity,
+   not an adaptation result.
+5. Add programme/component calibration loadings and partially pooled feature
+   slopes around the shared ecological response instead of forcing unit
+   loadings.
+6. Add the severe-tail expert and nonlinear BRT to the same nested validation
+   workflow. Spatial INLA improves broad prediction but leaves the main extreme
+   deficit intact.
+7. Rank models primarily by reef-blocked, forward-event and leave-event-out
+   prediction. Report WAIC, DIC, marginal likelihood and CPO as secondary
+   within-likelihood diagnostics.
+8. Generate GBR-wide posterior samples so occurrence, positive magnitude,
+   spatial uncertainty and ensemble uncertainty are propagated jointly.
+
+The operational deliverable should expose two maps: a pre-survey forecast using
+measured covariates plus the persistent field, and an optional event-updated map
+that learns an event-specific field from the first available mortality surveys.

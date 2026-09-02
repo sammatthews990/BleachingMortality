@@ -1,0 +1,471 @@
+---
+title: INLA severe-tail, WQC and Lizard logger assessment
+subtitle: Blocked predictive validation for GBR bleaching mortality
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+theme_set(theme_minimal(base_size = 12))
+model_colours <- c(
+  'INLA only' = '#1f4e79',
+  'Conservative tail (0.5 gate)' = '#d97706',
+  'Soft-gated tail' = '#b91c1c'
+)
+
+pred <- read_csv('../../output/inla_severe_tail/cv_predictions.csv', show_col_types = FALSE)
+metrics <- read_csv('../../output/inla_severe_tail/metrics.csv', show_col_types = FALSE)
+events <- read_csv('../../output/inla_severe_tail/event_metrics.csv', show_col_types = FALSE)
+influence <- read_csv('../../output/inla_severe_tail/production_influence.csv', show_col_types = FALSE)
+inla_fixed <- read_csv('../../output/inla_spatiotemporal/full_fixed_effects.csv', show_col_types = FALSE)
+logger <- read_csv('../data/processed/lizard_cluster_logger_noaa_daily_2024.csv', show_col_types = FALSE)
+logger_summary <- read_csv('../data/processed/lizard_cluster_logger_noaa_summary_2024.csv', show_col_types = FALSE)
+logger_monthly <- read_csv('../data/processed/lizard_cluster_logger_noaa_monthly_2024.csv', show_col_types = FALSE)
+logger_dhw <- read_csv('../data/processed/lizard_cluster_logger_dhw_uplift_2024.csv', show_col_types = FALSE)
+cyclone <- read_csv('../data/processed/bom_cyclone_reef_year.csv', show_col_types = FALSE)
+reef_event <- read_csv('../../output/inla_severe_tail/reef_event_predictions.csv', show_col_types = FALSE)
+miss_registry <- read_csv('../data/curated/extreme_miss_explanations.csv', show_col_types = FALSE)
+disease <- read_csv('../data/processed/noaa_disease_risk_validation.csv', show_col_types = FALSE)
+inla_compare <- read_csv('../../output/inla_spatiotemporal/model_comparison.csv', show_col_types = FALSE)
+
+display <- bind_rows(
+  metrics |> filter(programme_key == 'pooled', learner == 'INLA only'),
+  metrics |>
+    filter(
+      programme_key == 'pooled',
+      tail_features == 'wqc_threshold_track_tail',
+      learner %in% c('Conservative tail (0.5 gate)', 'Soft-gated tail')
+    )
+)
+```
+
+## Main result
+
+The severe-tail learner helps the problem it was designed for, but it is not a
+universal replacement for the INLA expectation. Under reef-blocked validation,
+the conservative correction raises mean prediction for observed mortality of
+at least 50% from 35.9% to 39.2%, while pooled RMSE remains 0.136. The soft
+gate raises the severe mean to 42.5% and lowers severe-case RMSE from 0.325 to
+0.277, but increases ordinary false extremes and pooled RMSE.
+
+When an entire event is held out, every tail correction worsens pooled RMSE.
+This is a harsh test for a compound driver first strongly expressed in 2024,
+but remains a real warning. The tail expert should be an event-risk ensemble
+member rather than a silent replacement for the calibrated INLA mean.
+
+```{r}
+display |>
+  transmute(
+    Validation = recode(
+      scheme,
+      reef_blocked_5fold = 'New reefs within observed events',
+      leave_one_event_out = 'Entire event held out'
+    ),
+    Model = learner, RMSE = round(rmse, 3), MAE = round(mae, 3),
+    `Predictive R2` = round(predictive_r2, 3),
+    `Severe observed` = percent(severe_observed, accuracy = 0.1),
+    `Severe predicted` = percent(severe_predicted, accuracy = 0.1),
+    `Severe RMSE` = round(severe_rmse, 3),
+    `False extreme rate` = percent(false_extreme_rate, accuracy = 0.1)
+  ) |>
+  kable()
+```
+
+## Lizard-cluster in-water temperatures
+
+The public AIMS daily endpoint provides 2024-event records for Lizard Island
+and North Direction reef-flat and reef-slope loggers. Linnet has logger
+deployments only through 2018, so it cannot directly test the 2024 event.
+
+Season-wide means conceal a material January mismatch. Mean logger-minus-NOAA
+differences over the full record are only -0.04 to +0.07 degrees C, but January
+means are +0.08 to +0.44 degrees C. The signed January offset integrates to
+0.37--1.94 degree-weeks and the positive-only offset to 0.87--2.05
+degree-weeks. These are temperature-offset integrals rather than formal extra
+DHW because the daily differences have not yet been evaluated against each
+site's climatological MMM and HotSpot threshold. Nevertheless they show that
+a local heat mismatch of ecologically meaningful magnitude is plausible and
+should be tested explicitly for the Lizard cluster.
+
+Using NOAA's v3.1 MMM and standard 84-day rule changes the interpretation
+substantially. The reconstructed NOAA series agrees with the official daily
+DHW peak within 0.18 DHW. Logger-derived peaks imply an uplift of 1.05--5.38
+DHW relative to official NOAA across the full November--April bleaching
+period. The median regional uplift is 3.85 DHW; the mean is 4.82 DHW for flats
+and 2.25 DHW for slopes. This depth dependence should be retained in any local
+sensitivity rather than applying the flat value to 9--10 m observations.
+
+```{r}
+logger_summary |>
+  transmute(
+    Site = site, Series = series, Context = logger_depth_context,
+    Days = matched_days,
+    `Mean logger minus NOAA (C)` = round(mean_logger_minus_noaa, 2),
+    `Warm-quartile difference (C)` = round(mean_delta_on_warmest_noaa_quartile, 2),
+    `Maximum 7-day difference (C)` = round(max_7day_logger_minus_noaa, 2)
+  ) |>
+  kable()
+```
+
+```{r}
+logger_monthly |>
+  filter(month == '2024-01') |>
+  transmute(
+    Site = site, Series = series, Days = matched_days,
+    `January mean logger minus NOAA (C)` = round(mean_logger_minus_noaa, 2),
+    `Signed offset (degree-weeks)` = round(signed_offset_degree_weeks, 2),
+    `Positive-only offset (degree-weeks)` = round(positive_offset_degree_weeks, 2),
+    `Maximum 7-day difference (C)` = round(max_7day_logger_minus_noaa, 2)
+  ) |>
+  kable()
+```
+
+```{r}
+logger_dhw |>
+  mutate(Context = case_when(
+    grepl('FL', series) ~ 'Reef flat',
+    TRUE ~ 'Reef slope'
+  )) |>
+  transmute(
+    Site = site, Series = series, Context,
+    MMM = round(noaa_mmm, 2),
+    `Logger peak DHW` = round(logger_max_dhw, 2),
+    `Official NOAA peak DHW` = round(noaa_official_max_dhw, 2),
+    `DHW uplift` = round(dhw_uplift_vs_official_noaa, 2),
+    `Logger peak date` = logger_max_dhw_date
+  ) |>
+  kable()
+```
+
+```{r}
+logger |>
+  select(date, site, series, logger_temperature, noaa_sst) |>
+  pivot_longer(c(logger_temperature, noaa_sst), names_to = 'source', values_to = 'temperature') |>
+  ggplot(aes(as.Date(date), temperature, colour = source)) +
+  geom_line(linewidth = 0.45) +
+  facet_wrap(~site + series, ncol = 2, scales = 'free_y') +
+  scale_colour_manual(
+    values = c(logger_temperature = '#b91c1c', noaa_sst = '#1f4e79'),
+    labels = c(logger_temperature = 'AIMS logger', noaa_sst = 'NOAA CoralTemp')
+  ) +
+  labs(x = NULL, y = 'Daily temperature (degrees C)', colour = NULL) +
+  theme(legend.position = 'top')
+```
+
+```{r}
+ggplot(display, aes(learner, severe_predicted, colour = learner)) +
+  geom_hline(aes(yintercept = severe_observed), linetype = 2, colour = 'grey35') +
+  geom_point(size = 3) +
+  facet_wrap(~scheme, labeller = as_labeller(c(
+    reef_blocked_5fold = 'Reef blocked',
+    leave_one_event_out = 'Event held out'
+  ))) +
+  scale_colour_manual(values = model_colours) +
+  scale_y_continuous(labels = percent, limits = c(0, 0.7)) +
+  labs(
+    x = NULL, y = 'Mean prediction for observed mortality at least 50%',
+    caption = 'Dashed line is the observed severe-case mean.'
+  ) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1), legend.position = 'none')
+```
+
+## WQC threshold and cumulative exposure
+
+RRN coloured-water frequency is on a zero-to-one scale, so the apparent
+breakpoint near 50 in the earlier report is encoded as a hinge above 0.50. The
+model carries raw WQC, current excess above 0.50, the rolling ten-year sum of
+annual excess above 0.50, and their DHW interactions.
+
+High WQC observations are enriched for severe mortality: 14 of 76 observations
+at or above 0.50 have at least 50% mortality, compared with 18 of 461 below
+0.50. Raw WQC is influential in the severe gate. However, the threshold and
+cumulative terms do not improve pooled blocked RMSE over the otherwise
+identical tail BRT. They remain useful candidates, but the current screen does
+not establish that the 0.50 hinge alone solves the severe misses.
+
+```{r}
+wqc_bins <- pred |>
+  filter(scheme == 'reef_blocked_5fold', learner == 'INLA only') |>
+  mutate(wqc_group = cut(
+    wqc_freqcc12, breaks = c(-Inf, 0.10, 0.25, 0.50, 0.75, Inf),
+    labels = c('<0.10', '0.10 to 0.25', '0.25 to 0.50', '0.50 to 0.75', '>0.75')
+  )) |>
+  group_by(wqc_group) |>
+  summarise(
+    n = n(), observed = mean(observed_mortality),
+    predicted = mean(predicted_mortality), .groups = 'drop'
+  ) |>
+  pivot_longer(c(observed, predicted), names_to = 'series', values_to = 'mortality')
+
+ggplot(wqc_bins, aes(wqc_group, mortality, colour = series, group = series)) +
+  geom_line() + geom_point(aes(size = n)) +
+  scale_colour_manual(values = c(observed = 'black', predicted = '#1f4e79')) +
+  scale_y_continuous(labels = percent) +
+  labs(
+    x = 'RRN wet-season coloured-water frequency', y = 'Mean mortality',
+    colour = NULL, size = 'Observations'
+  )
+```
+
+```{r}
+influence |>
+  filter(tail_features == 'wqc_threshold_track_tail') |>
+  group_by(component) |>
+  slice_max(relative_influence, n = 12, with_ties = FALSE) |>
+  ungroup() |>
+  mutate(predictor = reorder(gsub('_z$', '', predictor), relative_influence)) |>
+  ggplot(aes(relative_influence, predictor, fill = component)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component, scales = 'free_y') +
+  labs(x = 'Relative BRT influence', y = NULL)
+```
+
+## Cyclone-track and COTS in the central INLA model
+
+Adding provisional cyclone-track proximity, the wind-distance index and the
+GBR COTS outbreak-probability hindcast improves both principal validation
+schemes. Reef-blocked RMSE falls from 0.1369 to 0.1357 and predictive R2 rises
+from 40.5% to 41.5%. Leave-event-out RMSE falls from 0.2008 to 0.1973. The
+severe-case mean increases from 35.4% to 35.9%. This is a small but consistent
+gain, so this pressure model is now the central INLA baseline used by the tail
+BRT. The RRN wave and COTS fields remain in the model; these new variables add
+track geometry and the independent outbreak hindcast.
+
+```{r}
+inla_compare |>
+  filter(candidate %in% c(
+    'persistent_rw1_full_partial_pool',
+    'persistent_rw1_cyclone_cots_partial_pool',
+    'persistent_rw1_cyclone_cots_disease_partial_pool'
+  )) |>
+  mutate(Model = recode(
+    candidate,
+    persistent_rw1_full_partial_pool = 'Previous INLA baseline',
+    persistent_rw1_cyclone_cots_partial_pool = 'Add cyclone track + COTS',
+    persistent_rw1_cyclone_cots_disease_partial_pool = 'Also add disease risk'
+  )) |>
+  transmute(
+    Model, Validation = recode(
+      scheme, reef_blocked_5fold = 'Reef blocked',
+      leave_one_event_out = 'Event held out'
+    ),
+    RMSE = round(rmse, 3), `Predictive R2` = round(predictive_r2, 3),
+    `Severe predicted` = percent(severe_predicted, accuracy = 0.1),
+    `Severe RMSE` = round(severe_rmse, 3),
+    `False extreme rate` = percent(false_extreme_rate, accuracy = 0.1),
+    WAIC = round(waic, 1)
+  ) |>
+  arrange(Validation, Model) |>
+  kable()
+```
+
+```{r}
+inla_fixed |>
+  filter(
+    candidate == 'persistent_rw1_cyclone_cots_partial_pool',
+    term %in% c(
+      'tc_proximity100_z', 'tc_wind_distance_index_z',
+      'cots_outbreak_probability_z'
+    )
+  ) |>
+  transmute(
+    Term = recode(
+      term,
+      tc_proximity100_z = 'Cyclone-track proximity',
+      tc_wind_distance_index_z = 'Cyclone wind-distance index',
+      cots_outbreak_probability_z = 'COTS outbreak probability'
+    ),
+    Mean = round(mean, 3), SD = round(sd, 3),
+    `2.5%` = round(`0.025quant`, 3), `97.5%` = round(`0.975quant`, 3)
+  ) |>
+  kable()
+```
+
+## NOAA disease-risk screen
+
+The disease product is structurally selective, not a continuous GBR-wide
+covariate. It is applicable at 23 of 73 validation reef-years in 2020 and only
+three of 61 in 2022; all validation locations are masked by the product's
+winter prerequisite in 2016, 2017 and 2024. Negative mask codes were therefore
+kept distinct from valid zero risk during extraction.
+
+```{r}
+disease |>
+  group_by(year) |>
+  summarise(
+    `Reef-years` = n(),
+    Applicable = sum(disease_risk_applicable),
+    `Maximum risk` = max(disease_risk_max),
+    `Days at risk >= 1 (maximum)` = max(disease_risk_days_ge1),
+    .groups = 'drop'
+  ) |>
+  mutate(`Maximum risk` = round(`Maximum risk`, 2)) |>
+  kable()
+```
+
+Adding disease intensity and duration to INLA worsens leave-event-out RMSE
+from 0.197 to 0.211 and raises the false-extreme rate from 11.3% to 18.3%.
+Adding the same features and a DHW interaction to the tail BRT also weakens
+reef-blocked RMSE. The raw disease features receive zero production BRT
+influence; only their interaction receives small influence. The metric is
+ecologically relevant for interpreting Gannett Cay and other 2020 residuals,
+but it is not promoted into the operational ensemble on this evidence.
+
+```{r}
+metrics |>
+  filter(
+    programme_key == 'pooled',
+    tail_features %in% c(
+      'wqc_threshold_track_tail',
+      'wqc_threshold_track_disease_tail'
+    ),
+    learner == 'Conservative tail (0.5 gate)'
+  ) |>
+  transmute(
+    Validation = recode(
+      scheme, reef_blocked_5fold = 'Reef blocked',
+      leave_one_event_out = 'Event held out'
+    ),
+    Model = recode(
+      tail_features,
+      wqc_threshold_track_tail = 'Tail BRT without disease',
+      wqc_threshold_track_disease_tail = 'Tail BRT with disease'
+    ),
+    RMSE = round(rmse, 3), `Predictive R2` = round(predictive_r2, 3),
+    `Severe predicted` = percent(severe_predicted, accuracy = 0.1),
+    `Severe RMSE` = round(severe_rmse, 3)
+  ) |>
+  kable()
+```
+
+## 2024 manta-tow severe cases
+
+For 2024 manta tow, the reef-blocked soft WQC-plus-track tail raises the severe
+mean from 33.1% to 39.3% and lowers RMSE from 0.163 to 0.158. It still falls well
+short of the observed severe mean of 58.0%.
+
+```{r}
+events |>
+  filter(
+    event_year == 2024, programme_key == 'manta',
+    learner == 'INLA only' |
+      tail_features == 'wqc_threshold_track_tail'
+  ) |>
+  transmute(
+    Validation = recode(
+      scheme, reef_blocked_5fold = 'Reef blocked',
+      leave_one_event_out = 'Event held out'
+    ),
+    Model = learner, RMSE = round(rmse, 3), Bias = round(bias, 3),
+    `Severe predicted` = percent(severe_predicted, accuracy = 0.1),
+    `Severe observed` = percent(severe_observed, accuracy = 0.1),
+    `False extreme rate` = percent(false_extreme_rate, accuracy = 0.1)
+  ) |>
+  kable()
+```
+
+## Cyclone exposure is provisional
+
+The current best-track block uses nearest-track distance, reported maximum
+wind and a wind-by-distance index alongside RRN hours above 4 m waves. It gives
+a clear Jasper proximity signal at Mackay and Snapper even where the RRN wave
+field is weak. These fields are isolated in the fitting script because a better
+cyclone data set resolving Jasper and Kirrily is expected and should replace
+this block before the operational fit.
+
+```{r}
+cyclone |>
+  filter(event_year == 2024, grepl('Mackay|Snapper', ReefName, ignore.case = TRUE)) |>
+  arrange(tc_min_distance_km) |>
+  transmute(
+    Reef = ReefName, `Nearest cyclone` = tc_nearest_name,
+    `Track distance (km)` = round(tc_min_distance_km, 1),
+    `Nearest max wind (m/s)` = round(tc_nearest_max_wind_ms, 1),
+    `Storms within 300 km` = tc_storms_within300km
+  ) |>
+  head(12) |>
+  kable()
+```
+
+## Remaining severe misses
+
+Repeated observations are useful to the likelihood but should not be confused
+with independent unexplained reef events. Snapper contributes three of the top
+five observation-level misses. The table below therefore averages predictions
+within reef, event and programme before ranking; the fit and its inclusion
+logic are unchanged.
+
+```{r}
+reef_event |>
+  filter(
+    scheme == 'reef_blocked_5fold',
+    tail_features == 'wqc_threshold_track_tail',
+    learner == 'Soft-gated tail', observed_mortality >= 0.50
+  ) |>
+  arrange(desc(underprediction)) |>
+  transmute(
+    Programme = toupper(programme_key), Reef = ReefName, Year = event_year,
+    Observations = observations,
+    DHW = round(ann_maxdhw, 1), Observed = percent(observed_mortality, accuracy = 0.1),
+    Predicted = percent(predicted_mortality, accuracy = 0.1),
+    Underprediction = percent(underprediction, accuracy = 0.1),
+    WQC = round(wqc_freqcc12, 2),
+    `Cyclone distance (km)` = round(tc_min_distance_km, 0)
+  ) |>
+  head(15) |>
+  kable()
+```
+
+## Ecological explanation register
+
+The high-priority misses now have a versioned explanation register. The labels
+are diagnostic evidence and do not silently remove observations or change the
+disturbance logic. Gannett Cay is especially informative: its 2020 COTS
+outbreak probability is 0.934 and the independent RRN IDW COTS estimate is
+0.839, so the severe-tail screen now includes the hindcast probability as well
+as the RRN pressure.
+
+```{r}
+miss_registry |>
+  transmute(
+    Reef = reef_name, Year = event_year,
+    `Likely explanation` = primary_explanation,
+    `Evidence status` = evidence_status,
+    `Current signal` = current_numeric_signal,
+    `Next model action` = model_action
+  ) |>
+  kable()
+```
+
+## Operational decision
+
+1. Use the partially pooled cyclone-track plus COTS INLA as the calibrated
+   central estimate; retain the previous baseline as an ablation.
+2. Carry the conservative tail BRT as an ensemble member for within-event GBR
+   mapping; expose the soft gate as a high-risk scenario.
+3. Retain raw WQC, the 0.50 hinge and cumulative exposure, without yet claiming
+   a validated threshold mechanism.
+4. Replace the provisional cyclone block with the forthcoming
+   Jasper/Kirrily-resolving data, then repeat the unchanged blocked comparison.
+5. Do not apply a blanket DHW uplift near Lizard. Instead calculate a
+   logger-consistent HotSpot/DHW diagnostic using the local MMM; the January
+   offset is large enough to test as a candidate explanation.
+6. Maintain the reef-event explanation register and expose both observation-
+   level and reef-event-level miss rankings in formal validation.
+7. Retain NOAA disease risk for ecological attribution and sensitivity plots,
+   but do not include it in the operational ensemble unless new validation
+   shows stable gains.

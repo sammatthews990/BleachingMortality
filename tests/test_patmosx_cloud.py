@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts.fetch_patmosx_cloud import (
+from src.data.fetch_patmosx_cloud import (
     PatmosFile,
     aggregate_year,
     nanmean_stack,

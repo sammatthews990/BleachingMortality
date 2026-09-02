@@ -1,0 +1,279 @@
+---
+title: "Decomposed annual coral-cover change"
+subtitle: "Transferring bleaching modifiers into recovery and disturbance-loss prediction"
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(scales)
+library(knitr)
+theme_set(theme_minimal(base_size = 12))
+
+out <- '../../output/decomposed_annual_change'
+metrics <- read_csv(file.path(out, 'matched_model_comparison_metrics.csv'), show_col_types = FALSE)
+predictions <- read_csv(file.path(out, 'decomposed_change_predictions.csv'), show_col_types = FALSE)
+events <- read_csv(file.path(out, 'decomposed_event_summary.csv'), show_col_types = FALSE)
+importance <- read_csv(file.path(out, 'decomposed_component_importance.csv'), show_col_types = FALSE)
+contrasts <- read_csv(file.path(out, 'modifier_contrast_summary.csv'), show_col_types = FALSE)
+severe <- read_csv(file.path(out, 'severe_2024_reef_diagnostics.csv'), show_col_types = FALSE)
+residual_correlations <- read_csv(file.path(out, 'severe_2024_residual_correlations.csv'), show_col_types = FALSE)
+blend <- read_csv(file.path(out, 'equal_blend_diagnostics.csv'), show_col_types = FALSE)
+
+candidates <- c(
+  'Core decomposed BRT', 'Modifier-rich decomposed BRT',
+  'Mortality-augmented decomposed BRT'
+)
+```
+
+## Decision
+
+The decomposed model improves on treating annual change as one unconstrained
+response. It predicts recovery relative to available reef space and loss
+relative to current coral cover, then combines them into a bounded next-cover
+estimate.
+
+There is not one winner for every operational use:
+
+- Before a genuinely novel event is observed, the **core decomposition** is
+  safest (forward 2024--2025 RMSE 10.05 percentage points; recent-year RMSE
+  8.40).
+- For spatial prediction after early observations from an event are available,
+  the **modifier-rich model** is strongest across unseen reefs (RMSE 6.76;
+  predictive R2 0.209).
+- For reef-blocked 2024, transferring the restricted relative-mortality
+  observations into the loss learner gives the best RMSE (8.59) and predicts
+  mean change as -4.52 points, compared with -5.89 observed.
+
+The severe tail remains underpredicted. For 53 reef-blocked 2024 transitions
+with losses of at least 10 points, mean observed change is -21.58 points and
+the mortality-augmented prediction is -11.14. This is useful progress, but not
+yet adequate for the final GBR-wide product.
+
+## Model structure
+
+The predictive transition is
+
+$$C_{t+1} = C_t + (1-C_t)G_t - C_tL_t,$$
+
+where $G_t$ is expected net gain relative to available space and $L_t$ is
+expected net loss relative to existing cover. Each has a Bernoulli occurrence
+model and a bounded positive-magnitude model.
+
+These components are inferred from **net annual change**. Annual snapshots do
+not independently observe gross growth and mortality when both happened in the
+same interval.
+
+Three loss formulations were tested:
+
+1. Structural state, nonlinear DHW and Acropora.
+2. The same model plus thermal history/novelty, Secchi/cloud, water colour,
+   coastal rainfall, wind/calm, cyclone waves, COTS and explicit DHW
+   interactions.
+3. The modifier-rich model additionally trained with the restricted,
+   bleaching-attributed relative-mortality responses. Auxiliary rows obey the
+   same year or reef exclusions as each annual fold.
+
+Rainfall and water colour remain exposure proxies, not measured salinity.
+Cyclone waves and COTS remain separate mechanisms.
+
+## Matched validation
+
+```{r}
+models <- c('Persistence', 'Growth/environment LM', 'Change BRT', candidates)
+metric_table <- metrics |>
+  filter(programme_key == 'all', learner %in% models) |>
+  transmute(
+    Model = learner,
+    Validation = recode(scheme,
+      recent_year_holdout = 'Recent year held out',
+      reef_blocked_5fold = 'Unseen reefs',
+      forward_2024_2025 = 'Forward 2024-2025'),
+    `RMSE (pp)` = round(post_cover_rmse_pp, 2),
+    `Predictive R2` = round(change_predictive_r2, 3),
+    `Direction accuracy` = percent(direction_accuracy, accuracy = 0.1),
+    `Severe-loss MAE (pp)` = round(severe_loss_mae_pp, 2),
+    `Severe underprediction (pp)` = round(severe_loss_bias_pp, 2)
+  )
+kable(metric_table)
+```
+
+```{r}
+metrics |>
+  filter(programme_key == 'all', learner %in% models) |>
+  mutate(
+    Validation = recode(scheme,
+      recent_year_holdout = 'Recent year held out',
+      reef_blocked_5fold = 'Unseen reefs',
+      forward_2024_2025 = 'Forward 2024-2025'),
+    learner = factor(learner, levels = rev(models))) |>
+  ggplot(aes(post_cover_rmse_pp, learner, colour = Validation)) +
+  geom_point(size = 2.8) +
+  facet_wrap(~Validation, scales = 'free_x') +
+  labs(x = 'Next-cover RMSE (percentage points)', y = NULL,
+       title = 'Different validation tasks favour different routes') +
+  theme(legend.position = 'none')
+```
+
+An equal modifier-rich/mortality-augmented blend has the lowest overall
+unseen-reef RMSE (6.74), but its weight has not yet been cross-fitted. It is a
+sensitivity, not a promoted ensemble, and it is weaker than the core model when
+2024 is entirely absent.
+
+```{r}
+kable(blend |> transmute(
+  Validation = scheme, `RMSE (pp)` = round(rmse_pp, 2),
+  `Predictive R2` = round(predictive_r2, 3),
+  `Severe-loss MAE (pp)` = round(severe_mae_pp, 2)))
+```
+
+## The 2024 event
+
+```{r}
+kable(events |>
+  filter(scheme == 'reef_blocked_5fold', event_year == 2024,
+         learner %in% candidates) |>
+  transmute(
+    Model = learner,
+    `Observed mean (pp)` = round(observed_change_pp, 2),
+    `Predicted mean (pp)` = round(predicted_change_pp, 2),
+    `Predicted gain (pp)` = round(predicted_gain_pp, 2),
+    `Predicted loss (pp)` = round(predicted_loss_pp, 2),
+    `RMSE (pp)` = round(rmse_pp, 2),
+    `Severe observed (pp)` = round(severe_loss_observed_pp, 2),
+    `Severe predicted (pp)` = round(severe_loss_predicted_pp, 2)))
+```
+
+```{r}
+predictions |>
+  filter(scheme == 'reef_blocked_5fold', event_year == 2024,
+         learner %in% candidates) |>
+  ggplot(aes(cover_change_pp, predicted_change_pp, colour = programme_key)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey45') +
+  geom_point(alpha = 0.65, size = 1.7) +
+  facet_wrap(~learner) +
+  coord_equal(xlim = c(-65, 35), ylim = c(-65, 35)) +
+  labs(x = 'Observed annual change (percentage points)',
+       y = 'Predicted annual change (percentage points)',
+       colour = 'Programme',
+       title = 'Mortality transfer deepens 2024 losses',
+       subtitle = 'The largest losses remain underestimated')
+```
+
+For severe 2024 cases, the rich covariates alone add only 0.21 points of loss
+on average and improve 43% of reefs. The restricted mortality response adds a
+further 1.81 points of loss and improves 64%. Response transfer helps; simply
+adding more covariates is insufficient.
+
+```{r}
+kable(contrasts |>
+  filter(scheme == 'reef_blocked_5fold', event_year == 2024) |>
+  transmute(
+    Class = if_else(severe_loss, 'Loss >=10 pp', 'Other transitions'),
+    N = transitions,
+    `Rich minus core (pp)` = round(mean_rich_minus_core_change_pp, 2),
+    `Rich improves` = percent(rich_improvement_fraction, accuracy = 0.1),
+    `Auxiliary minus rich (pp)` = round(mean_augmented_minus_rich_change_pp, 2),
+    `Auxiliary improves` = percent(auxiliary_improvement_fraction, accuracy = 0.1)))
+```
+
+## Remaining severe misses
+
+```{r}
+severe |>
+  slice_head(n = 15) |>
+  transmute(
+    Reef = ReefName, Programme = programme_key,
+    Observed = round(cover_change_pp, 1),
+    Core = round(predicted_change_pp_Core_decomposed_BRT, 1),
+    Rich = round(predicted_change_pp_Modifier_rich_decomposed_BRT, 1),
+    Augmented = round(predicted_change_pp_Mortality_augmented_decomposed_BRT, 1),
+    DHW = round(sst_maxdhw, 1),
+    Acropora = percent(prop_acropora_pre, accuracy = 1),
+    WQC = round(wqc_freqcc12, 2), Annotation = disturbance_text) |>
+  kable()
+```
+
+Snapper remains the dominant miss: observed losses of 50--58 points are
+predicted as only 5--6 despite very high water-colour exposure and explicit
+Jasper/flood annotations. North Direction, Mackay, Linnet, One Tree and
+Broomfield improve to varying degrees, but none is fully captured.
+
+Residual is observed minus predicted change, so a negative value denotes
+underprediction of loss. Among severe 2024 rows, greater calm exposure,
+rainfall and water colour are associated with more negative residuals. The
+positive DHW association means the worst misses concentrate among severe losses
+at moderate rather than extreme DHW. This is consistent with an incompletely
+represented freshwater/calm mechanism; it is diagnostic, not causal evidence.
+
+```{r}
+residual_correlations |>
+  mutate(
+    predictor = recode(predictor,
+      era5_wind_calm_fraction = 'Calm fraction',
+      log_coastal_rain30 = 'Coastal rainfall proxy',
+      wqc_freqcc12 = 'Water colour',
+      wqc_prior10_percentile = 'Reef-relative water colour',
+      cyc_maxHrs4mw = 'Cyclone 4 m wave hours',
+      cot_idwmeanpertow = 'COTS pressure',
+      prop_acropora_pre = 'Acropora proportion', sst_maxdhw = 'DHW'),
+    predictor = reorder(predictor, spearman_with_residual)) |>
+  ggplot(aes(spearman_with_residual, predictor)) +
+  geom_vline(xintercept = 0, colour = 'grey70') +
+  geom_col(fill = '#287D8E') +
+  labs(x = 'Spearman correlation with residual (observed - predicted)',
+       y = NULL,
+       title = 'Freshwater and calm signals remain in severe residuals')
+```
+
+The RRN cyclone-wave value is zero at several Jasper-annotated northern reefs.
+It should remain in the model, but cannot alone represent Jasper or floodwater
+exposure.
+
+## Loss-variable influence
+
+```{r}
+importance |>
+  filter(grepl('loss', component)) |>
+  group_by(component) |>
+  slice_max(influence, n = 12, with_ties = FALSE) |>
+  ungroup() |>
+  mutate(variable = reorder(variable, influence)) |>
+  ggplot(aes(influence, variable, fill = component)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~component, scales = 'free_y') +
+  labs(x = 'Relative influence (%)', y = NULL,
+       title = 'Loss models retain state and disturbance modifiers')
+```
+
+The annual model has not reverted to a linear DHW response. Its loss process
+uses prior trajectory, cover, cyclone exposure, thermal novelty, DHW--Acropora,
+COTS, rainfall, water colour and cloud.
+
+## Next fit
+
+The next Bayesian/state-space fit should:
+
+1. Use beta magnitude and binomial occurrence responses for gain and loss with
+   programme-specific observation layers.
+2. Retain the modifier-rich and mortality-augmented BRTs as ensemble members.
+3. Evaluate stronger tail response to DHW interactions with rainfall, water
+   colour and calm against reef-blocked 2024 severe loss, not overall RMSE only.
+4. Keep field annotations diagnostic rather than operational predictors.
+5. Add a broader community-state variable when available; Acropora alone does
+   not identify reefs dominated by fast-growing weedy taxa.
+
+Operationally, use the core decomposition before a novel event is observed,
+then switch to a cross-fitted rich/augmented ensemble after early event surveys
+are available. This prevents a complete 2024 holdout from teaching the wrong
+freshwater response.

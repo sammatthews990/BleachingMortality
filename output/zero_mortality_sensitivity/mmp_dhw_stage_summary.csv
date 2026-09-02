@@ -1,7 +1,0 @@
-field,event_year,rows,minimum,q10,median,maximum,rows_below4,rows_below4_5
-Legacy survey-linked MaxDHW.mean,2017,32,4.4,7.4645,9.0825,11.6775,0,2
-Legacy survey-linked MaxDHW.mean,2022,4,5.4575,5.4575,6.53875,7.62,0,0
-Legacy survey-linked MaxDHW.mean,2024,54,3.976666667,4.504500000000001,8.755,13.26,4,6
-Reconstructed NOAA ann_maxdhw,2017,32,4.4,7.353999999999999,9.075,11.65,0,2
-Reconstructed NOAA ann_maxdhw,2022,4,5.32,5.32,6.470000000000001,7.62,0,0
-Reconstructed NOAA ann_maxdhw,2024,54,4.12,4.516000000000001,8.78,13.26,0,6

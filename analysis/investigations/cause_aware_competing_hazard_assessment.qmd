@@ -1,0 +1,180 @@
+---
+title: "Cause-aware COTS and cyclone competing hazards"
+subtitle: "Held-out validation, focal reef evidence and operational decision"
+format:
+  html:
+    toc: true
+    toc-location: left
+    number-sections: true
+    embed-resources: false
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(readr)
+  library(knitr)
+})
+source('../../src/lib/model_registry.R')
+root <- project_root()
+out <- file.path(root, 'output', 'cause_aware_competing_hazards')
+fig_dir <- file.path(root, 'output', 'fig')
+include_figure <- function(id) {
+  path <- list.files(fig_dir, pattern = paste0('^', id, '.*\\.png$'), full.names = TRUE)
+  if (length(path)) cat(paste0('![](../../output/fig/', basename(path[[1]]), ')\n'))
+}
+comparison <- read_csv(file.path(out, 'model_comparison.csv'), show_col_types = FALSE)
+events <- read_csv(file.path(out, 'event_metrics.csv'), show_col_types = FALSE)
+focal <- read_csv(file.path(out, 'focal_predictions.csv'), show_col_types = FALSE)
+fixed <- read_csv(file.path(out, 'cause_fixed_effects.csv'), show_col_types = FALSE)
+cots_annual <- read_csv(file.path(out, 'focal_cots_annual_losses.csv'), show_col_types = FALSE)
+debbie <- read_csv(file.path(out, 'debbie_wave_loss_audit.csv'), show_col_types = FALSE)
+negative_controls <- read_csv(file.path(out, 'cots_high_pressure_low_loss_audit.csv'), show_col_types = FALSE)
+```
+
+## Decision
+
+This report records the first promotion of the **exposure-gated cause-aware INLA composite**. It separated thermal/freshwater mortality from independently trained COTS and cyclone hazards and established that disturbance labels can supervise historical training without entering operational prediction. A subsequent controlled test retained this architecture but replaced the hard cyclone gate with the logistic activation now shown in the live model contract below.
+
+The current promotion remains conditional: the logistic cyclone activation must be retested when the improved Jasper/Kirrily cyclone dataset becomes available. Cause labels remain incomplete and annual transitions can contain more than one process.
+
+```{r results='asis'}
+render_model_contract(root)
+```
+
+## Model structure
+
+For reef-event observation i, each component is a two-part expected mortality: the probability of a positive loss multiplied by the expected magnitude conditional on a loss. The equation below is the historical hard-gate candidate evaluated in this report; the generated contract above is authoritative for the current selected model.
+
+$$
+\begin{aligned}
+T_i &= \pi_{T,i}\mu_{T,i},\\
+C_i &= \mathbb{1}(I_i>0.22)\pi_{C,i}\mu_{C,i},\\
+S_i &= \mathbb{1}(W_i>20)\pi_{S,i}\mu_{S,i},\\
+\widehat M_i &= 1-(1-T_i)(1-C_i)(1-S_i).
+\end{aligned}
+$$
+
+- T is the local-first DHW, composition, thermal-history and freshwater response. Explicitly labelled COTS, cyclone and flood rows are excluded when fitting this component; unlabelled observations remain.
+- C is trained from COTS-labelled annual transitions. It uses hindcast outbreak probability and probability-weighted RRN excess density. It is activated only above 0.22 COTS/tow.
+- S is trained from cyclone-, storm- and flood-labelled annual transitions using damaging-wave hours, cyclone wind-distance exposure, rainfall, cover and composition. It is activated above 20 hours of waves exceeding 4 m.
+- The complement-product is a competing-hazard combination on the mortality scale. It does not claim that the observational data uniquely identify cause for every colony or reef.
+
+The cause fits use the longer annual coral-cover transition record. During leave-one-event-out validation, every annual interval overlapping the held-out bleaching year is excluded; during reef-blocked validation, every transition from held-out reefs is excluded.
+
+## Held-out validation
+
+```{r}
+validation_table <- comparison |>
+  transmute(
+    Model = recode(candidate,
+      selected_current = 'Previous selected model',
+      cause_aware_thermal_only = 'Cause-filtered thermal only',
+      cause_aware_competing_hazards = 'Ungated competing hazards',
+      cause_aware_exposure_gated_competing_hazards = 'Exposure-gated competing hazards'),
+    Validation = recode(scheme,
+      leave_one_event_out = 'Leave one event out',
+      reef_blocked_5fold = 'Reef-blocked five-fold'),
+    RMSE = round(rmse, 3),
+    `Predictive R2` = round(predictive_r2, 3),
+    `Severe RMSE` = round(severe_rmse, 3),
+    `False-extreme rate` = round(false_extreme_rate, 3),
+    `Occurrence Brier` = round(occurrence_brier, 3))
+kable(validation_table, caption = 'Matched held-out validation. Lower is better except predictive R2.')
+```
+
+```{r results='asis'}
+include_figure('Fig-INLA-11_cause_aware_validation')
+```
+
+The ungated model improves severe-loss prediction most strongly, but spreads small cause hazards onto many unsupported reef-events. Exposure gating removes that background uplift: primary RMSE falls from 0.158 to 0.151, predictive R2 rises from 0.211 to 0.279, severe RMSE falls from 0.345 to 0.326, and false extremes fall from 0.057 to 0.044. Reef-blocked RMSE changes only from 0.139 to 0.140, while reef-blocked severe RMSE improves from 0.308 to 0.284.
+
+### Event-specific performance
+
+```{r}
+event_table <- events |>
+  filter(candidate %in% c('selected_current', 'cause_aware_exposure_gated_competing_hazards')) |>
+  transmute(
+    Model = if_else(candidate == 'selected_current', 'Previous selected', 'Cause-aware gated'),
+    Event = event_year, RMSE = round(rmse, 3),
+    `Predictive R2` = round(predictive_r2, 3),
+    `Severe RMSE` = round(severe_rmse, 3), Bias = round(bias, 3))
+kable(event_table, caption = 'Leave-one-event-out metrics by bleaching event.')
+```
+
+The largest gain is in 2017: RMSE falls from 0.217 to 0.158 and predictive R2 changes from -0.542 to 0.186. The candidate is slightly worse in 2020, 2022 and 2024 on overall RMSE, so it should not be interpreted as a universal event correction.
+
+## COTS evidence and timing
+
+The COTS occurrence model finds positive effects for hindcast outbreak probability and probability-weighted RRN excess density. Excess density also increases conditional loss magnitude. This supports using both data streams: probability supplies spatially complete outbreak risk, whereas RRN density supplies realised local intensity.
+
+```{r}
+coefficient_table <- fixed |>
+  filter(term %in% c('cots_probability_z', 'cots_weighted_excess_z',
+                     'wave_log_z', 'wind_distance_z', 'rain_log_z')) |>
+  transmute(Component = component, Predictor = term, Mean = round(mean, 3),
+    `Lower 95%` = round(.data[['0.025quant']], 3),
+    `Upper 95%` = round(.data[['0.975quant']], 3))
+kable(coefficient_table, caption = 'Cause-model fixed effects on the link scale. Inputs are standardised within each training fold.')
+```
+
+```{r results='asis'}
+include_figure('Fig-DATA-02_cots_cause_evidence')
+```
+
+```{r}
+cots_focal_table <- cots_annual |>
+  transmute(Reef = ReefName, Year = event_year, Programme = programme_key,
+    `Pre-cover` = round(pre_cover, 1), `Post-cover` = round(post_cover, 1),
+    `Relative loss` = round(relative_loss, 3),
+    `RRN COTS/tow` = round(cot_idwmeanpertow, 2),
+    `Hindcast probability` = round(cots_outbreak_probability, 3))
+kable(cots_focal_table, caption = 'Focal cause-labelled COTS transitions.')
+```
+
+The timing audit resolves the apparent 2020 discrepancy. Chinaman, Taylor and Rib Reef show their strongest COTS-associated losses in the 2017-18 transitions, during the Townsville and Swains outbreaks. Some 2020 bleaching rows then have high hindcast probability but little new relative loss because the earlier outbreak had already reduced cover. These are valuable negative controls, not evidence that COTS pressure should be ignored.
+
+Gannett Cay is the focal positive control: its interval has 9.91 COTS/tow and high hindcast probability. The gated candidate raises its leave-2020-out prediction from 0.060 to 0.228, but still underpredicts the observed 0.566 loss by 0.337. Thus the correct cause is much better represented, but its magnitude is not fully recovered.
+
+```{r}
+negative_table <- negative_controls |>
+  arrange(desc(cot_idwmeanpertow)) |>
+  head(12) |>
+  transmute(Reef = ReefName, Year = event_year, Programme = programme_key,
+    `Relative loss` = round(relative_loss, 3),
+    `RRN COTS/tow` = round(cot_idwmeanpertow, 2),
+    `Hindcast probability` = round(cots_outbreak_probability, 3),
+    `Pre-cover` = round(pre_cover, 1), `Post-cover` = round(post_cover, 1))
+kable(negative_table, caption = 'Highest-pressure COTS rows with little contemporaneous loss; retained as negative controls.')
+```
+
+## Cyclone Debbie and the 2017 residual field
+
+```{r results='asis'}
+include_figure('Fig-INLA-12_debbie_residual_audit')
+```
+
+```{r}
+debbie_table <- debbie |>
+  transmute(Reef = ReefName, Programme = programme_key,
+    `Relative loss` = round(relative_loss, 3),
+    `Cover change (pp)` = round(cover_change_pp, 1),
+    `Hours with waves >4 m` = round(cyc_maxHrs4mw, 1), Evidence = disturbance_text)
+kable(debbie_table, caption = '2017 annual losses with more than 20 damaging-wave hours during Cyclone Debbie.')
+```
+
+Double Cone, Daydream and Shute reefs each have approximately 29 hours above 4 m and large annual losses. **Penrith Reef is the additional bleaching-mortality positive control**: it has 34.9 damaging-wave hours and an observed loss of 0.733. The cause-aware candidate raises Penrith's held-out prediction from 0.077 to 0.206, but the remaining 0.528 residual shows that the cyclone severity component is still too weak locally.
+
+The spatial alignment of the 2017 underprediction with Debbie's track, the independent wave layer, the survey disturbance notes and Penrith's loss is strong evidence for retaining a cyclone hazard. It does not validate the current wave layer for Jasper or Kirrily.
+
+## Remaining limitations and next tests
+
+{{< include ../../docs/model-next-steps.md >}}
+
+## Reproducibility
+
+The analysis is generated by `src/models/fit_cause_aware_competing_hazards.R`. Machine-readable outputs are stored in `output/cause_aware_competing_hazards/`; manuscript figures and plotted data are stored together in `output/fig/`.

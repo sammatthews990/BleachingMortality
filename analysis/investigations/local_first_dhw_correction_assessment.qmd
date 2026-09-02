@@ -1,0 +1,655 @@
+---
+title: 'Local-first NOAA DHW calibration'
+subtitle: 'Peak-qualified AIMS logger evidence, ENSO diagnostics and INLA validation'
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+result_dir <- '../../output/dhw_correction_local_first'
+audit <- read_csv(file.path(result_dir, 'series_peak_coverage_audit.csv'),
+  show_col_types = FALSE)
+site_events <- read_csv(file.path(result_dir, 'site_event_discrepancies.csv'),
+  show_col_types = FALSE)
+radius_metrics <- read_csv(file.path(result_dir, 'local_radius_metrics.csv'),
+  show_col_types = FALSE)
+enso_summary <- read_csv(file.path(result_dir, 'enso_event_discrepancy_summary.csv'),
+  show_col_types = FALSE)
+config <- read_csv(file.path(result_dir, 'configuration.csv'), show_col_types = FALSE)
+layer <- read_csv('../data/processed/noaa_dhw_correction_layer_local_first_validation.csv',
+  show_col_types = FALSE)
+old_layer <- read_csv('../data/processed/noaa_dhw_correction_layer_validation.csv',
+  show_col_types = FALSE)
+metrics <- read_csv('../../output/inla_spatiotemporal/model_comparison.csv',
+  show_col_types = FALSE)
+predictions <- read_csv('../../output/inla_spatiotemporal/cv_predictions.csv',
+  show_col_types = FALSE)
+uncertainty_dir <- '../../output/local_calibrated_operational'
+uncertainty_predictions <- read_csv(
+  file.path(uncertainty_dir, 'uncertainty_predictions.csv'),
+  show_col_types = FALSE)
+uncertainty_calibration <- read_csv(
+  file.path(uncertainty_dir, 'uncertainty_calibration.csv'),
+  show_col_types = FALSE)
+updated_misses <- read_csv(
+  file.path(uncertainty_dir, 'largest_misses_local_calibrated.csv'),
+  show_col_types = FALSE)
+residual_priorities <- read_csv(
+  file.path(uncertainty_dir, 'residual_feature_priorities.csv'),
+  show_col_types = FALSE)
+
+base_name <- 'persistent_rw1_cyclone_cots_partial_pool'
+fixed_name <- 'persistent_rw1_cyclone_cots_lizard_adjusted_partial_pool'
+local_name <- 'persistent_rw1_cyclone_cots_local_first_dhw_partial_pool'
+operational_name <- 'persistent_rw1_cyclone_cots_operational_local_update_partial_pool'
+decomposed_name <- 'persistent_rw1_local_dhw_decomposed_hazards_partial_pool'
+decomposed_freshwater_name <-
+  'persistent_rw1_local_dhw_decomposed_hazards_freshwater_partial_pool'
+decomposed_operational_name <-
+  'persistent_rw1_operational_update_decomposed_hazards_freshwater_partial_pool'
+
+# The central operational candidate now uses interval-aligned disturbance
+# hazards and continuous freshwater interactions.
+previous_local_name <- local_name
+previous_operational_name <- operational_name
+local_name <- decomposed_freshwater_name
+operational_name <- decomposed_operational_name
+candidate_labels <- c(
+  'NOAA unchanged',
+  'Fixed +4.82 DHW stress-test',
+  'Previous local-calibrated',
+  'Interval hazards',
+  'Interval hazards + freshwater',
+  'Current-event local update (interval hazards + freshwater)')
+names(candidate_labels) <- c(
+  base_name, fixed_name, previous_local_name, decomposed_name,
+  local_name, operational_name)
+
+metric_table <- metrics |>
+  filter(candidate %in% names(candidate_labels)) |>
+  mutate(
+    DHW_input = recode(candidate, !!!candidate_labels),
+    validation = recode(scheme,
+      leave_one_event_out = 'Leave-one-event-out',
+      reef_blocked_5fold = 'Reef-blocked 5-fold'))
+
+cluster_ids <- c('14-114', '14-116a', '14-118', '14-123', '14-126', '14-143')
+cluster_layer <- layer |>
+  filter(event_year == 2024, ReefID %in% cluster_ids) |>
+  select(ReefID, ReefName, NOAA_correction_DHW = local_first_correction,
+    correction_source, nearest_local_logger_km,
+    effective_local_loggers, local_loggers_used) |>
+  left_join(
+    old_layer |>
+      filter(event_year == 2024, ReefID %in% cluster_ids) |>
+      select(ReefID, old_correction_DHW = within_event_correction),
+    by = 'ReefID')
+
+cluster_predictions <- predictions |>
+  filter(
+    event_year == 2024, ReefID %in% cluster_ids,
+    scheme == 'leave_one_event_out',
+    candidate %in% c(base_name, fixed_name, local_name, operational_name)) |>
+  mutate(DHW_input = recode(candidate, !!!candidate_labels)) |>
+  group_by(DHW_input, ReefID, ReefName) |>
+  summarise(
+    observed = mean(observed_mortality),
+    predicted = mean(predicted_mortality),
+    NOAA_DHW = mean(ann_maxdhw_original),
+    uplift_DHW = mean(applied_dhw_uplift),
+    model_DHW = mean(ann_maxdhw),
+    .groups = 'drop')
+
+coverage_case <- audit |>
+  filter(
+    event_year == 2024, site == 'Lizard Island',
+    series %in% c(
+      'LIZFL1',
+      'Lizard Island Relay Pole 2 Water Temperature @5m')) |>
+  mutate(
+    true_peak_discrepancy = unconstrained_peak_dhw - noaa_official_max_dhw,
+    retained = if_else(peak_qualified, 'Yes', 'No'))
+
+event_coverage <- layer |>
+  group_by(event_year) |>
+  summarise(
+    reefs = n(),
+    direct = sum(correction_source == 'current_direct'),
+    local_interpolation = sum(correction_source == 'current_local'),
+    unchanged_NOAA = sum(correction_source == 'none'),
+    corrected = direct + local_interpolation,
+    corrected_fraction = corrected / reefs,
+    .groups = 'drop')
+
+event_rmse <- predictions |>
+  filter(
+    scheme == 'leave_one_event_out',
+    candidate %in% c(base_name, local_name)) |>
+  group_by(candidate, event_year) |>
+  summarise(
+    RMSE = sqrt(mean((observed_mortality - predicted_mortality)^2)),
+    .groups = 'drop') |>
+  mutate(model = recode(candidate, !!!candidate_labels)) |>
+  select(-candidate) |>
+  pivot_wider(names_from = model, values_from = RMSE) |>
+  mutate(change = .data[['Interval hazards + freshwater']] -
+    .data[['NOAA unchanged']])
+
+hazard_candidates <- c(
+  previous_local_name, decomposed_name, local_name, operational_name
+)
+hazard_metrics <- metrics |>
+  filter(
+    candidate %in% hazard_candidates,
+    scheme == 'leave_one_event_out') |>
+  transmute(
+    Candidate = recode(candidate, !!!candidate_labels),
+    rmse, mae, predictive_r2, severe_rmse, false_extreme_rate) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+named_miss_checks <- updated_misses |>
+  filter(
+    ReefID %in% c('14-137', '14-138', '15-099c', '21-025', '21-556', '16-015'),
+    event_year %in% c(2016, 2017, 2020, 2024)) |>
+  select(
+    programme_key, ReefName, event_year, observed_mortality,
+    predicted_mortality, residual, cyc_interval_maxHrs4mw,
+    cyc_interval_peak_year, tc_interval_peak_name,
+    cot_interval_idw_max, cots_outbreak_probability,
+    primary_explanation) |>
+  arrange(desc(residual))
+```
+
+## Decision
+
+The earlier sub-1 DHW corrections were an artefact of the correction procedure,
+not a disappearance of the 2024 logger signal. The original shallow reef-flat
+comparisons remain large: Lizard Island is +4.26 DHW, Martin +3.84 DHW and
+North Direction +5.38 DHW relative to NOAA.
+
+The revised layer implements a strict hierarchy:
+
+1. use a coverage-qualified reef logger at the site-event;
+2. use an automated-station temperature only when no reef logger exists;
+3. match a survey reef directly only when its normalised name agrees and it is
+   within 5 km of the logger site;
+4. otherwise interpolate from at most four current-event sites inside 25 km;
+5. otherwise retain NOAA unchanged;
+6. permit an ENSO-matched historical fallback only after at least two previous
+   same-phase events at a site with at least 75% sign agreement.
+
+No current event satisfies the historical fallback rule. Consequently, this
+version applies **no GBR-wide event offset and no historical correction
+surface**. Large-scale products remain the base exposure where local
+measurements are absent; they do not override local observations.
+
+## Why the previous corrections became small
+
+Three effects attenuated the earlier 2024 Lizard correction.
+
+- The automated 5 m relay-pole series was summarised at an earlier date with
+  enough observations, giving an apparent -2.37 DHW discrepancy. Its actual
+  event peak was later and implied +2.18 DHW, but only 66 of 84 days were
+  observed. It is now excluded rather than moved to an earlier peak.
+- The automated value was pooled with the +4.26 DHW reef-flat logger even
+  though a direct reef logger existed, reducing the site estimate to about
+  +0.94 DHW. The reef logger now takes precedence.
+- A broad 200 km current-event surface was then combined with a negative GBR
+  event offset and a negative historical surface. Those terms are no longer
+  defensible and have been removed.
+
+```{r}
+coverage_case |>
+  transmute(
+    Source = recode(source,
+      temperature_logger = 'Reef logger',
+      automated_weather = 'Automated station'),
+    Series = series,
+    `Depth (m)` = depth_m,
+    `Earlier eligible peak DHW` = logger_max_dhw,
+    `Actual event peak DHW` = unconstrained_peak_dhw,
+    `Days at actual peak` = true_peak_days,
+    `Actual logger minus NOAA DHW` = true_peak_discrepancy,
+    `Retained in correction` = retained) |>
+  mutate(across(where(is.numeric), ~ round(.x, 2))) |>
+  kable(caption = 'The 2024 Lizard coverage check that changed the result')
+```
+
+## Spatial scale and validation rule
+
+The 25 km radius is selected because it has the best held-out MAE and
+severe-discrepancy RMSE among the local candidates. A 50 km radius has a
+slightly lower overall RMSE, but spreads information much farther and performs
+worse for absolute and extreme errors. Ten kilometres leaves almost two thirds
+of held-out sites unchanged.
+
+```{r}
+radius_metrics |>
+  transmute(
+    `Radius (km)` = local_radius_km,
+    RMSE = rmse, MAE = mae, bias,
+    `Extreme RMSE` = extreme_rmse,
+    `Local support` = local_support_fraction,
+    `Unchanged NOAA` = no_correction_fraction) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  kable(caption = 'Leave-one-site-out validation of current-event interpolation')
+```
+
+```{r, fig.width=8.5, fig.height=4.8}
+radius_metrics |>
+  select(local_radius_km, RMSE = rmse, `Extreme RMSE` = extreme_rmse) |>
+  pivot_longer(-local_radius_km, names_to = 'metric', values_to = 'error') |>
+  ggplot(aes(local_radius_km, error, colour = metric)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2.8) +
+  geom_vline(xintercept = config$selected_local_radius_km,
+    linetype = 2, colour = 'grey35') +
+  scale_x_continuous(breaks = radius_metrics$local_radius_km) +
+  labs(
+    x = 'Hard interpolation radius (km)', y = 'Held-out error (DHW)',
+    colour = NULL,
+    title = 'Twenty-five kilometres retains local signal and protects extremes',
+    subtitle = 'Dashed line marks the selected radius') +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+## ENSO is context, not a global offset
+
+The event medians do not support a simple GBR-wide ENSO correction. The strong
+2016 El Nino median is slightly positive, but the weak 2024 El Nino median is
+negative across the GBR logger network. Neutral 2017 and 2020 are positive,
+whereas 2022 La Nina is near zero. The 2016/2024 positive discrepancies near
+Lizard can therefore be treated as a hypothesis about a local ENSO-linked
+mechanism, but not yet as a transferable GBR adjustment.
+
+```{r, fig.width=8.5, fig.height=5.2}
+ggplot(
+  enso_summary,
+  aes(event_year, median_discrepancy, colour = enso_phase)
+) +
+geom_hline(yintercept = 0, colour = 'grey55') +
+geom_linerange(aes(ymin = q10, ymax = q90), linewidth = 1) +
+geom_point(size = 3) +
+scale_x_continuous(breaks = enso_summary$event_year) +
+labs(
+  x = 'Bleaching event', y = 'Logger minus NOAA DHW', colour = 'ENSO phase',
+  title = 'GBR-wide logger discrepancy is not explained by a single ENSO offset',
+  subtitle = 'Points are event medians; bars are the 10th to 90th percentiles') +
+theme_bw(base_size = 11) +
+theme(legend.position = 'bottom')
+```
+
+```{r}
+enso_summary |>
+  transmute(
+    Event = event_year, `ENSO category` = enso_category,
+    Sites = sites, `Median discrepancy` = median_discrepancy,
+    `Mean discrepancy` = mean_discrepancy,
+    `Positive fraction` = positive_fraction) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  kable(caption = 'Event-level ENSO context and logger discrepancy')
+```
+
+## The revised 2024 Lizard-region layer
+
+The six target reefs receive +0.33 to +5.38 DHW, compared with +0.55 to +0.96
+DHW under the previous broad layer. MacGillivray, Lizard NW, Martin and North
+Direction use their matched direct local measurement. Eyrie and Linnet use the
+four nearest current-event sources inside 25 km. These are local calibrations,
+not replacements for measured reef temperatures and not corrections exported
+to unsupported parts of the GBR.
+
+```{r}
+cluster_layer |>
+  transmute(
+    ReefID, ReefName,
+    `Previous broad correction` = old_correction_DHW,
+    `Local-first correction` = NOAA_correction_DHW,
+    Source = correction_source,
+    `Nearest logger (km)` = nearest_local_logger_km,
+    `Effective logger count` = effective_local_loggers,
+    `Logger sites used` = local_loggers_used) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  arrange(ReefID) |>
+  kable(caption = '2024 local-first corrections at the six Lizard-region reefs')
+```
+
+```{r, fig.width=8.5, fig.height=7}
+layer |>
+  filter(event_year == 2024) |>
+  ggplot(aes(lon, lat, colour = local_first_correction)) +
+  geom_point(size = 1.7, alpha = 0.85) +
+  geom_point(
+    data = filter(layer, event_year == 2024, ReefID %in% cluster_ids),
+    shape = 21, fill = NA, colour = 'black', size = 3, stroke = 0.8) +
+  scale_colour_gradient2(
+    low = '#2c7bb6', mid = 'grey92', high = '#d7191c', midpoint = 0,
+    name = 'DHW\ncorrection') +
+  coord_equal() +
+  labs(
+    x = 'Longitude', y = 'Latitude',
+    title = 'The local-first layer leaves unsupported 2024 reefs unchanged',
+    subtitle = 'Outlined points are the six Lizard-region target reefs') +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+## Mortality-model consequences
+
+There are two useful deployment comparisons. The fully local-calibrated model
+uses available event-specific logger evidence for both historical fitting rows
+and the held-out/current event. It is the preferred local-evidence model because
+the same measurement hierarchy is applied consistently. In leave-one-event-out
+validation it reduces overall RMSE from
+`r number(metric_table$rmse[metric_table$candidate == base_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`
+to
+`r number(metric_table$rmse[metric_table$candidate == local_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`,
+changes predictive R2 from
+`r number(metric_table$predictive_r2[metric_table$candidate == base_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`
+to
+`r number(metric_table$predictive_r2[metric_table$candidate == local_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`,
+and severe-case RMSE from
+`r number(metric_table$severe_rmse[metric_table$candidate == base_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`
+to
+`r number(metric_table$severe_rmse[metric_table$candidate == local_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`.
+The false-extreme rate decreases from
+`r percent(metric_table$false_extreme_rate[metric_table$candidate == base_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.1)`
+to
+`r percent(metric_table$false_extreme_rate[metric_table$candidate == local_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.1)`.
+
+The current-event-only update leaves legacy training rows on NOAA and updates
+only the held-out event. It gives a lower severe-case RMSE of
+`r number(metric_table$severe_rmse[metric_table$candidate == operational_name & metric_table$scheme == 'leave_one_event_out'], accuracy = 0.001)`,
+but worse overall RMSE and a higher false-extreme rate. It is retained as a
+severe-tail sensitivity or ensemble input, not the primary calibration.
+Reef-blocked results for this update-only candidate are not primary because the
+split can mix corrected assessment rows with uncorrected training rows from the
+same event.
+
+```{r}
+metric_table |>
+  select(
+    DHW_input, validation, RMSE = rmse, MAE = mae,
+    predictive_R2 = predictive_r2, bias,
+    occurrence_Brier = occurrence_brier,
+    severe_RMSE = severe_rmse,
+    false_extreme_rate) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  arrange(validation, RMSE) |>
+  kable(caption = 'INLA validation of NOAA and alternative local corrections')
+```
+
+```{r, fig.width=8.5, fig.height=5.8}
+ggplot(cluster_predictions, aes(observed, predicted, colour = DHW_input)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey50') +
+  geom_point(size = 2.8) +
+  geom_text(
+    aes(label = ReefID), nudge_y = 0.018, size = 3,
+    check_overlap = TRUE, show.legend = FALSE) +
+  coord_equal(xlim = c(0, 0.65), ylim = c(0, 0.65)) +
+  labs(
+    x = 'Observed relative mortality', y = 'Predicted relative mortality',
+    colour = 'DHW input',
+    title = 'Local event calibration raises the 2024 Lizard predictions',
+    subtitle = 'Predictions are from the fold withholding the complete 2024 event') +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+The calibrated alternatives materially raise predictions at Eyrie, Martin,
+Linnet and North Direction, while residual misses remain at Lizard NW and some
+MacGillivray observations. This supports the ecological interpretation
+already developed elsewhere in the pipeline: local thermal underestimation is
+one part of the 2024 signal, but freshwater/coloured water, Acropora or weedy
+community composition, cyclone exposure and COTS still need to act as compound
+modifiers.
+
+## Production rule
+
+Use `ann_maxdhw_original` as the immutable NOAA field and store the local
+calibration separately with its source, distance, logger count and uncertainty.
+For historical fitting and a live or recently completed event, rebuild the
+same calibration after enough logger observations span the actual DHW peak.
+Do not extrapolate beyond 25 km.
+If no supported local evidence exists, use NOAA unchanged. Revisit the
+ENSO-matched fallback only when repeated same-phase events demonstrate stable
+site-specific sign and magnitude; the current record is insufficient.
+
+## Formal multi-event status
+
+The fully local-calibrated candidate is not a 2024-only adjustment. It supplies
+direct or locally interpolated corrections in every bleaching event used by the
+model. Coverage ranges from 70.5% of reefs in 2022 to 97.4% in 2017. The
+remaining reefs retain NOAA as their point exposure and receive wider
+uncertainty rather than an invented correction.
+
+```{r}
+event_coverage |>
+  transmute(
+    Event = event_year, Reefs = reefs, Direct = direct,
+    `Local interpolation` = local_interpolation,
+    `NOAA unchanged` = unchanged_NOAA,
+    `Corrected reefs` = corrected,
+    `Corrected fraction` = percent(corrected_fraction, accuracy = 0.1)) |>
+  kable(caption = 'Local-calibration coverage in every fitted bleaching event')
+```
+
+The pooled improvement is real but not uniform through time. Local calibration
+improves event-transfer RMSE in 2020, 2022 and especially 2024, while it worsens
+2016 and 2017. The correction itself should not be weakened to accommodate
+non-thermal losses. Instead, the formal mortality model needs to stop asking
+the thermal response to explain storm, COTS and other disturbance mortality.
+
+```{r}
+event_rmse |>
+  rename(
+    Event = event_year, `NOAA RMSE` = `NOAA unchanged`,
+    `Local-calibrated RMSE` = `Interval hazards + freshwater`,
+    `Change (local minus NOAA)` = change) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  kable(caption = 'Leave-one-event-out performance by bleaching event')
+```
+
+## Interval-aligned disturbance hazards and continuous freshwater response
+
+The central model now keeps the same shared thermal response but gives
+non-thermal mechanisms their own additive pressure block. Cyclone exposure is
+the maximum RRN damaging-wave hours and track/intensity signal overlapping the
+actual baseline-to-post-survey interval; COTS is represented by the
+interval-maximum RRN surface and the GBR-wide outbreak hindcast. This is a
+predictive decomposition, not a claimed causal allocation for an individual
+loss: disturbance notes remain diagnostic labels and are never supplied to the
+GBR-wide prediction model.
+
+That timing change matters. Carter and Yonge were formerly assigned zero
+cyclone hours in 2016 because the join used only the 2015--16 summer. Their
+cover intervals started in late 2014 and include Cyclone Nathan; the corrected
+RRN exposures are 68.72 and 64.44 damaging-wave hours respectively. Agincourt
+does not share that exposure because its baseline followed Nathan.
+
+Freshwater is deliberately continuous. The candidate includes current WQC
+frequency, the reef-relative preceding-decade percentile, the unthresholded
+10-year WQC sum, and coastal rainfall, each as a DHW modifier. The previous
+single freshwater composite is retained only in the comparison candidate. This
+avoids treating WQC = 0.50 as a universal ecological threshold.
+
+```{r}
+hazard_metrics |>
+  rename(
+    `Predictive R2` = predictive_r2,
+    `Severe RMSE` = severe_rmse,
+    `False-extreme rate` = false_extreme_rate) |>
+  kable(caption = 'Leave-one-event-out comparison of disturbance and freshwater candidates')
+```
+
+The interval-hazard plus freshwater model is the new central candidate. It
+reduces leave-one-event-out RMSE from 0.172 to 0.158 and raises predictive R2
+from 0.060 to 0.209 relative to the previous fully local-calibrated model.
+Severe-case RMSE improves from 0.356 to 0.346, while the false-extreme rate
+falls from 14.3% to 6.0%. The 2024 severe-tail RMSE is essentially unchanged
+(0.316 versus 0.310), so this is not an apparent average-error gain purchased
+by suppressing the severe 2024 event.
+
+Gannett Cay remains a deliberately visible failure: its 2020 COTS hindcast is
+high, but a COTS effect learned from other events is not strong enough to
+predict this held-out case. That preserves it as a high-priority COTS
+validation case rather than using its labelled explanation to tune the model.
+
+```{r}
+named_miss_checks |>
+  head(18) |>
+  transmute(
+    Programme = toupper(programme_key), Reef = ReefName, Year = event_year,
+    Observed = percent(observed_mortality, accuracy = 0.1),
+    Predicted = percent(predicted_mortality, accuracy = 0.1),
+    Residual = percent(residual, accuracy = 0.1),
+    `Interval wave hours` = round(cyc_interval_maxHrs4mw, 2),
+    `Peak cyclone` = tc_interval_peak_name,
+    `COTS interval surface` = round(cot_interval_idw_max, 3),
+    `COTS hindcast` = round(cots_outbreak_probability, 3),
+    Explanation = coalesce(primary_explanation, 'Unresolved')) |>
+  kable(caption = 'Named disturbance and COTS diagnostic cases')
+```
+
+## Operational uncertainty propagation
+
+The operational output now carries two uncertainty sources. Logger-correction
+error is estimated without mortality outcomes: direct matches use replicate
+logger dispersion with a pooled 0.61 DHW floor, interpolation combines source
+spread with a 1.59 DHW held-out floor, and unsupported reefs carry a zero-mean
+3.47 DHW uncertainty derived from omitted-site errors. A first-order response
+slope from the current-event-only INLA contrast translates that DHW uncertainty
+onto mortality. It is then combined with the largest programme-specific 90%
+conformal residual radius among the other bleaching events.
+
+This gives 94.6% empirical coverage for a nominal 90% interval across the 537
+held-out observations. The mean total interval width is 0.495 mortality units,
+whereas the mean DHW-only contribution is 0.115. Remaining ecological and
+observation-process uncertainty is therefore much larger than uncertainty in
+the local DHW correction. Manta 2024 remains less well calibrated than the
+pooled result, so the interval procedure is conservative overall but not yet
+exchangeable among programmes and events.
+
+```{r}
+uncertainty_predictions |>
+  group_by(correction_source) |>
+  summarise(
+    Observations = n(),
+    `Median correction SD (DHW)` = median(correction_sd),
+    `Empirical 90% coverage` = mean(covered90),
+    `Mean total width` = mean(interval_width90),
+    `Mean DHW-only width` = mean(dhw_interval_width90),
+    .groups = 'drop') |>
+  mutate(
+    `Empirical 90% coverage` = percent(
+      `Empirical 90% coverage`, accuracy = 0.1
+    ),
+    across(where(is.numeric), ~ round(.x, 3))) |>
+  kable(caption = 'Uncertainty calibration by local-correction source')
+```
+
+This is now suitable for operational uncertainty bands. The formal Bayesian
+endpoint remains repeated correction-layer imputation with INLA predictions
+pooled across imputations, because the DHW predictor also enters hinges,
+novelty and ecological interactions. A single classical measurement-error
+coefficient would not propagate uncertainty through all those derived terms.
+
+## Updated largest misses
+
+Predictions are averaged within reef, event and programme before ranking, so
+repeated observations such as Snapper do not dominate the table. The prediction
+gain column shows directly whether local temperature calibration resolved the
+miss. `Outside 90%` identifies observations that remain surprising even after
+both correction and held-out process uncertainty are included.
+
+```{r}
+updated_misses |>
+  arrange(desc(outside_upper90), desc(residual)) |>
+  head(20) |>
+  transmute(
+    Programme = toupper(programme_key), Reef = ReefName, Year = event_year,
+    Observations = observations,
+    NOAA_DHW = round(noaa_dhw, 2),
+    Corrected_DHW = round(corrected_dhw, 2),
+    `Correction source` = correction_source,
+    Observed = percent(observed_mortality, accuracy = 0.1),
+    Predicted = percent(predicted_mortality, accuracy = 0.1),
+    `Gain from local DHW` = percent(
+      prediction_gain_from_local_dhw, accuracy = 0.1
+    ),
+    `Observed minus predicted` = percent(residual, accuracy = 0.1),
+    `Upper 90% limit` = percent(prediction_q95, accuracy = 0.1),
+    `Outside 90%` = outside_upper90,
+    `Registered explanation` = coalesce(primary_explanation, 'Unresolved')) |>
+  kable(caption = 'Largest remaining misses after full local calibration')
+```
+
+The corrected model now brings Eyrie and Linnet inside their uncertainty bands,
+and substantially raises their point predictions. Lizard NW improves but
+remains outside the 90% interval. Mackay remains a major miss despite a direct
++2.99 DHW correction, strengthening the freshwater/Jasper interpretation.
+Penrith remains the largest miss because its direct logger correction lowers
+DHW while the observed loss was associated with Cyclone Debbie. Carter and
+Yonge show the same diagnostic tension in 2016—high mortality despite local
+evidence that NOAA overestimated thermal exposure—and need targeted ecological
+review before adding another thermal term.
+
+```{r, fig.width=8.5, fig.height=5.5}
+residual_priorities |>
+  filter(is.finite(spearman_with_residual)) |>
+  head(10) |>
+  mutate(feature = reorder(feature, spearman_with_residual)) |>
+  ggplot(aes(spearman_with_residual, feature)) +
+  geom_vline(xintercept = 0, colour = 'grey55') +
+  geom_col(aes(fill = spearman_with_residual > 0), width = 0.7) +
+  scale_fill_manual(values = c(`TRUE` = '#b2182b', `FALSE` = '#2166ac'),
+    guide = 'none') +
+  labs(
+    x = 'Spearman correlation with observed minus predicted mortality',
+    y = NULL,
+    title = 'Residual priorities after local DHW calibration',
+    subtitle = 'Diagnostic associations among reef-events with at least 30% mortality') +
+  theme_bw(base_size = 11)
+```
+
+## Priorities for the next model stage
+
+1. **Separate thermal and other-disturbance mortality contributions.** Retain
+   the observations, but model additive or competing cyclone, COTS and thermal
+   hazards so storm-driven rows cannot flatten the DHW response. Penrith and
+   Gannett Cay provide strong labelled test cases; Carter, Yonge and Agincourt
+   require review.
+2. **Strengthen the DHW-by-freshwater/coloured-water response.** Mackay remains
+   the largest 2024 miss after direct thermal correction, and upper-quartile
+   coastal rainfall is associated with about 12 percentage points more
+   underprediction among high-mortality reef-events. Keep WQC cumulative
+   exposure, but avoid imposing an unsupported universal threshold.
+3. **Replace the coarse cyclone representation.** Refit unchanged models when
+   the Jasper/Kirrily-resolving track and intensity layer arrives. Proximity,
+   intensity, wave exposure and rainfall/runoff should remain separate inputs.
+4. **Retain the current-event-only candidate as a severe-tail ensemble member.**
+   It has better severe-case RMSE than the fully calibrated central model but
+   more false extremes, making it useful for tail risk rather than the mean.
+5. **Audit 2016--2017 northern misses before expanding thermal complexity.**
+   Determine whether Carter, Yonge, Agincourt and St Crispin reflect storms,
+   COTS, cover-estimation error or unresolved community composition. Their
+   logger corrections do not support extra heat as the explanation.
+6. **Refine composition only where it adds information beyond total
+   Acropora.** The existing Acropora predictor is influential and is not lost;
+   the next candidate should distinguish tabular Acropora and weedy recovery
+   assemblages rather than adding another correlated total-cover metric.

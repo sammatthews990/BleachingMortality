@@ -1,0 +1,231 @@
+---
+title: "COTS timing, cyclone activation and La Nina residual audit"
+subtitle: "Operational candidate validation and event-specific failure analysis"
+format:
+  html:
+    toc: true
+    toc-location: left
+    number-sections: true
+    embed-resources: false
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(readr)
+  library(knitr)
+})
+source('../../src/lib/model_registry.R')
+root <- project_root()
+out <- file.path(root, 'output', 'cots_timing_cover_cyclone_soft_gate')
+fig_dir <- file.path(root, 'output', 'fig')
+include_figure <- function(id) {
+  path <- list.files(fig_dir, pattern = paste0('^', id, '.*\\.png$'), full.names = TRUE)
+  if (length(path)) cat(paste0('![](../../output/fig/', basename(path[[1]]), ')\n'))
+}
+comparison <- read_csv(file.path(out, 'model_comparison.csv'), show_col_types = FALSE)
+events <- read_csv(file.path(out, 'event_metrics.csv'), show_col_types = FALSE)
+fixed <- read_csv(file.path(out, 'supported_cots_fixed_effects.csv'), show_col_types = FALSE)
+correlations <- read_csv(file.path(out, 'cots_support_feature_correlations.csv'), show_col_types = FALSE)
+lanina <- read_csv(file.path(out, 'lanina_reef_event_contributors.csv'), show_col_types = FALSE)
+event_distribution <- read_csv(file.path(out, 'event_distribution_diagnostics.csv'), show_col_types = FALSE)
+severe <- read_csv(file.path(out, 'severe_residual_audit.csv'), show_col_types = FALSE)
+predictions <- read_csv(file.path(out, 'cv_predictions.csv'), show_col_types = FALSE)
+best_id <- readLines(file.path(out, 'best_candidate.txt'), n = 1)
+```
+
+## Decision
+
+The **original COTS hazard plus logistic cyclone activation** is promoted as the current operational model. Cyclone loss is now weighted continuously by
+
+$$
+g(W)=\operatorname{logit}^{-1}\left(\frac{W-20}{5}\right),
+$$
+
+instead of switching abruptly from zero to the full cyclone hazard at 20 damaging-wave hours. The expanded COTS timing/starting-cover block is not promoted: it did not improve overall held-out transfer and introduced almost perfectly redundant interactions.
+
+The disturbance labels remain historical training supervision only. Operational prediction uses COTS pressure, starting cover, cyclone exposure and the other environmental covariates; it does not require a future disturbance code.
+
+```{r results='asis'}
+render_model_contract(root)
+```
+
+## Candidate validation
+
+```{r}
+candidate_labels <- c(
+  cause_aware_exposure_gated_competing_hazards = 'Previous hard >20 h gate',
+  baseline_cots_logistic20_5_cyclone = 'Original COTS + logistic cyclone',
+  cots_timing_cover_hard20_cyclone = 'COTS timing/cover + hard gate',
+  cots_timing_cover_logistic20_5_cyclone = 'COTS timing/cover + logistic cyclone',
+  baseline_cots_ramp5_20_cyclone = 'Original COTS + 5-20 h ramp',
+  cots_timing_cover_ramp5_20_cyclone = 'COTS timing/cover + 5-20 h ramp'
+)
+validation_table <- comparison |>
+  transmute(
+    Model = unname(candidate_labels[candidate]),
+    Validation = recode(scheme,
+      leave_one_event_out = 'Leave one event out',
+      reef_blocked_5fold = 'Reef-blocked five-fold'),
+    RMSE = round(rmse, 3), `Predictive R2` = round(predictive_r2, 3),
+    `Severe RMSE` = round(severe_rmse, 3),
+    `False-extreme rate` = round(false_extreme_rate, 3),
+    `Occurrence Brier` = round(occurrence_brier, 3))
+kable(validation_table, caption = 'Matched held-out comparison of COTS-support and cyclone-activation candidates.')
+```
+
+```{r results='asis'}
+include_figure('Fig-INLA-13_cots_timing_cover_validation')
+```
+
+Relative to the hard-gated cause-aware model, the selected candidate changes leave-one-event-out RMSE from 0.1507 to **0.1492**, predictive R2 from 0.279 to **0.293**, severe RMSE from 0.3259 to **0.3254**, and leaves the false-extreme rate unchanged at 0.0436. Reef-blocked RMSE also improves marginally from 0.13983 to **0.13979**. The improvement is small but consistent across the two validation designs and removes a biologically brittle discontinuity.
+
+```{r results='asis'}
+include_figure('Fig-DATA-03_cyclone_activation_functions')
+```
+
+The logistic weight is approximately 0.018 at zero modelled wave hours, 0.12 at 10 hours, 0.50 at 20 hours and 0.88 at 30 hours. At zero exposure this generally contributes negligibly because the fitted cyclone hazard is itself small. This deterministic sensitivity is an interim solution: the forthcoming cyclone layer should estimate exposure uncertainty and re-evaluate the centre and scale.
+
+## COTS timing and starting-cover support
+
+The test added only information available by the event year:
+
+- preceding three-year cumulative RRN pressure above 0.22 COTS/tow;
+- years since the preceding above-threshold year;
+- starting coral cover; and
+- current-pressure-by-cover and prior-pressure-by-cover interactions.
+
+```{r}
+cots_terms <- fixed |>
+  filter(grepl('cots_pressure_x_cover|cots_prior3|cots_prior_burden|cots_years_since', term)) |>
+  transmute(Component = component, Term = term, Mean = round(mean, 3),
+    `Lower 95%` = round(.data[['0.025quant']], 3),
+    `Upper 95%` = round(.data[['0.975quant']], 3))
+kable(cots_terms, caption = 'Posterior summaries for the added COTS timing/cover terms.')
+```
+
+The current-pressure-by-cover effect is positive for conditional COTS-loss magnitude, but the broader timing block does not improve event transfer. The current-pressure interaction correlates 0.99995 with current pressure, and the prior-burden interaction correlates 0.99952 with prior burden. These terms mostly divide the same information across coefficients rather than adding complementary support.
+
+```{r}
+high_correlation <- correlations |>
+  filter(feature_1 < feature_2, abs(spearman_correlation) >= 0.8) |>
+  arrange(desc(abs(spearman_correlation))) |>
+  mutate(spearman_correlation = round(spearman_correlation, 3))
+kable(high_correlation, caption = 'Non-duplicate COTS candidate feature pairs with absolute Spearman correlation at least 0.8.')
+```
+
+This does not mean starting cover is irrelevant. Starting cover remains in both COTS occurrence and magnitude fits. It means that multiplying sparse pressure variables by cover is not a stable additional predictor in this relative-mortality model. A smaller temporal-state model and the absolute-cover-change framework are better routes to a formal biomass constraint.
+
+## Remaining severe residuals
+
+```{r results='asis'}
+include_figure('Fig-INLA-15_severe_residual_audit')
+```
+
+```{r}
+severe_table <- severe |>
+  slice_head(n = 18) |>
+  transmute(Reef = ReefName, Event = event_year, Programme = programme_key,
+    Observed = round(observed_mortality, 3),
+    Predicted = round(predicted_mortality, 3), Residual = round(residual, 3),
+    DHW = round(ann_maxdhw, 2), `Starting cover` = round(observed_pre_cover, 2),
+    Acropora = round(prop_acropora_pre, 2),
+    `COTS/tow` = round(cot_interval_idw_max, 2),
+    `Wave hours` = round(cyc_interval_maxHrs4mw, 1))
+kable(severe_table, caption = 'Largest observation-level residuals involving observed or predicted mortality of at least 50%.')
+```
+
+The leading supported but unresolved mechanisms remain:
+
+- **Mackay 2024:** observed mortality reaches 0.613 while the held-out prediction is 0.025. Available wave exposure is zero and COTS pressure is negligible, so the current cyclone/COTS refinement cannot solve the freshwater/Jasper miss.
+- **Penrith 2017:** 34.9 damaging-wave hours activate 95% of the cyclone hazard, but prediction is only 0.197 versus 0.733 observed. The exposure is identified; conditional cyclone severity remains too weak.
+- **Gannett 2020:** the explicit COTS component raises prediction to 0.228, but observed mortality is 0.566. Cause is supported, magnitude remains unresolved.
+- **Snapper and Tobias Spit 2024:** flooding/Jasper evidence remains stronger than the available cyclone-wave field.
+- **Thetford, Hastings and St Crispin 2024:** severe overpredictions remain important counterexamples and require cooling, composition and observation-support review.
+
+## Why predictive R2 is negative in 2020 and 2022
+
+```{r}
+event_table <- event_distribution |>
+  transmute(Event = event_year, N = observations,
+    `Observed mean` = round(observed_mean, 3),
+    `Observed SD` = round(observed_sd, 3),
+    `Observed max` = round(observed_max, 3),
+    `Predicted mean` = round(predicted_mean, 3),
+    RMSE = round(rmse, 3),
+    `Mean-only benchmark RMSE` = round(mean_benchmark_rmse, 3),
+    `Predictive R2` = round(predictive_r2, 3))
+kable(event_table, caption = 'Event-specific response distributions and held-out performance for the selected candidate.')
+```
+
+Negative predictive R2 does not mean the absolute errors are the largest in these events. It means the model is worse than predicting the held-out event's observed mean. In 2020 mean mortality is only 0.016 and in 2022 only 0.027, with many exact zeros. Their mean-only benchmark RMSE values are therefore just 0.072 and 0.066. The operational model retains a positive occurrence floor and predicts means of 0.064 and 0.059, producing RMSE of 0.090 and 0.084.
+
+The event distributions are also awkward for R2: 2020 combines one severe Gannett loss with many zeros, while 2022 contains no observations above 0.5 and only a few moderate losses. The audit therefore needs both directions rather than a single event correction.
+
+```{r results='asis'}
+include_figure('Fig-INLA-14_lanina_residual_contributors')
+```
+
+### Largest 2020 contributors
+
+```{r}
+hypothesis_2020 <- c(
+  'Gannett Cay Reef (21-556)' = 'Known COTS magnitude underprediction.',
+  'U/N Reef (11-049)' = 'High DHW but very low Acropora and high cloud: missing resistant composition or cooling support.',
+  'U/N Reef (22-088a)' = 'High COTS pressure but zero recorded loss: interval timing, cover support or survey mismatch.',
+  'Pandora Reef (18-051)' = 'High DHW, very low Acropora and very high WQC: composition/plume amelioration candidate.',
+  'Havannah Reef (18-065)' = 'High Acropora and depth-specific bleaching notes: local thermal/depth response may be underestimated.',
+  'Linnet Reef (14-126)' = 'Known NOAA-versus-logger discrepancy and northern local-temperature uncertainty.',
+  'U/N Reef (11-162)' = 'High DHW, very low Acropora and high cloud: resistant composition/cooling candidate.',
+  'Horseshoe Reef (No 1) (22-104a)' = 'High COTS pressure after low starting cover: timing and observation-support control.'
+)
+top_2020 <- lanina |>
+  filter(event_year == 2020) |>
+  slice_head(n = 8) |>
+  transmute(Reef = ReefName, Direction = direction,
+    Observed = round(observed_mortality, 3), Predicted = round(predicted_mortality, 3),
+    `SSE share` = scales::percent(sse_share, accuracy = 0.1),
+    DHW = round(ann_maxdhw, 2), Acropora = round(acropora, 2),
+    WQC = round(wqc, 2), Cloud = round(cloud, 2), `COTS/tow` = round(cots, 2),
+    `Working hypothesis` = unname(hypothesis_2020[ReefName]))
+kable(top_2020, caption = 'Largest reef-event contributors to 2020 squared error and testable hypotheses.')
+```
+
+### Largest 2022 contributors
+
+```{r}
+hypothesis_2022 <- c(
+  'U/N Reef (20-104)' = 'Moderate loss at about 4 DHW: local heat or bleaching-exposure mismatch.',
+  'Mackay Reef (16-015)' = 'High rainfall and known freshwater sensitivity; salinity/runoff candidate.',
+  'U/N Reef (21-139)' = 'Large thermal prediction at low DHW: occurrence-floor/spatial-effect control.',
+  'Wade Reef (21-588)' = 'Zero loss at very low DHW; thermal occurrence floor dominates despite COTS pressure.',
+  'Pompey Reef (No 1) (20-351a)' = 'Zero loss below 3 DHW: thermal occurrence floor or recovery/cover-state mismatch.',
+  'Dip Reef (18-039)' = 'Surveyed bleaching with low satellite DHW: local exposure or timing mismatch.',
+  'U/N Reef (21-060)' = 'Zero loss below 2 DHW: thermal occurrence-floor control.',
+  'U/N Reef (19-131a)' = 'Recorded bleaching and loss at moderate DHW: local exposure/composition candidate.'
+)
+top_2022 <- lanina |>
+  filter(event_year == 2022) |>
+  slice_head(n = 8) |>
+  transmute(Reef = ReefName, Direction = direction,
+    Observed = round(observed_mortality, 3), Predicted = round(predicted_mortality, 3),
+    `SSE share` = scales::percent(sse_share, accuracy = 0.1),
+    DHW = round(ann_maxdhw, 2), Acropora = round(acropora, 2),
+    Rainfall = round(rainfall, 2), Cloud = round(cloud, 2),
+    `Working hypothesis` = unname(hypothesis_2022[ReefName]))
+kable(top_2022, caption = 'Largest reef-event contributors to 2022 squared error and testable hypotheses.')
+```
+
+The clearest model-development route is an **operational event-state effect in the Bernoulli occurrence component**, not a flatter DHW magnitude curve. ENSO/SOI and rainfall/runoff anomalies are known during the event and could lower the expected occurrence floor for La Nina summers. This must be tested continuously and with strong shrinkage because only five major events are available. Event identity remains retrospective and cannot enter operational prediction.
+
+## Most important next steps
+
+{{< include ../../docs/model-next-steps.md >}}
+
+## Reproducibility
+
+The analysis is generated by `src/evaluation/test_cots_timing_cover_and_cyclone_soft_gate.R`. Cross-validated predictions, coefficient tables and residual audits are in `output/cots_timing_cover_cyclone_soft_gate/`; manuscript figures and their plotted data are in `output/fig/`.

@@ -1,0 +1,289 @@
+---
+title: 'Event-specific NOAA DHW correction'
+subtitle: 'Authenticated AIMS logger extraction, depth diagnostics and mortality-model validation'
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+logger <- read_csv('../data/processed/aims_logger_noaa_dhw_validation.csv',
+  show_col_types = FALSE)
+logger_ok <- logger |> filter(adequate_dhw_coverage)
+range_metrics <- read_csv('../../output/dhw_correction/range_screen_metrics.csv',
+  show_col_types = FALSE)
+selected <- read_csv('../../output/dhw_correction/selected_configuration.csv',
+  show_col_types = FALSE)
+depth_pairs <- read_csv('../../output/dhw_correction/paired_depth_diagnostics.csv',
+  show_col_types = FALSE)
+
+base_name <- 'persistent_rw1_cyclone_cots_partial_pool'
+rolling_name <- 'persistent_rw1_cyclone_cots_rolling_dhw_partial_pool'
+event_name <- 'persistent_rw1_cyclone_cots_event_dhw_partial_pool'
+candidate_labels <- c(
+  'NOAA unchanged',
+  'Historical logger surface',
+  'Within-event logger surface')
+names(candidate_labels) <- c(base_name, rolling_name, event_name)
+
+inla_predictions <- read_csv('../../output/inla_spatiotemporal/cv_predictions.csv',
+  show_col_types = FALSE)
+inla_metrics <- read_csv('../../output/inla_spatiotemporal/model_comparison.csv',
+  show_col_types = FALSE) |>
+  filter(candidate %in% names(candidate_labels)) |>
+  mutate(
+    DHW_input = recode(candidate, !!!candidate_labels),
+    validation = recode(scheme,
+      reef_blocked_5fold = 'Reef-blocked 5-fold',
+      leave_one_event_out = 'Leave-one-event-out'))
+
+cluster_ids <- c('14-114', '14-116a', '14-118', '14-123', '14-126', '14-143')
+cluster_predictions <- inla_predictions |>
+  filter(event_year == 2024, ReefID %in% cluster_ids,
+    scheme == 'leave_one_event_out', candidate %in% names(candidate_labels)) |>
+  mutate(
+    DHW_input = recode(candidate, !!!candidate_labels),
+    NOAA_DHW = coalesce(ann_maxdhw_original, ann_maxdhw),
+    correction_DHW = coalesce(applied_dhw_uplift, 0)) |>
+  group_by(DHW_input, ReefID, ReefName) |>
+  summarise(
+    observed = mean(observed_mortality),
+    predicted = mean(predicted_mortality), NOAA_DHW = mean(NOAA_DHW),
+    correction_DHW = mean(correction_DHW), model_DHW = mean(ann_maxdhw),
+    .groups = 'drop')
+```
+
+## Decision summary
+
+The authenticated AIMS data support an event-specific NOAA correction layer,
+but not a universal Lizard-region uplift. Discrepancies have moderate
+cross-event persistence, while their magnitude and even their sign vary among
+sites and years. The production-safe form is therefore a partially pooled
+spatial surface trained only on previous events. A second, within-event surface
+is retained for retrospective analysis or operational updating once enough
+current-event logger data exist.
+
+The historical correction modestly improves leave-one-event-out mortality RMSE
+from `r number(inla_metrics$rmse[inla_metrics$candidate == base_name & inla_metrics$scheme == 'leave_one_event_out'], accuracy = 0.0001)`
+to `r number(inla_metrics$rmse[inla_metrics$candidate == rolling_name & inla_metrics$scheme == 'leave_one_event_out'], accuracy = 0.0001)`.
+The within-event layer raises exposure at the principal 2024 Lizard-region
+misses, but does not resolve their severe mortality and slightly worsens
+GBR-wide event-transfer RMSE to
+`r number(inla_metrics$rmse[inla_metrics$candidate == event_name & inla_metrics$scheme == 'leave_one_event_out'], accuracy = 0.0001)`.
+Local heat underestimation is therefore one contributor, not the whole
+explanation; freshwater, community composition and other compound pressures
+remain necessary.
+
+## Reproducible authenticated extraction
+
+`src/data/pull_aims_temperature_data.R` downloads the complete AIMS temperature
+deployment catalogue, retains deployment depth, and downloads every daily
+logger record in the prespecified bleaching-event windows. It can also add
+automated weather/ocean-station water temperatures. Raw responses are cached
+under `data/raw/aims_temperature/api/`; the key is read only from
+`AIMS_DATAPLATFORM_API_KEY` and is never written into the repository or report.
+
+The default extraction covers 2016, 2017, 2020, 2022 and 2024. Years, refresh
+behaviour and automated-station scope are configuration values, so expansion
+does not require code changes.
+
+```{r}
+logger |>
+  count(event_year, source, depth_class, adequate_dhw_coverage,
+    name = 'series_events') |>
+  arrange(event_year, source, depth_class, desc(adequate_dhw_coverage)) |>
+  kable(caption = 'AIMS--NOAA comparisons by event, source, depth and coverage')
+```
+
+## GBR-wide logger discrepancy
+
+Logger DHW is reconstructed from quality-controlled daily AIMS temperatures,
+the collocated NOAA maximum monthly mean, and the NOAA 84-day HotSpot threshold
+definition. A comparison is accepted only when at least 70 days are available
+in the 84-day window at the eligible logger-DHW peak.
+
+```{r}
+logger_ok |>
+  group_by(event_year) |>
+  summarise(
+    adequate_series = n(), sites = n_distinct(site),
+    median_logger_minus_NOAA_DHW = median(dhw_discrepancy_logger_minus_noaa),
+    q10 = quantile(dhw_discrepancy_logger_minus_noaa, 0.10),
+    q90 = quantile(dhw_discrepancy_logger_minus_noaa, 0.90),
+    NOAA_underestimated_fraction = mean(dhw_discrepancy_logger_minus_noaa > 0),
+    .groups = 'drop') |>
+  mutate(across(where(is.numeric), ~ round(.x, 2))) |>
+  kable(caption = 'Coverage-qualified AIMS comparisons by bleaching event')
+```
+
+```{r, fig.width=9, fig.height=8}
+ggplot(logger_ok, aes(lon, lat, colour = dhw_discrepancy_logger_minus_noaa)) +
+  geom_point(alpha = 0.75, size = 1.6) +
+  facet_wrap(~ event_year, ncol = 2) +
+  scale_colour_gradient2(
+    low = '#2c7bb6', mid = 'white', high = '#d7191c', midpoint = 0,
+    limits = c(-8, 8), oob = squish, name = 'Logger minus\nNOAA DHW') +
+  coord_equal() +
+  labs(
+    x = 'Longitude', y = 'Latitude',
+    title = 'NOAA discrepancy is spatially and temporally heterogeneous',
+    subtitle = 'Positive values indicate NOAA underestimation; colour capped at +/-8 DHW') +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+Across series observed in multiple events, discrepancy ranks are moderately
+persistent (event-pair Spearman correlations approximately 0.59--0.73), but
+extreme individual logger anomalies mean interpolation uncertainty must be
+retained.
+
+## Depth: use it for record selection, not an unstable slope
+
+NOAA is a surface-temperature product. The correction builder therefore
+prefers shallow/reef-flat records (0--5 m) within each site-event and uses deep
+records only where a shallow record is unavailable. It retains all depths in
+the audit output.
+
+Only `r nrow(depth_pairs)` coverage-qualified site-events currently contain
+paired shallow and deep series. Their median shallow-minus-deep discrepancy is
+`r number(median(depth_pairs$shallow_minus_deep_dhw), accuracy = 0.01)` DHW.
+That is not enough replication to estimate a reliable continuous depth effect
+or a separate deep correction surface.
+
+```{r}
+depth_pairs |>
+  transmute(
+    Event = event_year, Site = site,
+    `Shallow depth (m)` = shallow_0_5m_depth,
+    `Deep depth (m)` = deep_gt5m_depth,
+    `Shallow minus deep discrepancy (DHW)` = shallow_minus_deep_dhw) |>
+  mutate(across(where(is.numeric), ~ round(.x, 2))) |>
+  kable(caption = 'Coverage-qualified paired shallow--deep diagnostics')
+```
+
+At Lizard Island in 2016, the authenticated automated station adds a 0.6 m
+series and a 10.1 m series. Their reconstructed logger-minus-NOAA discrepancies
+are -0.68 and -0.35 DHW respectively. Thus 2016 NOAA underestimation was not
+uniform across the Lizard region: it is strong at Linnet and Martin, but not at
+the Lizard Island station itself.
+
+## Event-specific spatial correction
+
+The correction aggregates to site-event, partially pools each site's historical
+discrepancy toward zero according to the number of previous events, and
+interpolates from at most eight nearby logger sites. Spatial ranges were
+screened with both held-out sites and held-out whole events.
+
+```{r, fig.width=9, fig.height=5.5}
+range_metrics |>
+  mutate(validation = recode(
+    scheme,
+    leave_event_out = 'Historical surface: event held out',
+    leave_site_out = 'Historical surface: site held out',
+    within_event_leave_site_out = 'Within-event surface: site held out')) |>
+  ggplot(aes(range_km, rmse, colour = validation)) +
+  geom_hline(
+    yintercept = unique(range_metrics$zero_correction_rmse),
+    linetype = 2, colour = 'grey45') +
+  geom_line() +
+  geom_point(size = 2.4) +
+  scale_x_continuous(breaks = sort(unique(range_metrics$range_km))) +
+  labs(
+    x = 'Maximum logger interpolation range (km)',
+    y = 'Held-out logger discrepancy RMSE (DHW)', colour = NULL,
+    title = 'Blocked validation of the NOAA correction surface',
+    subtitle = 'Dashed line: no correction; individual logger extremes dominate RMSE') +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+The selected historical surface uses a
+`r selected$selected_persistent_range_km` km range; the within-event update
+uses `r selected$selected_within_event_range_km` km to estimate the broader
+event offset. The historical surface improves event-held-out logger-discrepancy
+RMSE from 4.93 to 4.73 DHW at the selected 100 km range, and its best screened
+event-held-out value is 4.67 DHW at 25 km. Selection uses the site-held-out
+criterion to avoid tuning only to years.
+
+## Mortality-model validation
+
+```{r}
+inla_metrics |>
+  select(
+    DHW_input, validation, RMSE = rmse, MAE = mae,
+    predictive_R2 = predictive_r2, bias,
+    occurrence_Brier = occurrence_brier,
+    severe_RMSE = severe_rmse, false_extreme_rate,
+    WAIC = waic, DIC = dic) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  arrange(validation, RMSE) |>
+  kable(caption = 'INLA validation with unchanged and logger-corrected DHW')
+```
+
+Reef-blocked performance is essentially unchanged across the three inputs.
+For transfer to an unseen event, the historical surface is strongest by RMSE
+and severe-case RMSE. The within-event surface cannot be interpreted as
+prospective leave-event-out information; it is a retrospective/current-event
+update.
+
+```{r, fig.width=9, fig.height=6}
+ggplot(cluster_predictions, aes(observed, predicted, colour = DHW_input)) +
+  geom_abline(slope = 1, intercept = 0, colour = 'grey45') +
+  geom_point(size = 2.8) +
+  geom_text(
+    aes(label = ReefID), nudge_y = 0.018, size = 3,
+    check_overlap = TRUE, show.legend = FALSE) +
+  coord_equal(xlim = c(0, 0.65), ylim = c(0, 0.65)) +
+  labs(
+    x = 'Observed relative mortality', y = 'Predicted relative mortality',
+    colour = 'DHW input',
+    title = 'Logger correction alone does not resolve the 2024 Lizard-region misses',
+    subtitle = 'Predictions use the fold in which the complete 2024 event was withheld') +
+  theme_bw(base_size = 11) +
+  theme(legend.position = 'bottom')
+```
+
+```{r}
+cluster_predictions |>
+  mutate(across(
+    c(observed, predicted, NOAA_DHW, correction_DHW, model_DHW),
+    ~ round(.x, 3))) |>
+  arrange(ReefID, DHW_input) |>
+  select(
+    ReefID, ReefName, DHW_input, NOAA_DHW,
+    correction_DHW, model_DHW, observed, predicted) |>
+  kable(caption = '2024 Lizard-region leave-event-out predictions')
+```
+
+The within-event surface adds approximately 0.96 DHW at Linnet, 0.94 at Martin
+and 0.84 at Eyrie. Predictions rise, but remain far below the observed severe
+losses. Temperature correction must not substitute for freshwater/WQC,
+Acropora composition, COTS or cyclone effects.
+
+## Operational recommendation
+
+1. Retain NOAA DHW as the base exposure and store the correction as a separate,
+   versioned field with distance, effective logger count and correction mode.
+2. Use the historical-only correction for genuinely prospective predictions;
+   it uses no logger observations from the event being predicted.
+3. Update to the within-event correction only after prespecified coverage and
+   spatial-support thresholds are met, and label those predictions as updated.
+4. Prefer 0--5 m logger records for surface calibration, fall back to deeper
+   records where necessary, and keep shallow/deep diagnostics. Do not estimate
+   a continuous depth coefficient until substantially more paired events exist.
+5. Propagate correction uncertainty into the INLA predictor rather than treating
+   corrected DHW as known exactly. The current screen tests the mean only.
+6. Keep the older fixed +4.82 DHW Lizard uplift solely as a stress-test. It is
+   informative mechanistically but is not a calibrated GBR-wide product.

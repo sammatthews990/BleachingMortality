@@ -7,7 +7,7 @@ import pandas as pd
 import xarray as xr
 
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).parents[1] / "src" / "data"))
 from secchi_extraction import extract_q1_secchi  # noqa: E402
 
 

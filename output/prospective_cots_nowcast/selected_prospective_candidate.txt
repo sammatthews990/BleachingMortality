@@ -1,1 +1,0 @@
-operational_rrn_raw_plus_manta_state

@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from scripts.validate_environmental_data import (
+from src.data.validate_environmental_data import (
     EXPECTED_YEARS,
     validate_environmental_dataframe,
 )

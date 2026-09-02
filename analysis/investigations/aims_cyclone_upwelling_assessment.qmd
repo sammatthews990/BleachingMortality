@@ -1,0 +1,488 @@
+---
+title: "Freshwater, cyclone and upwelling predictors for GBR mortality"
+subtitle: "AIMS extraction, 2024 context and a practical GBR-wide design"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    code-summary: "Show analysis code"
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+theme_set(theme_minimal(base_size = 12))
+
+aims <- read_csv(
+  '../data/processed/aims_freshwater_training_points.csv',
+  show_col_types = FALSE
+)
+discrete <- read_csv(
+  '../data/processed/aims_wq_discrete_samples_2015_2025.csv',
+  show_col_types = FALSE
+)
+projects <- read_csv(
+  '../data/processed/aims_wq_project_coverage.csv',
+  show_col_types = FALSE
+)
+loggers <- read_csv(
+  '../data/processed/aims_wq_logger_hourly_coverage.csv',
+  show_col_types = FALSE
+)
+logger_events <- read_csv(
+  '../data/processed/aims_wq_logger_hourly_event_summary.csv',
+  show_col_types = FALSE
+)
+occurrence_metrics <- read_csv(
+  '../../output/aims_freshwater_proxy/occurrence_metrics.csv',
+  show_col_types = FALSE
+)
+magnitude_metrics <- read_csv(
+  '../../output/aims_freshwater_proxy/magnitude_metrics.csv',
+  show_col_types = FALSE
+)
+cyclones <- read_csv(
+  '../data/processed/bom_cyclone_reef_year.csv',
+  show_col_types = FALSE
+)
+tracks <- read_csv(
+  '../data/processed/bom_cyclone_tracks_gbr.csv',
+  show_col_types = FALSE
+)
+reef_grid <- read_csv(
+  '../data/processed/freshwater_predictor_grid_2016_2025.csv',
+  show_col_types = FALSE
+)
+```
+
+## Decision summary
+
+The AIMS data are useful, but they should be a **calibration and validation
+layer**, not the only freshwater predictor. The portal provides direct salinity,
+suspended solids, CDOM, Secchi depth and chlorophyll observations at monitored
+stations. These observations are too sparse to interpolate blindly across the
+GBR, and many low-salinity stations are near river mouths rather than on reefs.
+
+The practical GBR-wide freshwater model is therefore a two-part model:
+
+1. predict the probability of ecologically important freshwater exposure
+   (minimum salinity below 30 PSU); and
+2. conditional on exposure, predict its magnitude or freshwater deficit.
+
+The predictors should combine event-timed rainfall, IMOS optical plume
+information, cyclone exposure and spatial connectivity to river sources. The
+historical eReefs salinity field remains useful as a broad physical prior, but
+the AIMS measurements should calibrate its bias. The final reef prediction must
+carry uncertainty that increases with distance from AIMS observations.
+
+The first reef-blocked screen is a useful negative result. Rainfall, IMOS
+Kd490, RRN water colour and cyclone proximity only modestly improve detection
+of salinity below 30 PSU, and none of the candidates estimates freshwater
+severity accurately enough for production use.
+
+The cyclone track layer is immediately useful and resolves an exposure signal
+that the existing RRN 4 m wave-hours variable did not consistently recover. It
+should remain separate from freshwater and wave damage: track proximity is a
+forcing indicator, not proof of either mechanism.
+
+For upwelling, a single static shelf category is not adequate. We need an
+event-specific cooling/refugia layer derived from high-resolution daily SST,
+with a second subsurface intrusion component. This is an ameliorating modifier
+of DHW, so its main model role is an interaction with heat stress.
+
+## What the 2024 manuscript changes
+
+The attached 2024 impact manuscript reports surveys of 124 reefs and record
+single-year coral-cover declines in the Northern and Southern GBR. Acropora
+accounted for much of both the preceding gains and subsequent losses. The most
+important modelling result is the contrast around Lizard Island: outer-shelf
+reefs with approximately 7.3--7.6 DHW had negligible mortality, while inshore
+reefs with lower heat exposure experienced severe mortality. The outer-shelf
+reefs experienced a local 1--1.5 degrees C cooling during the heatwave,
+consistent with hydrodynamic relief. Jasper, flooding and low salinity were
+also implicated in the northern losses.
+
+This supports four changes already being developed in the mortality pipeline:
+
+- retain pre-event coral composition, especially Acropora;
+- represent freshwater as an event-specific DHW modifier;
+- add cyclone forcing without conflating wave damage and flood exposure; and
+- add upwelling/cooling relief as a DHW interaction.
+
+The manuscript also supports using aerial bleaching severity as a within-event
+nowcast gate. It should improve post-event forecasts, but cannot be used for a
+fully pre-season prediction.
+
+## AIMS data recovered
+
+The extraction uses the public [AIMS water-quality portal](https://data.aims.gov.au/water-quality/)
+and is reproducible with `src/data/extract_aims_water_quality.R`. Inspection of
+the portal application recovered its all-programme/MMP-only,
+depth-average/depth-weighted and hourly/daily query variants. The primary
+calibration table uses all programmes, depth averages and observations from
+0--10 m; the alternative summaries remain available for sensitivity checks.
+
+```{r}
+aims_event <- aims |>
+  group_by(event_year) |>
+  summarise(
+    station_events = n(),
+    locations = n_distinct(LOCATION_NAME),
+    with_salinity = sum(is.finite(salinity_min_psu)),
+    below_30 = sum(salinity_min_psu < 30, na.rm = TRUE),
+    below_25 = sum(salinity_min_psu < 25, na.rm = TRUE),
+    within_20km_reef = sum(reef_proximal_20km),
+    .groups = 'drop'
+  )
+kable(aims_event, digits = 0)
+```
+
+The all-programme depth-averaged download contains `r comma(nrow(discrete))`
+sample-depth rows. After retaining ecologically relevant shallow observations
+(0--10 m), there are `r comma(nrow(aims))` station-event summaries;
+`r sum(aims$reef_proximal_5km)` are within 5 km and
+`r sum(aims$reef_proximal_20km)` are within 20 km of a GBR reef registry point.
+The processed archive contains `r sum(aims$sample_dates, na.rm = TRUE)` station
+sampling dates after shallow samples are aggregated.
+
+```{r}
+projects |>
+  group_by(PROJECT) |>
+  summarise(
+    rows = sum(rows), locations = sum(locations),
+    salinity_rows = sum(salinity_rows),
+    first_event = min(event_year), last_event = max(event_year),
+    .groups = 'drop'
+  ) |>
+  arrange(desc(salinity_rows)) |>
+  kable(caption = 'All-programme depth-average coverage by project')
+```
+
+The expanded query adds MBM and LTMP-DIC reef observations that are absent
+from an MMP-only export. A server quirk also matters for reproducibility:
+`mmpOnly` is not encoded in the generated archive filename, so the extraction
+uses a distinct bounding-box string for the all-programme request to prevent a
+cached MMP-only archive masking the broader result.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 5.5
+aims_2024 <- aims |> filter(event_year == 2024, is.finite(salinity_min_psu))
+
+ggplot() +
+  geom_point(
+    data = reef_grid |> distinct(ReefID, .keep_all = TRUE),
+    aes(reef_longitude, reef_latitude),
+    colour = 'grey80', size = 0.25
+  ) +
+  geom_point(
+    data = aims_2024,
+    aes(LONGITUDE, LATITUDE, colour = salinity_min_psu),
+    size = 2.2, alpha = 0.9
+  ) +
+  scale_colour_gradientn(
+    colours = c('#7f0000', '#d7301f', '#fdae61', '#2c7fb8'),
+    limits = c(0, 36), oob = squish,
+    name = 'Minimum\nsalinity (PSU)'
+  ) +
+  coord_equal(xlim = c(142.5, 154), ylim = c(-25, -10)) +
+  labs(
+    title = 'AIMS shallow water-quality observations in the 2024 wet season',
+    subtitle = 'Samples are from 0--10 m; grey points are GBR registry features',
+    x = 'Longitude', y = 'Latitude'
+  )
+```
+
+### Important limitation: the continuous logger gap
+
+```{r}
+#| fig-width: 9
+#| fig-height: 4.5
+loggers |>
+  mutate(
+    first_date = as.Date(first_time),
+    last_date = as.Date(last_time),
+    site = reorder(site, site_latitude)
+  ) |>
+  ggplot(aes(y = site)) +
+  geom_segment(
+    aes(x = first_date, xend = last_date, yend = site),
+    linewidth = 2.5, colour = '#2166ac'
+  ) +
+  geom_vline(xintercept = as.Date('2024-01-01'), linetype = 2) +
+  labs(
+    title = 'AIMS continuous logger coverage available from the portal',
+    subtitle = 'The public daily logger files end by October 2023; they do not observe Jasper in 2024',
+    x = NULL, y = 'Logger site'
+  )
+```
+
+This is not a join error: the latest timestamp in the downloaded hourly logger
+files is `r max(as.POSIXct(loggers$last_time, tz = 'UTC'))`. Hourly data matter:
+`r sum(logger_events$salinity_hours_below30 > 0, na.rm = TRUE)` historical
+site-events contain at least one hour below 30 PSU, and short pulses can be
+hidden by daily averages. The discrete record does include 2024, but it is
+intermittent. It also includes LTMP-DIC, MBM and legacy projects when the API's
+`mmpOnly=false` option is used; this is why it recovers reef samples that an
+MMP-only export misses.
+
+```{r}
+target_wq <- aims |>
+  filter(
+    event_year == 2024,
+    grepl('Mackay|Linnet|Eyrie|Swinger|Lizard', LOCATION_NAME,
+          ignore.case = TRUE),
+    is.finite(salinity_min_psu)
+  ) |>
+  transmute(
+    Project = PROJECT, Location = LOCATION_NAME,
+    `Matched reef` = ReefName,
+    `Depth range (m)` = paste0(sample_depth_min_m, '--', sample_depth_max_m),
+    `Minimum salinity (PSU)` = round(salinity_min_psu, 2),
+    `Sampling dates` = sample_dates,
+    `Match method` = reef_match_method,
+    `Distance to reef (km)` = round(nearest_reef_distance_km, 1)
+  ) |>
+  arrange(Location)
+kable(target_wq, caption = 'Recovered 2024 observations at target northern reefs')
+```
+
+These measurements demonstrate that the apparent absence at the target reefs
+was partly an API-filter and depth-filter problem. They do not rule out an
+earlier Jasper freshwater pulse: most are single visits, and a later value near
+34 PSU cannot establish the event minimum. Mackay's measurement was at 5 m in
+late February, roughly two months after Jasper's December flood pulse.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 5
+logger_events |>
+  filter(is.finite(salinity_min_psu)) |>
+  ggplot(aes(event_year, salinity_min_psu, colour = site)) +
+  geom_hline(yintercept = 30, linetype = 2, colour = 'grey35') +
+  geom_point(size = 2, alpha = 0.8) +
+  scale_x_continuous(breaks = sort(unique(logger_events$event_year))) +
+  labs(
+    title = 'Hourly loggers expose freshwater pulses hidden by seasonal means',
+    x = 'Event year', y = 'Minimum hourly salinity (PSU)', colour = 'Site'
+  )
+```
+
+## Freshwater proxy pilot
+
+The first compact hurdle-model screen is complete. It uses five whole-reef
+folds and keeps 2024 in the validation pool. The occurrence target has
+`r comma(max(occurrence_metrics$rows))` complete shallow station-events and
+`r comma(max(occurrence_metrics$flood30_rows))` events below 30 PSU.
+
+```{r}
+occurrence_metrics |>
+  filter(evaluation == 'All reef-blocked rows') |>
+  ggplot(aes(reorder(model, average_precision), average_precision)) +
+  geom_col(fill = '#2166ac') +
+  geom_hline(
+    yintercept = unique(occurrence_metrics$prevalence[
+      occurrence_metrics$evaluation == 'All reef-blocked rows'
+    ]), linetype = 2
+  ) +
+  coord_flip() +
+  labs(
+    title = 'Reef-blocked detection of salinity below 30 PSU',
+    subtitle = 'Dashed line is event prevalence; higher average precision is better',
+    x = NULL, y = 'Average precision'
+  )
+```
+
+The hybrid has the best overall average precision
+(`r round(max(occurrence_metrics$average_precision[occurrence_metrics$evaluation == 'All reef-blocked rows']), 3)`),
+but the gain over eReefs and operational proxies is modest. More importantly,
+none of the candidates estimates low-salinity magnitude adequately: conditional
+RMSE is `r round(min(magnitude_metrics$conditional_rmse_psu[magnitude_metrics$evaluation == 'All reef-blocked rows']), 1)`
+PSU and predictions are biased about
+`r round(min(magnitude_metrics$conditional_bias_psu[magnitude_metrics$evaluation == 'All reef-blocked rows']), 1)`
+PSU too high. The pilot can rank some exposure risk, but it is not yet suitable
+for supplying mortality-model salinity magnitudes. Event timing and
+river-to-reef connectivity are the next necessary additions.
+
+## Cyclone best tracks
+
+The extraction uses the Bureau of Meteorology's Australian tropical cyclone
+best-track archive. The Bureau describes these as post-event reanalysed tracks;
+the source includes time, position, pressure, maximum wind and quadrant wind
+radii. `src/data/extract_bom_cyclone_exposure.R` creates a complete reef-by-event
+year table rather than matching only reefs already present in the mortality data.
+
+```{r}
+target_names <- tibble::tribble(
+  ~ReefID, ~display_name,
+  '15-024', 'Mackay Reefs (15-024)',
+  '16-015', 'Mackay Reef (16-015)',
+  '14-126', 'Linnet Reef (14-126)',
+  '14-116a', 'Lizard Island reef (14-116a)',
+  '14-116b', 'Lizard Island reef (14-116b)',
+  '14-116d', 'Lizard Island reef (14-116d)',
+  '14-118', 'Eyrie Reef (14-118)',
+  '15-030', 'Swinger Reef (15-030)'
+)
+target_cyclone <- cyclones |>
+  filter(event_year == 2024) |>
+  inner_join(target_names, by = 'ReefID') |>
+  transmute(
+    Reef = display_name,
+    `Nearest cyclone` = tc_nearest_name,
+    `Minimum track distance (km)` = round(tc_min_distance_km, 1),
+    `Wind at nearest fix (m/s)` = tc_nearest_max_wind_ms,
+    `Inside reported gale radius` = tc_inside_reported_gale_radius
+  ) |>
+  arrange(`Minimum track distance (km)`)
+kable(target_cyclone)
+```
+
+```{r}
+#| fig-width: 9
+#| fig-height: 6
+tracks_2024 <- tracks |>
+  filter(event_year == 2024, NAME %in% c('Jasper', 'Kirrily'))
+reefs_2024 <- cyclones |> filter(event_year == 2024)
+
+ggplot() +
+  geom_point(
+    data = reefs_2024,
+    aes(reef_longitude, reef_latitude,
+        colour = pmin(tc_min_distance_km, 300)),
+    size = 0.45
+  ) +
+  geom_path(
+    data = tracks_2024,
+    aes(LON, LAT, group = DISTURBANCE_ID),
+    linewidth = 1, colour = 'black'
+  ) +
+  geom_point(
+    data = target_names |>
+      inner_join(reefs_2024, by = 'ReefID'),
+    aes(reef_longitude, reef_latitude),
+    shape = 21, fill = '#ffff33', colour = 'black', size = 2.5
+  ) +
+  scale_colour_gradient(
+    low = '#b2182b', high = '#2166ac',
+    name = 'Nearest track\ndistance (km)'
+  ) +
+  coord_equal(xlim = c(142.5, 154), ylim = c(-25, -10)) +
+  labs(
+    title = '2024 cyclone tracks and GBR reef proximity',
+    subtitle = 'Highlighted points are the severe northern reefs under review',
+    x = 'Longitude', y = 'Latitude'
+  )
+```
+
+Mackay (16-015), Mackay (15-024) and Swinger have strong Jasper proximity,
+and the first two are inside or close to the reported gale footprint depending
+on the quadrant at the nearest fix. Linnet and the Lizard/Eyrie group are still
+within roughly 120--132 km of Jasper's track. This supports a regional Jasper
+forcing variable, but it does not by itself distinguish rainfall/flood plume
+from wind or wave damage.
+
+## How to generalise freshwater exposure to all GBR reefs
+
+The new file `data/processed/freshwater_predictor_grid_2016_2025.csv` contains
+the candidate predictors at all `r n_distinct(reef_grid$ReefID)` GBR registry
+features for each AIMS event year. Complete ERA5/eReefs fields currently exist
+for 2016, 2017, 2020, 2022 and 2024; the RRN and cyclone layers cover a longer
+period.
+
+The modelling sequence should stay simple and auditable:
+
+1. **Measured target.** Use AIMS minimum salinity and the below-30-PSU flag.
+   Retain sample count and distance to reef. Give river-mouth measurements less
+   leverage on reef-level magnitude, while retaining them for plume detection.
+2. **Broad physical prior.** Use eReefs minimum salinity where the forcing is
+   complete, but calibrate it to AIMS rather than assuming it is truth.
+3. **Operational proxy model.** Predict exposure from event rainfall, IMOS
+   Kd490/coloured-water anomalies, BoM cyclone forcing and a river-plume
+   connectivity term. RRN coloured-water frequency is a valuable retrospective
+   predictor but must be marked unavailable for real-time use when its release
+   is delayed.
+4. **Validation.** Keep 2024 in model development. Use held-out spatial groups
+   or catchments so the model is tested at unseen locations while retaining the
+   only well-observed severe compound event. Report sensitivity with and without
+   2024, not a single 2024 holdout score.
+5. **Mortality model.** Enter the predicted freshwater distribution, not just a
+   plug-in mean, and interact it with DHW. This lets freshwater raise mortality
+   under heat stress without inventing widespread thermal mortality at low DHW.
+
+The one important missing structural predictor is hydrological connectivity:
+distance from each reef to river mouths is not enough because plume transport is
+directional. A compact first version can use nearest major river, coastal
+rainfall/discharge, distance and prevailing current direction. If that performs
+poorly, replace it with an eReefs-derived source-to-reef connectivity matrix.
+
+## Upwelling and thermal-refuge layer
+
+High-resolution model and satellite work has already identified GBR climate
+refugia caused by cooler-water upwelling through interactions among tides,
+currents and reef structure. A separate Central GBR study found 64 intrusive
+upwelling events in six years: near-bottom temperature commonly fell 1--3
+degrees C over about a week, and the cooling was not necessarily visible at the
+surface. This is why neither shelf position nor SST alone is sufficient.
+
+The first operational version should contain two interpretable components:
+
+| Component | Calculation | Role |
+|---|---|---|
+| Surface cooling relief | Daily IMOS 0.02-degree L3S SST at each reef minus the same-day median in its surrounding shelf/latitude neighbourhood; retain minimum anomaly, days below -0.5/-1 degree C and longest cool spell during peak DHW | Detect the 2024 outer-Lizard cooling signal at prediction scale |
+| Subsurface intrusion forcing | Daily vertical velocity, temperature at several depths, vertical temperature gradient and currents from Copernicus Marine; calibrate against Palm Passage/Myrmidon and any suitable AIMS/IMOS temperature loggers | Recover bottom intrusions missed by surface SST |
+
+The surface record is available operationally and at useful reef-scale
+resolution. Copernicus is coarser (about 0.083 degrees), so it should represent
+large-scale forcing rather than claim reef-scale truth. A static historical
+refugia probability can be estimated from repeat cool anomalies and used when
+daily data are absent.
+
+In the mortality model, compare:
+
+```text
+thermal_effect = f(DHW, composition, prior exposure)
+                 + DHW x freshwater_exposure
+                 + DHW x cooling_relief
+```
+
+The signs should be constrained ecologically: freshwater can exacerbate heat
+loss and cooling relief can reduce it. A flexible residual term can still learn
+exceptions, but these interactions prevent the low-DHW background from
+flattening the severe-loss response.
+
+## Immediate implementation order
+
+1. Add river-source/connectivity fields to the new GBR predictor grid.
+2. Add river-source connectivity and event-timed rainfall/optical anomalies to
+   the completed below-30-PSU pilot, then repeat whole-reef validation and the
+   no-2024 sensitivity analysis.
+3. Extract the 2024 IMOS SST cooling-residual pilot around Lizard, then extend
+   it to all event years if it reproduces the manuscript contrast.
+4. Add Copernicus vertical-velocity/thermal-gradient forcing and validate it at
+   the Central GBR moorings.
+5. Pass freshwater and cooling posterior/ensemble predictions into the
+   beta-binomial, BRMS and BRT mortality ensemble as DHW interactions.
+
+The habitat map is intentionally excluded from this sequence. It does not solve
+the dynamic freshwater or upwelling problem and would add complexity without a
+clear predictive target.
+
+## Sources
+
+- [AIMS water-quality portal](https://data.aims.gov.au/water-quality/)
+- [Bureau of Meteorology tropical cyclone databases](https://www.bom.gov.au/cyclone/tropical-cyclone-knowledge-centre/databases/)
+- [IMOS satellite SST products](https://imos.org.au/srs-sst-data)
+- [Copernicus Global Ocean Physics Analysis and Forecast](https://data.marine.copernicus.eu/product/GLOBAL_ANALYSISFORECAST_PHY_001_024/description)
+- [Sun et al. (2024), climate refugia in the GBR](https://pmc.ncbi.nlm.nih.gov/articles/PMC11606497/)
+- [Benthuysen et al. (2016), intrusive upwelling in the Central GBR](https://doi.org/10.1002/2016JC012294)

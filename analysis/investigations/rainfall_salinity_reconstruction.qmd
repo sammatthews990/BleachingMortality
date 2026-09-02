@@ -1,0 +1,192 @@
+---
+title: 'Can rainfall reconstruct missing freshwater exposure?'
+subtitle: 'ERA5 rainfall, wind, IMOS optics, and event-held-out eReefs validation'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+
+input_dir <- '../../output/salinity_rainfall'
+cells <- read_csv(file.path(input_dir, 'cell_year_inputs.csv'), show_col_types = FALSE)
+occurrence <- read_csv(
+  file.path(input_dir, 'occurrence_metrics.csv'), show_col_types = FALSE
+)
+magnitude <- read_csv(
+  file.path(input_dir, 'magnitude_metrics.csv'), show_col_types = FALSE
+)
+predictions <- read_csv(
+  file.path(input_dir, 'occurrence_predictions.csv'), show_col_types = FALSE
+)
+risk_2024 <- read_csv(
+  '../data/processed/ereefs_salinity_2024_rainfall_sensitivity.csv',
+  show_col_types = FALSE
+)
+```
+
+# Decision rule
+
+Thirty PSU is the primary low-salinity screening threshold. This deliberately
+increases the number of positive cell-events available for training. Exposure
+below 28 and 26 PSU remains nested evidence of progressively more severe
+freshwater conditions; it has not been discarded.
+
+The rainfall model must improve event-held-out average precision and balanced
+Brier score over the spatial prior, and it must retain useful recall for the
+below-28-PSU tail. A low all-cell salinity error is not sufficient because
+ordinary oceanic cells dominate the GBR.
+
+## ERA5 versus ACCESS source choice
+
+[ERA5](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels)
+is a consistent hourly reanalysis spanning every event year. The official CDS
+retrieval API was tested first, but this workstation has no CDS credential and
+the service requires a logged-in account with its licence accepted. Extraction
+therefore uses the time-series-optimised layout of the anonymous
+[AWS Open Data Icechunk ERA5 archive](https://registry.opendata.aws/earthmover-era5/),
+which is losslessly derived from ECMWF/NCAR source files. A documented ERA5-only
+mirror was also tested, but it altered rainfall totals in a five-cell check and
+was rejected rather than mixed with the AWS values.
+
+The Bureau's publicly documented
+[ACCESS products](https://www.bom.gov.au/nwp/doc/access/docs/)
+are operational forecasts rather than a single reanalysis covering all five
+events. Historical ACCESS archives are available through registered Bureau/NCI
+services, so ACCESS is not mixed with ERA5 in this first consistent series. It
+can be added later as an independent 2024 sensitivity if archive access is
+provided.
+
+# Coverage and class size
+
+```{r coverage}
+cells |>
+  group_by(year) |>
+  summarise(
+    `eReefs cells` = n(),
+    `Complete Q1 salinity` = first(salinity_complete_q1),
+    `Forcing warning` = first(salinity_forcing_warning),
+    `Cells below 30 PSU` = sum(flood30),
+    `Cells below 28 PSU` = sum(flood28),
+    `Minimum salinity` = round(min(salinity_min), 2),
+    .groups = 'drop'
+  ) |>
+  kable(caption = 'Low-salinity sample size under the expanded threshold')
+```
+
+# Rainfall and freshwater exposure
+
+```{r rainfall-relationship, fig.width=10, fig.height=5.5}
+cells |>
+  filter(year %in% c(2016, 2017, 2020)) |>
+  ggplot(aes(coastal_rain_max_30day, salinity_min)) +
+  geom_point(colour = 'grey55', alpha = 0.2, size = 0.8) +
+  geom_point(
+    data = ~ filter(.x, flood30),
+    aes(colour = freshwater_exposure_30),
+    size = 2
+  ) +
+  geom_hline(yintercept = 28, linetype = 3) +
+  geom_hline(yintercept = 30, linetype = 2) +
+  facet_wrap(~ year) +
+  scale_x_log10() +
+  scale_colour_viridis_c(option = 'C', trans = 'sqrt') +
+  labs(
+    x = 'Nearest-coastal ERA5 maximum 30-day rain (mm)',
+    y = 'eReefs Q1 minimum surface salinity (PSU)',
+    colour = 'Exposure below\n30 PSU-days',
+    title = 'Rainfall is tested against event-specific low-salinity exposure'
+  )
+```
+
+The coastal series is the nearest ERA5 land-cell centre. It is more defensible
+than rainfall at an offshore reef pixel, but it is still not catchment rainfall,
+runoff, river discharge, or plume transport. Wind and Kd490 help represent
+transport and optical plume conditions without changing that limitation.
+
+# Leave-one-event-out occurrence performance
+
+```{r occurrence-table}
+occurrence |>
+  filter(held_out_year == 'Event mean') |>
+  select(
+    Model = model,
+    `Average precision <30` = average_precision30,
+    `Balanced Brier <30` = balanced_brier30,
+    `Top 1% recall <30` = top_1pct_recall30,
+    `Top 5% recall <30` = top_5pct_recall30,
+    `Top 1% recall <28` = severe28_top_1pct_recall,
+    `Top 5% recall <28` = severe28_top_5pct_recall
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  arrange(desc(`Average precision <30`)) |>
+  kable(caption = 'Event-balanced freshwater-occurrence validation')
+```
+
+```{r occurrence-event, fig.width=10, fig.height=5.5}
+occurrence |>
+  filter(held_out_year != 'Event mean') |>
+  mutate(held_out_year = factor(held_out_year)) |>
+  ggplot(aes(model, average_precision30, colour = held_out_year, group = held_out_year)) +
+  geom_line() +
+  geom_point(size = 2.5) +
+  scale_colour_viridis_d(option = 'C', name = 'Held-out event') +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = 'Average precision for exposure below 30 PSU',
+    title = 'Transfer must be consistent across events'
+  )
+```
+
+# Minimum-salinity reconstruction
+
+```{r magnitude-table}
+magnitude |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  select(
+    Model = model,
+    `Held-out event` = held_out_year,
+    `All-cell MAE` = all_cell_mae,
+    `Below-30 cell MAE` = flood30_cell_mae,
+    `Below-30 bias` = flood30_cell_bias,
+    `Below-30 detected` = flood30_detection,
+    `Below-28 detected` = flood28_detection
+  ) |>
+  kable(caption = 'Continuous reconstruction of minimum salinity')
+```
+
+# 2024 sensitivity layer
+
+```{r map-2024, fig.width=8.5, fig.height=8}
+ggplot(risk_2024, aes(lon, lat, colour = risk30_probability)) +
+  geom_point(size = 0.55) +
+  geom_point(
+    data = filter(risk_2024, partial_ereefs_flood30),
+    shape = 1, colour = 'black', size = 2, stroke = 0.7
+  ) +
+  coord_equal() +
+  scale_colour_viridis_c(option = 'C', trans = 'sqrt') +
+  labs(
+    x = 'Longitude', y = 'Latitude',
+    colour = 'Predicted P\n(<30 PSU)',
+    title = 'Rainfall-assisted 2024 freshwater-risk sensitivity',
+    subtitle = 'Black rings: direct eReefs exposure observed during 1--17 January'
+  )
+```
+
+The map remains a sensitivity layer until the event-held-out results above
+demonstrate improvement over the spatial prior. It is not automatically added
+to the mortality model, and the partial January 2024 eReefs record is not
+treated as a full-quarter validation target.

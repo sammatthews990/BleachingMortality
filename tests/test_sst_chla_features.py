@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
+sys.path.insert(0, str(Path(__file__).parents[1] / 'src' / 'data'))
 from extract_sst_chla_features import (  # noqa: E402
     chlorophyll_summary,
     distribution_summary,

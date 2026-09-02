@@ -1,0 +1,456 @@
+---
+title: 'RRN audit of five severe 2024 mortality misses'
+subtitle: 'Mackay, Linnet, Lizard Island NW, Eyrie and Swinger'
+format:
+  html:
+    toc: true
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+
+input_dir <- '../../output/rrn_target_reefs'
+context <- read_csv(
+  file.path(input_dir, 'target_reef_2024_context.csv'), show_col_types = FALSE
+)
+pressure <- read_csv(
+  file.path(input_dir, 'target_reef_2024_pressure_percentiles.csv'),
+  show_col_types = FALSE
+)
+pressure_history <- read_csv(
+  file.path(input_dir, 'target_reef_all_individual_pressures.csv'),
+  show_col_types = FALSE
+)
+metrics <- read_csv(
+  file.path(input_dir, 'target_reef_metric_percentiles.csv'),
+  show_col_types = FALSE
+)
+associations <- read_csv(
+  file.path(input_dir, 'manta_2024_rrn_residual_associations.csv'),
+  show_col_types = FALSE
+)
+acropora_scenarios <- read_csv(
+  file.path(input_dir, 'manta_acropora_counterfactual_predictions.csv'),
+  show_col_types = FALSE
+)
+acropora_summary <- read_csv(
+  file.path(input_dir, 'manta_acropora_counterfactual_summary.csv'),
+  show_col_types = FALSE
+)
+coverage <- read_csv(
+  file.path(input_dir, 'extraction_coverage.csv'), show_col_types = FALSE
+)
+
+pressure_labels <- c(
+  cot_meanpertow = 'Observed COTS',
+  cot_idwmeanpertow = 'IDW COTS',
+  cyc_maxHrs4mw = 'Cyclone waves',
+  sst_maxdhw = 'RRN DHW',
+  uq_coralsink1 = 'Low coral-sink connectivity',
+  wqc_freqcc12 = 'Coloured water'
+)
+reef_order <- c('Linnet', 'Mackay', 'Eyrie', 'Lizard NW', 'Swinger')
+```
+
+# Main finding
+
+The five reefs do not share one RRN explanation.
+
+- **Linnet and Eyrie have strong low-level COTS signals.** Their observed and
+  spatially modelled COTS values are unusually high relative to reefs in the
+  same one-degree latitude band. These values should be treated as evidence of
+  elevated COTS pressure, not automatically labelled a formal outbreak.
+- **Linnet, Eyrie and Swinger experienced unusual coloured-water exposure
+  relative to their own histories.** Each 2023--24 value is at the 95th
+  percentile of its previous decade. Water colour also aligns positively with
+  underprediction across the full set of 2024 manta reefs.
+- **Lizard Island NW has very low coral-sink connectivity.** This suggests low
+  connectivity-mediated rescue or recovery potential, although it is not an
+  acute mortality agent and cannot by itself explain rapid post-bleaching loss.
+- **Mackay is unexplained by the gridded RRN predictors, but not by its field
+  record.** It has no modelled cyclone-wave exposure, no observed COTS, modest
+  water colour and exceptionally low DHW relative to nearby reefs. However,
+  its retained survey tooltip explicitly records coral bleaching, Cyclone
+  Jasper and flood waters. The remaining miss therefore points to inadequate
+  spatial or temporal resolution in the gridded freshwater/cyclone proxies.
+
+The misses are **not simply caused by a missing Acropora column**. The model has
+a preceding-year Acropora proportion for all five reefs. Linnet, Lizard NW and
+Mackay use observed reef/depth-year composition; only Eyrie and Swinger use
+past-only spatial-temporal interpolation. The earlier assignment of Mackay to
+an interpolated 42.2% Acropora value was a crosswalk error: its corrected
+observed value is 11.1%. Setting Acropora to 90% in each reef's original
+held-out BRT still leaves 23--44 percentage points of underprediction.
+
+# Is missing community composition the main cause?
+
+```{r acropora-provenance}
+acropora_summary |>
+  mutate(
+    Reef = sub(' Reef.*$', '', ReefName),
+    Source = recode(
+      acropora_source,
+      observed_depth_year = 'Observed depth/year',
+      observed_reef_year = 'Observed reef/year',
+      past_only_spatiotemporal_idw = 'Past-only spatial-temporal IDW'
+    ),
+    `Assigned Acropora` = percent(
+      assigned_prop_acropora_pre, accuracy = 0.1
+    ),
+    Observed = percent(observed_mortality, accuracy = 0.1),
+    `Prediction at assigned` = percent(
+      prediction_at_assigned, accuracy = 0.1
+    ),
+    `Prediction at 90% Acropora` = percent(
+      prediction_at_90pct_acropora, accuracy = 0.1
+    ),
+    `Remaining miss at 90%` = percent(
+      remaining_underprediction_at_90pct, accuracy = 0.1
+    )
+  ) |>
+  select(
+    Reef, Source, `Assigned Acropora`, Observed,
+    `Prediction at assigned`, `Prediction at 90% Acropora`,
+    `Remaining miss at 90%`
+  ) |>
+  kable(caption = 'Fold-specific Acropora counterfactuals')
+```
+
+```{r acropora-counterfactual, fig.width=10, fig.height=6}
+acropora_scenarios |>
+  mutate(Reef = sub(' Reef.*$', '', ReefName)) |>
+  ggplot(aes(scenario_prop_acropora_pre, predicted_mortality)) +
+  geom_hline(
+    aes(yintercept = observed_mortality),
+    linetype = 2, colour = '#B2182B'
+  ) +
+  geom_line(colour = '#2166AC', linewidth = 0.9) +
+  geom_point(colour = '#2166AC', size = 1.8) +
+  geom_point(
+    data = ~ filter(
+      .x,
+      abs(scenario_prop_acropora_pre - assigned_prop_acropora_pre) < 1e-12
+    ),
+    colour = 'black', size = 2.8
+  ) +
+  facet_wrap(~ Reef, scales = 'free_y') +
+  scale_x_continuous(labels = percent) +
+  scale_y_continuous(labels = percent) +
+  labs(
+    x = 'Counterfactual preceding Acropora proportion',
+    y = 'Held-out core-BRT mortality prediction',
+    title = 'Even extreme Acropora values do not reproduce the observed losses',
+    subtitle = paste(
+      'Black point is the assigned value;',
+      'red dashed line is observed mortality'
+    )
+  )
+```
+
+This result separates two issues:
+
+1. **Acropora uncertainty:** Eyrie and Swinger do not have direct reef-year
+   Acropora observations. Better composition data could increase or decrease
+   their predicted susceptibility. Lizard NW and Mackay are the most
+   sensitive to raising Acropora, but still remain substantially
+   underestimated.
+2. **Unrepresented weedy assemblages:** preceding `prop_acropora_pre` is only
+   the fraction of hard coral assigned to *Acropora*. A reef dominated by other
+   fast-growing, disturbance-sensitive or recently recruited taxa is not
+   represented. If the post-recovery communities at these reefs were
+   compositionally young or dominated by other weedy taxa, the current model
+   would classify them as less susceptible than they actually were.
+
+The next community improvement should therefore be a broader
+**community-susceptibility/recovery-state index**, not merely replacement of
+missing Acropora values. It should distinguish Acropora, other fast-growing
+susceptible taxa or growth forms, massive/stress-tolerant corals, and the age or
+time-since-recovery structure where attainable. Composition provenance and
+uncertainty should accompany each prediction.
+
+# What was extracted
+
+All six individual-pressure variables and all four derived metric families
+were extracted for all five reefs. This gives 860 individual pressure records
+and 120 metric records. The original workbook is not modified.
+
+The valid pressure window for the 2024 bleaching event is summer `202324`.
+COTS uses fiscal July--June, cyclone and DHW use November--April, and coloured
+water uses December--April. Coral-sink connectivity is static.
+
+The newest disturbance (`cmex`) and combined resilience
+(`cmfi`/`quad`) metrics include summer `202425`. They are retained in the
+extract but flagged as post-event leakage and are not used to explain 2024
+mortality. Recovery-potential `cmfr` metrics ending in `202324` can be
+examined without that specific leakage.
+
+```{r coverage-table}
+coverage |>
+  kable(caption = 'Extraction and reference-table coverage')
+```
+
+The AIMS monitoring reference assigns sectors to only 505 of the 3,862 RRN
+reefs. Primary peer percentiles therefore use all RRN reefs in the same
+one-degree latitude band. Sector-region percentiles are secondary.
+
+# Event-level pressure profile
+
+```{r pressure-heatmap, fig.width=11, fig.height=5.8}
+pressure |>
+  mutate(
+    Reef = factor(reef_short, levels = rev(reef_order)),
+    Pressure = factor(pressure_labels[Type], levels = pressure_labels),
+    display_value = case_when(
+      Type %in% c('cot_meanpertow', 'cot_idwmeanpertow', 'wqc_freqcc12',
+                  'uq_coralsink1') ~ sprintf('%.3f', value),
+      Type == 'cyc_maxHrs4mw' ~ sprintf('%.1f h', value),
+      Type == 'sst_maxdhw' ~ sprintf('%.2f', value)
+    )
+  ) |>
+  ggplot(aes(Pressure, Reef, fill = vulnerability_percentile)) +
+  geom_tile(colour = 'white', linewidth = 0.8) +
+  geom_text(aes(label = display_value), size = 3.2) +
+  scale_fill_gradient2(
+    low = '#2166AC', mid = '#F7F7F7', high = '#B2182B',
+    midpoint = 50, limits = c(0, 100)
+  ) +
+  labs(
+    x = NULL, y = NULL,
+    fill = 'Locally adverse\npercentile',
+    title = 'Different RRN pressures stand out at different reefs',
+    subtitle = paste(
+      'Percentiles are within the same one-degree latitude band;',
+      'coral-sink percentile is reversed'
+    )
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    panel.grid = element_blank()
+  )
+```
+
+```{r context-table}
+context |>
+  mutate(
+    Reef = reef_short,
+    `Observed mortality` = percent(observed_mortality, accuracy = 0.1),
+    `Core underprediction` = percent(core_underprediction, accuracy = 0.1),
+    `Pre-event Acropora` = percent(prop_acropora_pre, accuracy = 0.1)
+  ) |>
+  transmute(
+    Reef, Region = region_block,
+    `Observed mortality`, `Core underprediction`,
+    DHW = round(ann_maxdhw, 2), `Pre-event Acropora`,
+    `Observed COTS/tow` = round(cot_meanpertow, 4),
+    `IDW COTS/tow` = round(cot_idwmeanpertow, 4),
+    `Coloured-water frequency` = round(wqc_freqcc12, 3),
+    `Cyclone 4 m-wave hours` = round(cyc_maxHrs4mw, 1),
+    `Coral-sink index` = round(uq_coralsink1, 3),
+    `Field disturbance record` = disturbance_text
+  ) |>
+  arrange(desc(parse_number(`Observed mortality`))) |>
+  kable(caption = '2024 mortality and valid RRN event pressures')
+```
+
+# Reef-specific interpretation
+
+## Linnet
+
+Linnet lost 71.5% of expected coral cover and the core BRT underpredicted it by
+42.3 percentage points. Its RRN COTS values are locally elevated: observed
+COTS per tow is at the 86th latitude-band percentile and the IDW estimate is
+at the 98.9th percentile. Coloured-water frequency is 0.537, the reef's 95th
+within-decade percentile and 80th percentile GBR-wide. Pre-event Acropora is
+also high at 63.4%.
+
+This is the strongest RRN case for **compound thermal susceptibility,
+freshwater/plume exposure and low-level COTS pressure**. Its one-year recovery
+potential is also relatively low GBR-wide. The latest `quad = 4` and very low
+`cmfi` are consistent with poor resilience, but include 2024--25 disturbance
+information and must not be used as pre-event predictors.
+
+## Eyrie
+
+Eyrie's COTS signal is the strongest of the five reefs: observed COTS per tow
+is at the 98th local percentile and the IDW estimate at the 99.7th. Its
+coloured-water frequency of 0.388 is the reef's 95th within-decade percentile,
+although only the 38th percentile among all latitude-band reefs. Pre-event
+Acropora is high at 51.5%.
+
+The RRN evidence therefore supports **elevated local COTS pressure plus an
+unusually plume-affected year for this reef**, rather than an exceptionally
+high regional plume exposure. Its recovery-potential metrics are high, so low
+generic recovery potential is not a convincing explanation.
+
+## Lizard Island NW
+
+Lizard NW has no RRN cyclone-wave or COTS signal and low coloured-water
+exposure. Its distinctive value is a coral-sink index of 0.105, only the 15.6th
+latitude-band percentile; expressed as vulnerability, this is the 84.4th
+percentile.
+
+Low connectivity could reduce demographic rescue and longer-term recovery, but
+it is not direct evidence of the acute mortality mechanism. The reef remains a
+candidate for an unmeasured local freshwater pulse, finer-scale thermal
+exposure, taxonomic susceptibility, disease or another local disturbance.
+
+## Swinger
+
+Swinger experienced only 3.87 DHW and has no observed COTS or cyclone-wave
+exposure. Coloured-water frequency is 0.150: the 95th percentile of its own
+decade, 68th percentile GBR-wide and 60th percentile locally.
+
+The main RRN hypothesis is therefore a **reef-specific coloured-water anomaly**
+acting additively with thermal stress. The signal is meaningful historically
+but not extreme compared with other nearby reefs, and the recovery-potential
+metrics are high. It remains a partial rather than complete explanation.
+
+## Mackay
+
+Mackay is the largest unexplained miss: 61.3% observed mortality and 50.8
+percentage points of core-model underprediction. RRN DHW is 3.77, very close to
+the model input of 3.52 and only the 2.6th percentile of its latitude band.
+Cyclone exposure and observed COTS are zero; coloured-water frequency is only
+the 29th local percentile, although it is at the 80th percentile relative to
+the reef's preceding ten event years. Recovery-potential metrics are high.
+
+There is **no convincing gridded RRN explanation for Mackay**, but the field
+record explicitly lists `coral bleaching, Cyclone Jasper, flood waters`.
+The likely issue is therefore that seasonal water-colour, rainfall and
+grid-cell wave exposure do not resolve the acute local runoff/freshwater pulse.
+This reef should remain a high-resolution exposure-review case rather than
+being used to force a general DHW curve upward.
+
+# Historical context
+
+```{r pressure-history, fig.width=11, fig.height=8}
+pressure_history |>
+  filter(
+    source_summer >= 201415,
+    source_summer <= 202324,
+    Type %in% c(
+      'wqc_freqcc12', 'cot_meanpertow',
+      'cot_idwmeanpertow', 'sst_maxdhw'
+    )
+  ) |>
+  mutate(
+    end_year = floor(source_summer / 100) + 1L,
+    Pressure = recode(
+      Type,
+      wqc_freqcc12 = 'Coloured-water frequency',
+      cot_meanpertow = 'Observed COTS per tow',
+      cot_idwmeanpertow = 'IDW COTS per tow',
+      sst_maxdhw = 'Maximum DHW'
+    ),
+    Reef = factor(reef_short, levels = reef_order)
+  ) |>
+  ggplot(aes(end_year, value, colour = Reef)) +
+  geom_line(linewidth = 0.7, na.rm = TRUE) +
+  geom_point(size = 1.6, na.rm = TRUE) +
+  geom_vline(xintercept = 2024, linetype = 2, colour = 'grey40') +
+  facet_wrap(~ Pressure, scales = 'free_y', ncol = 2) +
+  scale_colour_brewer(palette = 'Dark2') +
+  labs(
+    x = 'Summer ending year', y = NULL, colour = NULL,
+    title = 'The 2024 coloured-water anomalies are reef-specific',
+    subtitle = 'Dashed line marks the mortality-event summer'
+  ) +
+  theme(legend.position = 'top')
+```
+
+# Do these variables explain residuals across manta reefs?
+
+```{r residual-association-plot, fig.width=9.5, fig.height=5.5}
+associations |>
+  mutate(
+    Pressure = factor(
+      pressure_labels[Type],
+      levels = rev(pressure_labels)
+    )
+  ) |>
+  ggplot(aes(spearman_core_residual, Pressure)) +
+  geom_vline(xintercept = 0, colour = 'grey45') +
+  geom_col(aes(fill = spearman_core_residual > 0), width = 0.68) +
+  scale_fill_manual(values = c('#2166AC', '#B2182B'), guide = 'none') +
+  labs(
+    x = 'Spearman correlation with core-model residual',
+    y = NULL,
+    title = 'Only coloured water has a clear positive residual pattern',
+    subtitle = 'All 89 reef-blocked 2024 manta observations'
+  )
+```
+
+Across all 89 2024 manta observations, coloured-water frequency correlates
+0.317 with observed mortality and 0.170 with the core-model residual. Reefs in
+its upper quartile average 5.7 percentage points more underprediction than the
+remaining reefs. This is consistent with the earlier positive additive BRMS
+water-colour effect, but remains observational.
+
+COTS is not positively associated with residuals across the whole manta
+dataset. Eyrie and Linnet are therefore **reef-specific COTS flags**, not
+evidence that COTS generally explains the 2024 model miss. Cyclone-wave
+exposure is negatively associated with residuals and does not explain these
+five reefs.
+
+# Recovery metrics and leakage boundary
+
+```{r recovery-heatmap, fig.width=9.5, fig.height=5.5}
+metrics |>
+  filter(
+    Type == 'cmfr',
+    Year %in% c(202323, 202223, 201423, 200423)
+  ) |>
+  mutate(
+    Reef = factor(reef_short, levels = rev(reef_order)),
+    Window = recode(
+      variable,
+      cmfr_1y = '1 year', cmfr_2y = '2 years',
+      cmfr_10y = '10 years', cmfr_20y = '20 years'
+    )
+  ) |>
+  ggplot(aes(Window, Reef, fill = latitude_band_percentile)) +
+  geom_tile(colour = 'white', linewidth = 0.8) +
+  geom_text(aes(label = sprintf('%.3f', value)), size = 3.4) +
+  scale_fill_gradient(
+    low = '#FEE8C8', high = '#1B7837', limits = c(0, 100)
+  ) +
+  labs(
+    x = 'Recovery-potential window', y = NULL,
+    fill = 'Local percentile',
+    title = 'Mackay and Swinger do not have low generic recovery potential'
+  ) +
+  theme(panel.grid = element_blank())
+```
+
+Linnet has the weakest recent recovery-potential value of the five
+(`cmfr_1y = 0.468`; 16.6th percentile GBR-wide), while Mackay and Swinger are
+consistently high. The `cmfr` metric combines coral-sink connectivity and
+water colour; it is contextual rather than an independent mechanism.
+
+# Recommended next checks
+
+1. Add the raw 2023--24 COTS variables to a **targeted sensitivity**, keeping
+   them distinct from disturbance attribution. Concentrate on Linnet and Eyrie;
+   do not infer a GBR-wide COTS mechanism from these two reefs.
+2. Retain water colour as an additive freshwater/plume predictor and inspect
+   higher temporal-resolution plume/rainfall/salinity data for Linnet, Eyrie
+   and Swinger.
+3. Treat Lizard NW's low coral-sink index as a resilience/recovery flag, not an
+   acute mortality exposure.
+4. Mackay's lineage and composition crosswalk are now corrected. Prioritise
+   fine-scale rainfall, runoff, salinity and flood-plume products around its
+   survey interval; the field record already identifies Jasper and flood
+   waters even though the gridded predictors miss them.
+5. Never use the latest `cmex`, `cmfi` or `quad` metrics to predict 2024
+   mortality because they include summer 2024--25.

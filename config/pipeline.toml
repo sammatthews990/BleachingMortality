@@ -1,0 +1,100 @@
+[project]
+name = 'GBR coral bleaching mortality'
+registry = 'config/model_registry.yml'
+
+[profiles]
+current = ['environment-check', 'outcomes', 'validation', 'pressure-context', 'screening-models', 'selected-model', 'machine-learning', 'diagnostics', 'current-reports']
+formal-comparators = ['environment-check', 'outcomes', 'validation', 'formal-models', 'formal-evaluation']
+
+[[stages]]
+name = 'environment-check'
+description = 'Validate the assembled environmental predictor contract.'
+inputs = ['data/processed/cheung_recreated_gbr_full.csv', 'data/processed/01_exploratory_workspace.RData', 'data/AIMS-Reef_Reference.csv', 'data/aims_ltmp/reef_disturbance.csv']
+commands = ['python src/data/validate_environmental_data.py']
+
+[[stages]]
+name = 'outcomes'
+description = 'Rebuild programme-specific, bleaching-restricted mortality outcomes.'
+inputs = ['data/processed/cheung_recreated_gbr_full.csv']
+commands = ['Rscript src/data/harmonise_mortality_outcomes.R']
+
+[[stages]]
+name = 'validation'
+description = 'Recreate fixed event-, reef- and region-blocked assignments.'
+inputs = ['data/processed/cheung_recreated_gbr_full.csv', 'data/processed/mortality_outcomes_manifest.csv']
+commands = ['Rscript src/pipeline/build_validation_splits.R']
+
+[[stages]]
+name = 'pressure-context'
+description = 'Rebuild RRN pressure and annual cause-labelled coral transitions.'
+inputs = ['data/GBRMPA_RRN_2025_AIMS.xlsx', 'data/processed/01_exploratory_workspace.RData', 'data/AIMS-Reef_Reference.csv', 'data/aims_ltmp/reef_disturbance.csv', 'data/processed/era5_weather_reef_year.csv']
+commands = [
+  'Rscript src/data/extract_rrn_pressure_data.R',
+  'Rscript src/data/build_annual_coral_transitions.R'
+]
+
+[[stages]]
+name = 'screening-models'
+description = 'Rebuild cached spatial INLA candidates used by the selected-model evidence and residual map.'
+inputs = ['data/processed/validation_rows_ltmp.rds', 'data/processed/validation_rows_manta.rds', 'data/processed/validation_rows_mmp.rds']
+commands = ['Rscript src/pipeline/run_inla_screen.R']
+
+[[stages]]
+name = 'selected-model'
+description = 'Fit the cause-aware INLA chain and prospective COTS state selected by the registry.'
+inputs = ['data/processed/validation_rows_ltmp.rds', 'data/processed/validation_rows_manta.rds', 'data/processed/validation_rows_mmp.rds', 'data/processed/annual_coral_transitions.csv', 'data/processed/rrn_pressure_reef_year.csv']
+commands = [
+  'Rscript src/models/fit_cause_aware_competing_hazards.R',
+  'Rscript src/evaluation/test_cots_timing_cover_and_cyclone_soft_gate.R',
+  'Rscript src/models/fit_inla_explanatory_event_dhw.R',
+  'Rscript src/evaluation/test_cots_raw_enso_occurrence_controls.R',
+  'Rscript src/evaluation/test_prospective_cots_nowcast.R'
+]
+
+[[stages]]
+name = 'machine-learning'
+description = 'Refit retained residual and independent BRT comparisons.'
+inputs = ['output/prospective_cots_nowcast/cv_predictions.csv', 'output/explanatory_event_dhw/event_dhw_brt_data.csv']
+commands = [
+  'Rscript src/evaluation/test_inla_brt_residual_ensemble.R',
+  'Rscript src/models/fit_standalone_brt_envelope_ensemble.R'
+]
+
+[[stages]]
+name = 'diagnostics'
+description = 'Rebuild selected-model diagnostics, miss register and interpretation figures.'
+inputs = ['output/prospective_cots_nowcast/cv_predictions.csv', 'output/cause_aware_competing_hazards/full_thermal_component.rds']
+commands = [
+  'Rscript src/evaluation/build_operational_brt_diagnostics.R',
+  'Rscript src/evaluation/build_major_miss_table.R',
+  'Rscript src/evaluation/build_spatial_residual_figure.R'
+]
+
+[[stages]]
+name = 'current-reports'
+description = 'Render the current registry-driven report set.'
+inputs = ['config/model_registry.yml']
+commands = ['quarto render']
+
+[[stages]]
+name = 'formal-models'
+description = 'Refit retained formal BRT, inflated-beta BRMS and binomial sensitivity.'
+inputs = ['data/processed/validation_rows_ltmp.rds', 'data/processed/validation_rows_manta.rds', 'data/processed/validation_rows_mmp.rds']
+commands = [
+  'Rscript src/models/fit_formal_brt.R',
+  'Rscript src/models/fit_formal_brms.R',
+  'Rscript src/models/fit_binomial_family_sensitivity.R',
+  'Rscript src/evaluation/summarise_formal_models.R',
+  'Rscript src/models/build_formal_ensemble.R'
+]
+
+[[stages]]
+name = 'formal-evaluation'
+description = 'Rebuild uncertainty, outliers and the retained formal-framework report.'
+inputs = ['output/formal_models/formal_ensemble_predictions.csv']
+commands = [
+  'Rscript src/evaluation/quantify_prediction_uncertainty.R',
+  'Rscript src/evaluation/assess_prediction_outliers.R',
+  'quarto render analysis/investigations/formal_model_report.qmd',
+  'quarto render analysis/investigations/prediction_outlier_assessment.qmd'
+]

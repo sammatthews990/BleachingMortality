@@ -1,4 +1,0 @@
-programme_key,within_support_model,outside_support_model,reason
-ltmp,shape_ensemble,shape_brms,Shape ensemble improves overall and severe-tail validation; use BRMS alone beyond tree training support.
-manta,benchmark_ensemble,benchmark_brms,Shape candidate worsens event-held-out calibration; retain the benchmark and drop its BRT outside support.
-mmp,shape_brms,shape_brms,"Shape BRMS has the best overall, severe-tail, and 2024 event-held-out performance."

@@ -1,0 +1,156 @@
+# Operational COTS pressure and INLA--BRT assessment
+
+The selected operational model is `operational_rrn_raw_plus_manta_state`.
+It combines undated RRN event-season pressure with exact-date Manta evidence
+available through February. The residual BRT is not added to the operational
+ensemble because it improves reef-blocked interpolation but worsens
+leave-one-event-out overall and severe-event error.
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(readr)
+  library(knitr)
+})
+source('../../src/lib/model_registry.R')
+root <- project_root()
+cots_dir <- file.path(root, 'output', 'prospective_cots_nowcast')
+brt_dir <- file.path(root, 'output', 'inla_brt_residual_ensemble')
+read_out <- function(dir, file) read_csv(file.path(dir, file), show_col_types = FALSE)
+round_metrics <- function(x) x |> mutate(across(where(is.numeric), ~ round(.x, 4)))
+```
+
+## Information boundary
+
+The COTS pressure state uses the undated RRN event-season density, which is
+assumed to describe pressure before bleaching mortality, plus the event-year
+hindcast probability. Exact-date Manta and culling evidence is restricted to
+the end of February. Latest Manta density, the prior three-year peak and time
+since that peak complement the RRN value. Raw density excess is
+`max(density - 0.22, 0)`; 0.22 COTS/tow is the hindcast outbreak definition,
+not a newly fitted threshold.
+
+## COTS candidate validation
+
+```{r}
+cots_comparison <- read_out(cots_dir, 'model_comparison.csv') |>
+  select(candidate, scheme, rmse, predictive_r2, severe_rmse,
+         occurrence_brier, false_extreme_rate) |>
+  round_metrics()
+kable(cots_comparison,
+      caption = 'RRN, Manta, culling and retrospective COTS candidates.')
+```
+
+![](../../output/fig/Fig-COTS-01_prospective_nowcast_validation_v001.png)
+
+Relative to the prior raw interval reference, the selected raw RRN plus Manta
+state improves event-held-out RMSE from 0.14891 to **0.14848**, predictive R2
+from 0.296 to **0.300**, and severe RMSE from 0.3275 to **0.3267**.
+Reef-blocked RMSE is 0.13958. It sacrifices only 0.00033 RMSE relative to the
+aggregate-best Manta-only candidate while adding direct RRN pressure and a
+better severe tail.
+
+### Gannett positive control and culling context
+
+![](../../output/fig/Fig-COTS-02_prospective_focal_controls_v001.png)
+
+Gannett 2020 has dated latest Manta density of 0.24 COTS/tow and undated RRN
+event-season pressure of 9.9 COTS/tow. Adding raw RRN pressure lifts its
+held-out prediction from about 0.121 to **0.183**. The log hybrid reaches about
+0.262 and has the best severe RMSE, but worsens aggregate event transfer; it is
+retained as a severe-tail sensitivity.
+
+The Cull sheet contains exact dates, dive effort and removals in four size
+cohorts. It is targeted intervention evidence rather than a spatially
+standardised abundance survey. Adding removals per dive and log effort slightly
+worsens transfer, so culling is retained as ecological audit context only.
+
+```{r}
+cull_context <- read_out(cots_dir, 'cull_target_context.csv') |>
+  arrange(desc(cull_total_prior1)) |>
+  select(ReefID, ReefName, event_year, observed_mortality,
+         cull_total_prior1, cull_dives_prior1, cull_removed_per_dive,
+         manta_latest_density, cots_outbreak_probability) |>
+  head(12) |>
+  round_metrics()
+kable(cull_context, caption = 'Largest preceding-year targeted culling contexts.')
+```
+
+## Residual BRT after explicit hazards
+
+The candidate ensemble is the bounded sum of the explicit-hazard INLA
+prediction and a BRT fitted to its residual. Both the BRT and blend weight are
+trained inside each outer event-held-out or reef-blocked fold. A balanced
+candidate and a candidate giving severe observations four times the weight
+were tested.
+
+```{r}
+ensemble_comparison <- read_out(brt_dir, 'model_comparison.csv') |>
+  select(candidate, scheme, rmse, predictive_r2, severe_rmse,
+         false_extreme_rate, mean_bias) |>
+  round_metrics()
+kable(ensemble_comparison,
+      caption = 'Nested validation of INLA and residual-BRT candidates.')
+```
+
+![](../../output/fig/Fig-ENS-01_inla_brt_validation_v001.png)
+
+The balanced BRT improves reef-blocked RMSE from 0.13958 to **0.13666** and
+severe RMSE from 0.28506 to **0.27452**, but worsens event-held-out RMSE to
+0.14923 and severe RMSE to 0.33218. Severe weighting worsens event-held-out
+severe RMSE further to 0.33585 and raises the reef-blocked false-extreme rate.
+Neither candidate passes promotion.
+
+![](../../output/fig/Fig-ENS-02_event_performance_v001.png)
+
+![](../../output/fig/Fig-ENS-03_heldout_calibration_v001.png)
+
+```{r}
+weights <- read_out(brt_dir, 'blend_weights.csv') |>
+  filter(scheme == 'leave_one_event_out') |>
+  select(candidate, held_out_event = fold, blend_weight) |>
+  round_metrics()
+kable(weights, caption = 'Blend weights learned without the held-out event.')
+```
+
+The blend weight is zero for 2016, 2017, 2020 and 2022. Only 2024 receives a
+non-zero correction, and that correction worsens its held-out score. The BRT
+therefore leaves the low-mortality La Nina events unchanged but also cannot
+improve Gannett.
+
+![](../../output/fig/Fig-ENS-04_severe_controls_v001.png)
+
+## What the residual BRT is learning
+
+Non-structural predictors with absolute Spearman correlation above 0.8 were
+reduced before fitting. The screen removed redundant heat-history, SST-shape,
+chlorophyll/Secchi and latitude/longitude alternatives.
+
+```{r}
+screen <- read_out(brt_dir, 'collinearity_screen.csv')
+kable(screen, caption = 'Outcome-free collinearity screen for the residual BRT.')
+```
+
+![](../../output/fig/Fig-ENS-05_residual_brt_importance_v001.png)
+
+![](../../output/fig/Fig-ENS-06_residual_brt_partial_dependence_v001.png)
+
+Rainfall, the base INLA prediction, starting cover and SST skewness are among
+the strongest residual signals. These plots are useful for finding missing
+mechanisms, but the failed event-held-out test means they are not yet a safe
+new-event correction. The BRT remains diagnostic and may be reconsidered as a
+separately labelled within-event spatial update.
+
+## Most important next steps
+
+{{< include ../../docs/model-next-steps.md >}}
+
+## Reproducibility
+
+- COTS reconstruction: `src/evaluation/test_prospective_cots_nowcast.R`
+- Residual ensemble: `src/evaluation/test_inla_brt_residual_ensemble.R`
+- Source workbook: `data/250929_COTS-Manta-Cull-RHIS-Data-Matthews-and-Schlawinsky.xlsx`
+- Model registry: `config/model_registry.yml`, version 6
+- Machine-readable results: `output/prospective_cots_nowcast/` and
+  `output/inla_brt_residual_ensemble/`

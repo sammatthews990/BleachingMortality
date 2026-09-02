@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from scripts.extract_enso_indices import (
+from src.data.extract_enso_indices import (
     agreement_label,
     enso_category,
     soi_phase,

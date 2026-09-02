@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from scripts.extract_era5_weather import (
+from src.data.extract_era5_weather import (
     longest_true_run,
     nearest_grid,
     summarise_hourly_weather,

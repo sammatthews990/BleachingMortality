@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from scripts.extract_metop_wind import summarise_daily_wind, tile_details
+from src.data.extract_metop_wind import summarise_daily_wind, tile_details
 
 
 class MetopWindTests(unittest.TestCase):

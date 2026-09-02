@@ -4,8 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
-from scripts.fetch_dms_environmental_data import (
+sys.path.insert(0, str(Path(__file__).parents[1] / 'src' / 'data'))
+from src.data.fetch_dms_environmental_data import (
     compute_repeated_exposure_metrics,
     compute_ten_year_dhw_metrics,
 )

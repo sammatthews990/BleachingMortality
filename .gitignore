@@ -1,43 +1,41 @@
+# Local data and generated products
+data/*
+!data/README.md
+output/*
+!output/README.md
+reports/*
+!reports/README.md
 
-data/
+# Transient AI/tool working notes
+.ai/
 
-DHW_Mortality_Attribution_cache/html/
+# R and Quarto state
+.Rhistory
+.RData
+.Rproj.user/
+.quarto/
+*_cache/
+*_files/
+Rplots.pdf
 
-DHW_Mortality_Attribution_files/figure-html/
-.Rproj.user
+# Python state
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
 
-output/models/
-output/model_validation/
-
-01_DHW_Mortality_Exploratory_cache/
-02_DHW_Mortality_Modelling_cache/
-
-01_DHW_Mortality_Exploratory_files/
-02_DHW_Mortality_Modelling_files/
+# Local scratch space
 scratch/
-
-output/formal_models/
-output/inla_spatiotemporal
 tmp/
-reports/
-output/prediction_uncertainty/
 
-output/salinity_kd490_loyo_minimum_metrics.csv
+# Generated manuscript formats
+manuscript/_freeze/
+manuscript/*_files/
+manuscript/output/
+manuscript/*.docx
+manuscript/*.html
+manuscript/*.pdf
+manuscript/*.tex
 
-output/salinity_kd490_loyo_minimum_predictions.csv
-
-output/salinity_kd490_loyo_occurrence_metrics.csv
-
-output/salinity_kd490_loyo_occurrence_predictions.csv
-
-output/wind_audit/sar_wind_2024_q1_daily_coverage.csv
-
-output/wind_audit/sar_wind_2024_q1_grid_coverage.csv
-
-output/wind_audit/sar_wind_2024_q1_reef_coverage.csv
-
-output/wind_audit/wind_product_comparison_metrics.csv
-
-*.rds
-
-*.csv
+/.quarto/
