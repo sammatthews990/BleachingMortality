@@ -112,7 +112,7 @@ attach_exact_survey_lineage <- function(data, raw_surveys, sample_type) {
         select(-source_id_key, -starts_with('exact_'))
 }
 
-bleaching_event_years <- c(1998L, 2002L, 2016L, 2017L, 2020L, 2022L, 2024L)
+bleaching_event_years <- c(1998L, 2002L, 2016L, 2017L, 2020L, 2022L, 2024L, 2025L)
 
 decimal_year_to_date <- function(x) {
     x <- as.numeric(x)
@@ -387,7 +387,7 @@ if (sys.nframe() == 0L) {
         ) |>
         filter(
             is.na(DISTURBANCE_TYPE) | DISTURBANCE_TYPE %in% c("b", "m", "n"),
-            report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024, 2025)
+            report_year %in% c(1999, 2003, 2017, 2018, 2021, 2023, 2024, 2025, 2026)
         )
 
     result <- build_mortality_outcome_tables(

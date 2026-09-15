@@ -1,0 +1,295 @@
+---
+title: 'Bleaching-compatible DHW-only binomial assessment'
+subtitle: 'Raw NOAA versus local-first logger-adjusted heat exposure'
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(knitr)
+  library(readr)
+})
+root <- normalizePath('../..', winslash = '/', mustWork = TRUE)
+out <- file.path(root, 'output', 'bleaching_only_dhw_binomial')
+comparison <- read_csv(file.path(out, 'paired_comparison.csv'), show_col_types = FALSE)
+folds <- read_csv(file.path(out, 'fold_metrics.csv'), show_col_types = FALSE)
+coverage <- read_csv(file.path(out, 'coverage.csv'), show_col_types = FALSE)
+shape <- read_csv(file.path(out, 'event_shape_comparison.csv'), show_col_types = FALSE)
+coefficients <- read_csv(file.path(out, 'event_coefficients.csv'), show_col_types = FALSE)
+focal_contrasts <- read_csv(file.path(out, 'focal_2016_2024_probability_contrasts.csv'), show_col_types = FALSE)
+labels <- c(
+  apparent_full_data = 'Apparent full-data fit',
+  leave_one_event_out = 'Leave one event out',
+  leave_one_sector_out = 'Leave one sector out',
+  reef_blocked_5fold = 'Pooled reef-blocked 5-fold',
+  leave_one_programme_out = 'Leave one programme out'
+)
+round_numeric <- function(data, digits = 3) {
+  data |> mutate(across(where(is.numeric), ~ round(.x, digits)))
+}
+```
+
+## Result
+
+The local-first logger adjustment does **not** provide a generally transferable
+improvement for this deliberately simple DHW-only occurrence model. It improves
+pooled leave-one-event-out Brier score from
+`r sprintf('%.4f', comparison$brier_raw_noaa_dhw[comparison$scheme == 'leave_one_event_out'])`
+to
+`r sprintf('%.4f', comparison$brier_local_first_logger_adjusted_dhw[comparison$scheme == 'leave_one_event_out'])`,
+but discrimination remains below chance (AUC approximately
+`r sprintf('%.3f', comparison$auc_local_first_logger_adjusted_dhw[comparison$scheme == 'leave_one_event_out'])`).
+The adjustment worsens reef-blocked, sector-held-out and
+programme-held-out Brier score. Raw NOAA DHW is therefore the more stable
+standalone predictor; local-first DHW remains a supported exposure correction,
+not evidence that DHW alone explains bleaching mortality.
+
+The event-specific fits show that the adjustment can materially change the
+apparent response shape. Slopes flatten in 2016, 2017 and 2024 and change sign
+in 2020 and 2022. Those curves are descriptive full-event fits with sparse
+positive outcomes in some years, so the differences identify sensitivity to
+the exposure representation rather than stable event-specific mechanisms.
+There is no validated 2025 correction layer: its raw and adjusted event curve
+is intentionally identical, while its held-out prediction can still differ
+because the two models learn different slopes from 2016--2024.
+
+## Estimand and eligibility
+
+The response is whether harmonised relative mortality is greater than zero.
+This is a genuine Bernoulli regression; the mortality proportions are not
+converted into invented colony counts. Each model contains only an intercept
+and one linear DHW term on the logit scale.
+
+"Bleaching-compatible" follows the selected thermal-component contract. Rows
+explicitly marked as COTS, cyclone or flood affected are excluded. Explicitly
+bleaching-labelled rows and rows with no explicit non-thermal attribution are
+retained; the latter are shown in the audit rather than silently called
+confirmed bleaching. The May--April event window and post-May mortality cutoff
+are unchanged.
+
+```{r}
+coverage |>
+  select(
+    event_year, observations, reefs, mortality_occurrences,
+    explicit_bleaching_rows, unlabelled_compatible_rows,
+    nonzero_corrections, nonzero_correction_fraction,
+    raw_dhw_min, raw_dhw_max, adjusted_dhw_min, adjusted_dhw_max
+  ) |>
+  round_numeric() |>
+  kable(caption = 'Eligible observations and local-first correction coverage.')
+```
+
+## Predictive comparisons
+
+The apparent fit is included only as a calibration diagnostic. Leave-one-event
+out tests transfer to an unseen bleaching event. Leaving out a sector tests
+geographic transfer; the pooled reef-blocked split keeps every observation
+from a reef in the same fold even when that reef occurs in multiple programmes;
+and leaving out a programme tests transfer across observation systems.
+
+```{r}
+comparison |>
+  transmute(
+    Validation = unname(labels[scheme]),
+    `Raw Brier` = brier_raw_noaa_dhw,
+    `Adjusted Brier` = brier_local_first_logger_adjusted_dhw,
+    `Adjusted minus raw` = delta_brier_adjusted_minus_raw,
+    `Raw log loss` = log_loss_raw_noaa_dhw,
+    `Adjusted log loss` = log_loss_local_first_logger_adjusted_dhw,
+    `Raw AUC` = auc_raw_noaa_dhw,
+    `Adjusted AUC` = auc_local_first_logger_adjusted_dhw
+  ) |>
+  round_numeric(4) |>
+  kable(caption = 'Paired predictive performance; lower Brier and log loss are better.')
+```
+
+### Event transfer
+
+```{r}
+folds |>
+  filter(scheme == 'leave_one_event_out') |>
+  select(fold, variant, n, observed_occurrence, predicted_occurrence, brier, log_loss, auc) |>
+  mutate(
+    variant = recode(
+      variant,
+      raw_noaa_dhw = 'Raw NOAA DHW',
+      local_first_logger_adjusted_dhw = 'Logger-adjusted DHW'
+    )
+  ) |>
+  arrange(as.integer(fold), variant) |>
+  round_numeric(4) |>
+  kable(caption = 'Leave-one-event-out performance by held-out event.')
+```
+
+### Sector transfer
+
+```{r}
+folds |>
+  filter(scheme == 'leave_one_sector_out') |>
+  select(fold, variant, n, observed_occurrence, predicted_occurrence, brier, auc) |>
+  mutate(
+    variant = recode(
+      variant,
+      raw_noaa_dhw = 'Raw NOAA DHW',
+      local_first_logger_adjusted_dhw = 'Logger-adjusted DHW'
+    )
+  ) |>
+  arrange(fold, variant) |>
+  round_numeric(4) |>
+  kable(caption = 'Leave-one-sector-out performance. Very small sectors are descriptive only.')
+```
+
+## Does logger adjustment alter event curve shape?
+
+### Focal comparison: 2016 and 2024
+
+![](../../output/bleaching_only_dhw_binomial/focal_2016_2024_curves.png)
+
+The two focal events give the clearest evidence that local correction changes
+the fitted curve, but not in a uniform way.
+
+In 2016, raw NOAA DHW has a slope of
+`r sprintf('%.3f', coefficients$dhw_slope[coefficients$event_year == 2016 & coefficients$variant == 'raw_noaa_dhw'])`
+per DHW on the logit scale (95% Wald interval
+`r sprintf('%.3f to %.3f', coefficients$dhw_slope_lower95[coefficients$event_year == 2016 & coefficients$variant == 'raw_noaa_dhw'], coefficients$dhw_slope_upper95[coefficients$event_year == 2016 & coefficients$variant == 'raw_noaa_dhw'])`).
+The adjusted slope is only
+`r sprintf('%.3f', coefficients$dhw_slope[coefficients$event_year == 2016 & coefficients$variant == 'local_first_logger_adjusted_dhw'])`
+and its interval crosses zero. At 8 DHW, the fitted probability falls from
+`r sprintf('%.3f', focal_contrasts$predicted_probability_raw_noaa_dhw[focal_contrasts$event_year == 2016 & focal_contrasts$dhw == 8])`
+to
+`r sprintf('%.3f', focal_contrasts$predicted_probability_local_first_logger_adjusted_dhw[focal_contrasts$event_year == 2016 & focal_contrasts$dhw == 8])`.
+The adjustment is nonzero for 22 of 30 rows and is mostly positive (median
+`r sprintf('%+.2f', coverage$correction_median[coverage$event_year == 2016])`
+DHW), which moves many observations rightward and weakens the slope.
+
+In 2024, both slopes remain positive, but adjustment reduces the slope from
+`r sprintf('%.3f', coefficients$dhw_slope[coefficients$event_year == 2024 & coefficients$variant == 'raw_noaa_dhw'])`
+to
+`r sprintf('%.3f', coefficients$dhw_slope[coefficients$event_year == 2024 & coefficients$variant == 'local_first_logger_adjusted_dhw'])`,
+a reduction of about
+`r scales::percent(1 - coefficients$dhw_slope[coefficients$event_year == 2024 & coefficients$variant == 'local_first_logger_adjusted_dhw'] / coefficients$dhw_slope[coefficients$event_year == 2024 & coefficients$variant == 'raw_noaa_dhw'], accuracy = 1)`.
+Corrections are nonzero for 150 of 181 rows and are mostly negative (median
+`r sprintf('%+.2f', coverage$correction_median[coverage$event_year == 2024])`
+DHW; 10th--90th percentile
+`r sprintf('%+.2f to %+.2f', coverage$correction_q10[coverage$event_year == 2024], coverage$correction_q90[coverage$event_year == 2024])`).
+The adjusted curve is therefore higher at 4 DHW, similar near 8 DHW, and lower
+at 12 DHW: it primarily flattens the fitted contrast across the exposure
+range.
+
+```{r}
+coefficients |>
+  filter(event_year %in% c(2016, 2024)) |>
+  transmute(
+    event_year,
+    DHW = recode(
+      variant,
+      raw_noaa_dhw = 'Raw NOAA',
+      local_first_logger_adjusted_dhw = 'Logger adjusted'
+    ),
+    n, mortality_occurrences, correction_coverage,
+    slope = dhw_slope,
+    lower95 = dhw_slope_lower95,
+    upper95 = dhw_slope_upper95,
+    p_value = dhw_slope_p_value,
+    odds_ratio_per_DHW = odds_ratio_per_dhw,
+    fitted_probability_050_DHW = probability_050_dhw
+  ) |>
+  round_numeric(3) |>
+  kable(caption = 'Focal event-specific slope estimates and uncertainty.')
+```
+
+The event-held-out comparison is less favourable than the descriptive curve
+change alone suggests. For 2016 the adjustment worsens Brier score and AUC.
+For 2024 it slightly improves Brier score by raising the very low mean
+prediction toward the high observed occurrence, while AUC falls. Thus the
+2024 gain is mainly calibration, not better reef ranking.
+
+```{r}
+folds |>
+  filter(
+    scheme == 'leave_one_event_out',
+    fold %in% c('2016', '2024')
+  ) |>
+  transmute(
+    event_year = fold,
+    DHW = recode(
+      variant,
+      raw_noaa_dhw = 'Raw NOAA',
+      local_first_logger_adjusted_dhw = 'Logger adjusted'
+    ),
+    n, observed_occurrence, predicted_occurrence, brier, log_loss, auc
+  ) |>
+  arrange(event_year, DHW) |>
+  round_numeric(4) |>
+  kable(caption = 'Focal leave-one-event-out predictive performance.')
+```
+
+```{r}
+focal_contrasts |>
+  select(
+    event_year, dhw,
+    raw_probability = predicted_probability_raw_noaa_dhw,
+    adjusted_probability = predicted_probability_local_first_logger_adjusted_dhw,
+    delta_probability_adjusted_minus_raw
+  ) |>
+  round_numeric(3) |>
+  kable(caption = 'Fitted focal-event probability at common model-input DHW values.')
+```
+
+### All six event curves
+
+![](../../output/bleaching_only_dhw_binomial/event_specific_curves.png)
+
+Both lines in each panel come from separate binomial fits using only that
+event. They are plotted against the DHW value supplied to each model, not as a
+claim that adjusted and raw DHW are interchangeable physical scales. Shading
+is the model-based 95% interval; extrapolation beyond each event's observed
+DHW range should not be interpreted.
+
+```{r}
+shape |>
+  transmute(
+    event_year,
+    observations = n_raw_noaa_dhw,
+    mortality_occurrences = mortality_occurrences_raw_noaa_dhw,
+    correction_coverage = correction_coverage_raw_noaa_dhw,
+    raw_slope = dhw_slope_raw_noaa_dhw,
+    adjusted_slope = dhw_slope_local_first_logger_adjusted_dhw,
+    slope_change = delta_slope_adjusted_minus_raw,
+    raw_midpoint_dhw = probability_050_dhw_raw_noaa_dhw,
+    adjusted_midpoint_dhw = probability_050_dhw_local_first_logger_adjusted_dhw
+  ) |>
+  round_numeric(3) |>
+  kable(caption = 'Event-specific response-shape comparison on the logit scale.')
+```
+
+## Interpretation limits
+
+- A positive mortality occurrence is not the same as severe mortality; this
+  analysis does not model positive magnitude.
+- The local-first correction is spatially uneven. A slope change can reflect
+  which reefs have logger support as well as a better estimate of heat stress.
+- The event-specific curves reuse their event outcomes and are explanatory;
+  only the held-out rows measure transfer.
+- The 2025 assessment is locked against pre-2025 outcome training, but there is
+  no validated 2025 logger correction. Zero adjustment is explicit, not an
+  assertion that NOAA had zero bias.
+- This diagnostic cannot promote a production model. It isolates what one heat
+  predictor can and cannot explain after obvious non-thermal confounding is
+  removed.
+
+## Reproduction
+
+```text
+Rscript src/evaluation/test_bleaching_only_dhw_binomial.R
+quarto render analysis/investigations/bleaching_only_dhw_binomial_assessment.qmd
+```

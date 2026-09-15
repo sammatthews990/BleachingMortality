@@ -1,6 +1,6 @@
 # Current model status
 
-Last reconciled with registry version 7 on 2026-09-02.
+Last reconciled with registry version 7 on 2026-09-11.
 
 ## Selected initial forecast
 
@@ -31,7 +31,9 @@ The formal inflated-beta BRMS and BRT pipeline remains in `src/models/` and has 
 - Penrith Reef 2017 remains underpredicted after cyclone adjustment.
 - Mackay 2024 remains unresolved by available freshwater and cyclone proxies.
 - Jasper/Kirrily cyclone exposure and its uncertainty need replacement with improved track-intensity data.
-- Early aerial/RHIS updates are implemented but remain off by default until timing and severe-tail safeguards improve.
+- The reliability-weighted, event-centred aerial/RHIS anomaly has the expected residual direction but negligible skill: sector-excluded RMSE improves 0.00030, block-excluded RMSE worsens 0.00006, and the locked 2025 both-design guard fails. It remains a separate condition layer, off by default.
+- In a separate bleaching-compatible DHW-only occurrence diagnostic, logger adjustment improves pooled event-held-out Brier score but worsens reef-, sector- and programme-held-out transfer and changes event slopes inconsistently; it does not alter selection.
+- The 2025 result is a retrospective locked-input reconstruction, not an archived issued forecast; 2025 outcomes and aerial/RHIS signals are excluded from its fit.
 - ENSO plus current rainfall/WQC helps 2022 but worsens 2020 and suppresses 2024; it is not promoted.
 - Operational prediction still needs full uncertainty propagation across DHW correction, INLA components, cyclone activation, COTS pressure and any ensemble.
 

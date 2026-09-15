@@ -1,0 +1,709 @@
+---
+title: 'Where the selected mortality model still fails'
+subtitle: 'A critical audit of event, region, reef, cause and observation-scale residual variation'
+date: 2026-09-15
+format:
+  html:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(readr)
+library(scales)
+library(tidyr)
+library(yaml)
+
+theme_set(theme_minimal(base_size = 12))
+
+root <- if (file.exists('config/model_registry.yml')) '.' else '../..'
+audit_dir <- file.path(root, 'output', 'selected_model_residual_gap_audit')
+overview <- read_csv(file.path(audit_dir, 'overview.csv'), show_col_types = FALSE)
+events <- read_csv(file.path(audit_dir, 'event_summary.csv'), show_col_types = FALSE)
+programmes <- read_csv(file.path(audit_dir, 'programme_summary.csv'), show_col_types = FALSE)
+regions <- read_csv(file.path(audit_dir, 'region_summary.csv'), show_col_types = FALSE)
+event_regions <- read_csv(
+  file.path(audit_dir, 'event_region_summary.csv'), show_col_types = FALSE
+)
+causes <- read_csv(file.path(audit_dir, 'cause_summary.csv'), show_col_types = FALSE)
+reefs <- read_csv(file.path(audit_dir, 'reef_summary.csv'), show_col_types = FALSE)
+reef_events <- read_csv(
+  file.path(audit_dir, 'reef_event_summary.csv'), show_col_types = FALSE
+)
+priority <- read_csv(
+  file.path(audit_dir, 'priority_reef_events.csv'), show_col_types = FALSE
+)
+associations <- read_csv(
+  file.path(audit_dir, 'residual_associations.csv'), show_col_types = FALSE
+)
+decomposition <- read_csv(
+  file.path(audit_dir, 'error_decomposition.csv'), show_col_types = FALSE
+)
+discordance <- read_csv(
+  file.path(audit_dir, 'cross_programme_discordance.csv'),
+  show_col_types = FALSE
+)
+persistence <- read_csv(
+  file.path(audit_dir, 'reef_persistence_summary.csv'),
+  show_col_types = FALSE
+)
+coverage <- read_csv(
+  file.path(audit_dir, 'mechanism_coverage.csv'), show_col_types = FALSE
+)
+model_registry <- read_yaml(file.path(root, 'config', 'model_registry.yml'))
+local_dhw_layer <- read_csv(
+  file.path(
+    root, 'data', 'processed',
+    'noaa_dhw_correction_layer_local_first_validation.csv'
+  ),
+  show_col_types = FALSE
+)
+local_dhw_site_events <- read_csv(
+  file.path(
+    root, 'output', 'dhw_correction_local_first',
+    'site_event_discrepancies.csv'
+  ),
+  show_col_types = FALSE
+)
+inla_predictions <- read_csv(
+  file.path(root, 'output', 'inla_spatiotemporal', 'cv_predictions.csv'),
+  show_col_types = FALSE
+)
+inla_metrics <- read_csv(
+  file.path(root, 'output', 'inla_spatiotemporal', 'model_comparison.csv'),
+  show_col_types = FALSE
+)
+selected_predictions <- read_csv(
+  file.path(root, 'output', 'prospective_cots_nowcast', 'cv_predictions.csv'),
+  show_col_types = FALSE
+) |>
+  filter(
+    candidate == model_registry$best_model$id,
+    scheme == 'leave_one_event_out'
+  ) |>
+  left_join(
+    local_dhw_layer |>
+      select(
+        ReefID, event_year, local_first_correction, correction_source,
+        correction_sd
+      ),
+    by = c('ReefID', 'event_year'), relationship = 'many-to-one'
+  ) |>
+  mutate(
+    local_first_correction = coalesce(local_first_correction, 0),
+    correction_source = coalesce(correction_source, 'NOAA unchanged'),
+    correction_band = case_when(
+      local_first_correction < -0.25 ~ 'Negative correction',
+      local_first_correction > 0.25 ~ 'Positive correction',
+      TRUE ~ 'NOAA/near zero'
+    )
+  )
+raw_dhw_name <- 'persistent_rw1_cyclone_cots_partial_pool'
+local_dhw_name <- 'persistent_rw1_cyclone_cots_local_first_dhw_partial_pool'
+dhw_pooled_metrics <- inla_metrics |>
+  filter(candidate %in% c(raw_dhw_name, local_dhw_name)) |>
+  transmute(
+    candidate = if_else(
+      candidate == raw_dhw_name, 'NOAA unchanged', 'Local-first DHW'
+    ),
+    validation = recode(
+      scheme,
+      leave_one_event_out = 'Leave-one-event-out',
+      reef_blocked_5fold = 'Reef-blocked 5-fold'
+    ),
+    rmse, predictive_r2, severe_rmse, false_extreme_rate
+  )
+dhw_event_metrics <- inla_predictions |>
+  filter(
+    scheme == 'leave_one_event_out',
+    candidate %in% c(raw_dhw_name, local_dhw_name)
+  ) |>
+  group_by(candidate, event_year) |>
+  summarise(
+    rmse = sqrt(mean((observed_mortality - predicted_mortality)^2)),
+    bias = mean(predicted_mortality - observed_mortality),
+    .groups = 'drop'
+  ) |>
+  mutate(candidate = if_else(
+    candidate == raw_dhw_name, 'NOAA unchanged', 'Local-first DHW'
+  )) |>
+  select(event_year, candidate, rmse, bias) |>
+  pivot_wider(names_from = candidate, values_from = c(rmse, bias)) |>
+  mutate(
+    rmse_change = `rmse_Local-first DHW` - `rmse_NOAA unchanged`
+  )
+dhw_2024_residual <- selected_predictions |>
+  filter(event_year == 2024) |>
+  group_by(correction_band) |>
+  summarise(
+    observations = n(), reefs = n_distinct(ReefID),
+    mean_correction = mean(local_first_correction),
+    mean_residual = mean(residual),
+    rmse = sqrt(mean(residual^2)),
+    sse = sum(residual^2), .groups = 'drop'
+  ) |>
+  mutate(sse_share = sse / sum(sse))
+dhw_2024_correlation <- selected_predictions |>
+  filter(event_year == 2024) |>
+  summarise(value = cor(
+    local_first_correction, residual,
+    method = 'spearman', use = 'complete.obs'
+  )) |>
+  pull(value)
+local_2024_coverage <- local_dhw_layer |>
+  filter(event_year == 2024) |>
+  summarise(
+    reefs = n(),
+    direct = sum(correction_source == 'current_direct'),
+    interpolated = sum(correction_source == 'current_local'),
+    unchanged = sum(correction_source == 'none')
+  )
+local_2024_position <- local_dhw_site_events |>
+  filter(event_year == 2024) |>
+  group_by(position_rule) |>
+  summarise(
+    site_events = n(), mean_correction = mean(discrepancy),
+    median_correction = median(discrepancy), .groups = 'drop'
+  )
+
+fmt <- function(x, digits = 3) format(round(x, digits), nsmall = digits)
+event_2024 <- events |> filter(event_year == 2024)
+north_2024 <- event_regions |>
+  filter(event_year == 2024, region_block == 'Northern GBR')
+south_2024 <- event_regions |>
+  filter(event_year == 2024, region_block == 'Southern GBR')
+central_2024 <- event_regions |>
+  filter(event_year == 2024, region_block == 'Central GBR')
+cyclone_rows <- causes |> filter(cause_group == 'Cyclone label')
+multiple_rows <- causes |>
+  filter(cause_group == 'Multiple non-thermal labels')
+```
+
+## Decision
+
+Do **not** respond to the recent lack of model improvement by widening the
+predictor search. The selected cause-aware model already contains most of the
+available broad thermal, freshwater, optical, cyclone, COTS, composition and
+history fields. The next useful work is narrower:
+
+1. measure event-timed freshwater exposure at the affected reef rather than
+   adding another regional rainfall or colour proxy;
+2. rebuild cyclone exposure as local, uncertainty-aware physical forcing and
+   recalibrate cyclone *magnitude* separately from activation; and
+3. reconcile monitoring footprints and observation error before interpreting
+   all residual variation as ecological process.
+
+These are conditional development priorities, not grounds to change the
+selected model. More heat summaries, an unconstrained residual learner, a
+larger interaction search, a reef identity effect, or a new event intercept are
+not supported by the current evidence.
+
+## Scope and interpretation
+
+This audit uses the `r comma(overview$observations)` observation-level
+leave-one-event-out predictions for
+`operational_rrn_raw_plus_manta_state`: `r comma(overview$reefs)` reefs across
+`r overview$events` events. A positive residual is observed minus predicted
+mortality, so it represents underprediction. All summaries are cross-fitted;
+they are not fitted residuals.
+
+Squared-error share locates the current predictive burden but is influenced by
+sample size. RMSE and bias show local severity and direction. Reef-event
+summaries average repeated observations so that a heavily sampled reef does
+not automatically become the highest priority. Cause labels are supporting
+field evidence, not perfect causal truth.
+
+```{r overview-table}
+overview |>
+  transmute(
+    Observations = observations, Reefs = reefs, Events = events,
+    RMSE = rmse, MAE = mae, `Predictive R2` = predictive_r2,
+    `Severe RMSE` = severe_rmse,
+    `Underprediction outliers` = underprediction_outliers,
+    `Overprediction outliers` = overprediction_outliers
+  ) |>
+  kable(digits = 3, caption = 'Selected-model event-held-out performance')
+```
+
+## Why recent additions have not moved the model
+
+```{r recent-ledger}
+registry <- read_yaml(file.path(root, 'config', 'experiments.yml'))
+recent_ids <- c(
+  'imos_thermal_metrics', 'early_bleaching_update',
+  'prospective_cots_brt', 'standalone_brt_envelope',
+  'rainfall_salinity', 'salinity_kd490', 'sst_chla_screen',
+  'zero_mortality_curves'
+)
+recent <- bind_rows(lapply(registry$experiments, function(x) {
+  if (!x$id %in% recent_ids) return(NULL)
+  tibble(
+    Investigation = x$title, Status = x$status, Finding = x$finding
+  )
+}))
+kable(recent, caption = 'Relevant completed investigations from the experiment ledger')
+```
+
+The common failure mode is not lack of flexibility. Richer BRTs and residual
+learners improve some reef-blocked interpolation but lose skill when an entire
+event is withheld. Thermal duration, peaks, MHW categories and empirical
+frequency describe stress more completely, but did not provide stable new-event
+information. Broad rainfall, colour and optical fields are useful risk proxies,
+yet they do not observe the short, local salinity tail. The current ceiling is
+therefore dominated by transfer, exposure measurement and outcome
+heterogeneity rather than a shortage of candidate terms.
+
+## Events: 2024 dominates, but the direction changes through time
+
+```{r event-table}
+events |>
+  arrange(event_year) |>
+  transmute(
+    Event = event_year, N = observations, Reefs = reefs,
+    `Observed mean` = observed_mean, `Predicted mean` = predicted_mean,
+    Bias = bias_observed_minus_predicted, RMSE = rmse,
+    `Severe N` = severe_observations, `Severe RMSE` = severe_rmse,
+    `Under outliers` = underprediction_outliers,
+    `Over outliers` = overprediction_outliers,
+    `Error share` = percent(squared_error_share, accuracy = 0.1)
+  ) |>
+  kable(digits = 3, caption = 'Error by held-out bleaching event')
+```
+
+```{r event-plot, fig.width=9, fig.height=5}
+events |>
+  mutate(
+    direction = if_else(
+      bias_observed_minus_predicted >= 0,
+      'Underprediction', 'Overprediction'
+    ),
+    event_year = factor(event_year)
+  ) |>
+  ggplot(aes(event_year, squared_error_share, fill = direction)) +
+  geom_col(width = 0.7) +
+  geom_text(
+    aes(label = percent(squared_error_share, accuracy = 0.1)),
+    vjust = -0.35
+  ) +
+  scale_y_continuous(labels = percent, limits = c(0, 0.65)) +
+  scale_fill_manual(values = c(Underprediction = '#B2182B',
+                               Overprediction = '#2166AC')) +
+  labs(
+    x = 'Held-out event', y = 'Share of total squared error', fill = NULL,
+    title = 'The 2024 event carries most of the remaining predictive error',
+    subtitle = 'Bar colour reports mean residual direction, not every reef'
+  ) +
+  theme(legend.position = 'top')
+```
+
+The 2024 observations contribute
+`r percent(event_2024$squared_error_share, accuracy = 0.1)` of total squared
+error and have a mean underprediction of
+`r fmt(event_2024$bias_observed_minus_predicted)`. The 2016 event is also
+underpredicted and has the worst severe-case RMSE. Conversely, 2020 and 2022
+are low-mortality events with systematic overprediction. A single global
+uplift would therefore improve 2016/2024 while making 2020/2022 worse.
+
+This alternating event pattern is why event identity, retrospective event
+intercepts and broad post hoc calibration are unsafe. Any event-scale addition
+must exist before prediction and transfer across an entirely withheld event.
+
+## Regions: broad northern and southern 2024 misses, mixed Central error
+
+```{r event-region-plot, fig.width=9, fig.height=5.5}
+event_regions |>
+  mutate(
+    Event = factor(event_year),
+    Region = factor(
+      region_block,
+      levels = c('Northern GBR', 'Central GBR', 'Southern GBR')
+    )
+  ) |>
+  ggplot(aes(Event, Region, fill = bias_observed_minus_predicted)) +
+  geom_tile(colour = 'white', linewidth = 0.8) +
+  geom_text(aes(label = sprintf('%.3f\\nRMSE %.3f',
+                                bias_observed_minus_predicted, rmse)),
+            size = 3.2) +
+  scale_fill_gradient2(
+    low = '#2166AC', mid = 'white', high = '#B2182B', midpoint = 0,
+    name = 'Observed -\\npredicted'
+  ) +
+  labs(
+    x = 'Held-out event', y = NULL,
+    title = 'Residual direction is event-by-region specific',
+    subtitle = 'Cell labels give mean bias and RMSE'
+  ) +
+  theme(panel.grid = element_blank())
+```
+
+Across all years, Central GBR contributes the largest raw error share because
+it contains `r comma(regions$observations[regions$region_block == 'Central GBR'])`
+observations and many high-variance reefs. That is not a uniform Central bias.
+In 2024 its mean bias is only `r fmt(central_2024$bias_observed_minus_predicted)`,
+because strong under- and overpredictions cancel. Northern and Southern 2024
+are more coherent underpredictions: `r fmt(north_2024$bias_observed_minus_predicted)`
+and `r fmt(south_2024$bias_observed_minus_predicted)`, respectively.
+
+This pattern argues against adding a coarse region effect. The model needs to
+distinguish local exposure and response within a region, especially around
+Jasper-affected Central/Northern reefs and the southern 2024 mortality tail.
+
+## Causes: cyclone and multi-disturbance rows remain disproportionately hard
+
+```{r cause-table}
+causes |>
+  transmute(
+    `Field-attributed group` = cause_group,
+    N = observations, Reefs = reefs,
+    Bias = bias_observed_minus_predicted, RMSE = rmse,
+    `Severe N` = severe_observations,
+    `Cyclone uplift` = cyclone_marginal_uplift_mean,
+    `COTS uplift` = cots_marginal_uplift_mean,
+    `Error share` = percent(squared_error_share, accuracy = 0.1)
+  ) |>
+  kable(digits = 3, caption = 'Residual burden by recorded disturbance context')
+```
+
+Cyclone-labelled and multiple-non-thermal rows comprise only
+`r cyclone_rows$observations + multiple_rows$observations` observations but
+account for
+`r percent(cyclone_rows$squared_error_share + multiple_rows$squared_error_share, accuracy = 0.1)`
+of total squared error. Their RMSE values are
+`r fmt(cyclone_rows$rmse)` and `r fmt(multiple_rows$rmse)`. The cyclone
+component is not simply absent: cyclone-labelled rows receive a mean marginal
+uplift of `r fmt(cyclone_rows$cyclone_marginal_uplift_mean)`, yet mortality magnitude
+is still underestimated. Multiple-cause rows receive much less cyclone uplift
+and have the largest positive bias.
+
+The bleaching-only group also remains difficult. That label should not be read
+as proof of a purely thermal mechanism: unrecorded freshwater, disease,
+mechanical injury, composition error and survey-scale differences can remain
+inside it.
+
+## Reef-events: a small set is ecologically informative
+
+```{r priority-under-table}
+priority |>
+  filter(direction == 'underpredicted') |>
+  slice_head(n = 15) |>
+  transmute(
+    Event = event_year, Reef = ReefName, Region = region_block,
+    Programmes = programmes,
+    Observed = observed_mortality, Predicted = predicted_mortality,
+    Residual = residual, DHW = ann_maxdhw,
+    `Candidate mechanism evidence` = candidate_mechanism_flags
+  ) |>
+  kable(digits = 3, caption = 'Largest equal-weighted reef-event underpredictions')
+```
+
+The highest-priority misses are not one mechanism:
+
+- **Penrith 2017** has an explicit Debbie label and a strongly activated
+  cyclone hazard, but the uplift is too small for observed mortality. This is
+  a cyclone magnitude failure, not a missing gate.
+- **Mackay 2024** combines explicit flood and cyclone labels, low DHW and high
+  rain, but its cyclone activation is near zero. The current broad proxies miss
+  its local compound exposure.
+- **Gannett Cay 2020** remains underpredicted even with maximum COTS activation,
+  so timing and magnitude remain uncertain rather than absent.
+- **Carter and Yonge 2016** combine high DHW with activated Nathan exposure;
+  neither a thermal-only nor cyclone-only explanation is adequate.
+- **Swinger, Eyrie and Linnet 2024** carry rainfall or water-colour evidence
+  without direct salinity observations. They are freshwater/plume priorities,
+  not confirmation that the proxy is causal.
+- **Broomfield and Orpheus 2024** have cyclone labels but very low current
+  activation, suggesting missed local exposure, attribution mismatch, or both.
+
+The largest overpredictions are equally informative. The Jasper activation is
+high at Thetford, St Crispin and Hastings in 2024, yet predicted mortality is
+far above observed mortality. Some high-DHW or high-COTS reefs in 2017--2020
+also have little observed mortality. Increasing cyclone, freshwater or thermal
+coefficients globally would amplify these failures.
+
+## Reef persistence is limited
+
+```{r persistent-table}
+persistence |>
+  filter(events >= 2) |>
+  slice_head(n = 12) |>
+  transmute(
+    Reef = ReefName, Region = region_block, Events = events,
+    `Event years` = event_years,
+    `Mean residual` = mean_event_residual,
+    `Event RMSE` = event_residual_rmse,
+    `Maximum error` = maximum_event_absolute_error,
+    `Under events` = underpredicted_events,
+    `Over events` = overpredicted_events,
+    `Sign consistency` = percent(same_direction_fraction, accuracy = 1)
+  ) |>
+  kable(digits = 3, caption = 'Repeated reefs with the largest event-level residual RMSE')
+```
+
+Penrith is consistently underpredicted in its two represented events. Most
+other repeated high-error reefs change residual direction between events.
+Mackay, for example, is not a stable positive reef effect across four events;
+its 2024 compound event is the dominant miss. A reef-identity predictor would
+therefore memorise a small and inconsistent history and would not transfer to
+unmonitored reefs.
+
+## Observation disagreement sets a real ceiling
+
+The exact squared-error decomposition assigns
+`r percent(decomposition$reef_event_mean_error_share, accuracy = 0.1)` to
+reef-event mean error and
+`r percent(decomposition$within_reef_event_disagreement_share, accuracy = 0.1)`
+to differences among observations of the same reef-event. The latter includes
+programme footprint, depth, survey timing, aggregation and ordinary
+measurement error. No reef-level environmental predictor can make conflicting
+observations simultaneously correct.
+
+```{r discordance-table}
+discordance |>
+  slice_head(n = 12) |>
+  transmute(
+    Event = event_year, Reef = ReefName, Region = region_block,
+    Programmes = programmes,
+    `Observed range` = observed_range,
+    `Residual range` = residual_range,
+    `Residual signs differ` = residual_directions_disagree
+  ) |>
+  kable(digits = 3, caption = 'Largest cross-programme reef-event disagreements')
+```
+
+Lizard Island NW, Roxburgh, Penrith, MacGillivray and several other reefs have
+large cross-programme ranges. The selected model already includes
+programme-specific observation layers, but the remaining disagreement argues
+for explicit footprint/timing uncertainty or a latent reef-event state before
+adding fine-grained ecological interactions.
+
+## Residual associations do not justify more copies of existing proxies
+
+```{r association-plot, fig.width=9, fig.height=7}
+associations |>
+  filter(model_status == 'already represented') |>
+  mutate(label = reorder(label, pooled_within_event_rank_r)) |>
+  ggplot(aes(pooled_within_event_rank_r, label, colour = mechanism)) +
+  geom_vline(xintercept = 0, colour = 'grey55') +
+  geom_point(size = 2.5) +
+  labs(
+    x = 'Pooled within-programme/event rank association with residual',
+    y = NULL, colour = NULL,
+    title = 'Most remaining associations are weak or inconsistent',
+    subtitle = 'Every field shown is already represented in the selected model'
+  ) +
+  theme(legend.position = 'bottom')
+```
+
+These are diagnostics, not independent tests of new predictors. Rainfall has a
+pooled within-event rank association near zero, and the water-colour signs vary
+by event and programme. The 2024 water-colour association is positive, but it
+is negative in several earlier groups. Freshwater is therefore a plausible
+local missing exposure, not a demonstrated GBR-wide residual slope.
+
+Cyclone activation is negatively associated with residuals within every 2024
+programme: high-activation Jasper reefs tend to be overpredicted, while several
+labelled or field-implicated reefs receive low activation and are
+underpredicted. This is evidence against merely lowering the activation
+threshold or increasing the cyclone coefficient. The spatial exposure surface
+and response magnitude need rebuilding together.
+
+## Local-first logger-adjusted DHW is already in the selected model
+
+**Yes: the registry-selected model already uses local-first DHW.** The model
+registry sets `local_dhw_adjustment` to
+`r model_registry$best_model$local_dhw_adjustment`, and its thermal core is
+`r model_registry$best_model$thermal_core_id`. In the fitted data,
+`local_first_correction` is added to immutable NOAA `ann_maxdhw`; the 4- and
+8-DHW hinges and current-event novelty are then recomputed. The remaining 2024
+underprediction therefore occurs *after* the logger adjustment, not because it
+was omitted.
+
+The correction is more conservative than a GBR-wide logger offset. In the 2024
+reef-event layer, `r local_2024_coverage$direct` of
+`r local_2024_coverage$reefs` reefs have a direct site match,
+`r local_2024_coverage$interpolated` use at most four same-event sources within
+25 km, and `r local_2024_coverage$unchanged` retain NOAA unchanged. No historical
+or event-wide uplift is applied. The layer also carries correction uncertainty.
+
+### The current hierarchy already favours flats and shallow loggers
+
+At each logger site-event, reef-temperature loggers take precedence over an
+automated station. If a shallow 0--5 m or reef-flat record exists, only that
+subset is summarised; slope or other positions enter the site median only when
+no shallow/flat series is available. Thus a strict flat-first idea is already
+largely present. What is *not* implemented is an explicit reliability weight
+that shrinks the fallback slope/all-position estimate toward zero.
+
+```{r local-dhw-position}
+local_2024_position |>
+  transmute(
+    `Position rule` = recode(
+      position_rule,
+      shallow_or_flat_preferred = 'Shallow/flat preferred',
+      all_available = 'All available (fallback)'
+    ),
+    `Site-events` = site_events,
+    `Mean logger - NOAA DHW` = mean_correction,
+    `Median logger - NOAA DHW` = median_correction
+  ) |>
+  kable(digits = 3, caption = '2024 site-event inputs to the local-first layer')
+```
+
+The fallback group is more negative in 2024, so habitat-aware shrinkage is a
+reasonable *construct sensitivity*. A blanket flat-only rule is less sound: it
+would discard spatial coverage, and shallow flats can be hotter and less
+representative of slope-based survey footprints. Matching correction evidence
+to monitoring depth/habitat is preferable to assuming one habitat is correct
+for every programme.
+
+### The adjustment helped transfer, but not uniformly
+
+Within the same earlier cyclone/COTS INLA architecture, local-first DHW reduced
+pooled leave-one-event-out error, while slightly worsening reef-blocked error.
+This is why it was retained as an exposure correction but not treated as a
+universally superior replacement for NOAA.
+
+```{r local-dhw-pooled}
+dhw_pooled_metrics |>
+  transmute(
+    `DHW input` = candidate, Validation = validation, RMSE = rmse,
+    `Predictive R2` = predictive_r2, `Severe RMSE` = severe_rmse,
+    `False-extreme rate` = false_extreme_rate
+  ) |>
+  arrange(Validation, RMSE) |>
+  kable(digits = 3, caption = 'Existing validation of the local-first correction')
+```
+
+The gain is concentrated in 2020, 2022 and especially 2024; 2016 and 2017
+worsen. This pattern argues for retaining the correction and its uncertainty,
+but against tuning a logger-habitat weight to the pooled mortality outcome.
+
+```{r local-dhw-event}
+dhw_event_metrics |>
+  transmute(
+    Event = event_year,
+    `NOAA RMSE` = `rmse_NOAA unchanged`,
+    `Local-first RMSE` = `rmse_Local-first DHW`,
+    `Local - NOAA RMSE` = rmse_change,
+    `NOAA bias (predicted - observed)` = `bias_NOAA unchanged`,
+    `Local bias (predicted - observed)` = `bias_Local-first DHW`
+  ) |>
+  kable(digits = 3, caption = 'Event-held-out DHW correction comparison')
+```
+
+An earlier fixed +4.82-DHW flat-logger stress test at six Lizard-region reefs
+also raised their held-out 2024 predictions, but it was a local stress test,
+not a general flat-only correction layer. Its modest model-wide improvement
+cannot justify exporting that positive uplift to other reefs.
+
+### Would downweighting slopes close the current 2024 gap?
+
+Probably only marginally, if at all. In the *selected* model's 2024 held-out
+predictions, the rank correlation between the applied correction and remaining
+residual is `r fmt(dhw_2024_correlation)`. Negative-correction reefs are
+underpredicted on average, so shrinking some fallbacks toward NOAA could help
+individual cases. But positive-correction reefs have at least as much residual
+burden, and Mackay remains the largest 2024 miss despite a direct +2.99-DHW
+correction. The residual pattern is not a monotone signature of logger
+corrections being too negative.
+
+```{r local-dhw-residual}
+dhw_2024_residual |>
+  transmute(
+    `Correction band` = correction_band, Observations = observations,
+    Reefs = reefs, `Mean correction (DHW)` = mean_correction,
+    `Mean residual` = mean_residual, RMSE = rmse,
+    `Share of 2024 SSE` = sse_share
+  ) |>
+  arrange(`Mean correction (DHW)`) |>
+  kable(digits = 3, caption = 'Residual error after local-first DHW is already applied')
+```
+
+The defensible conclusion is to **keep local-first DHW in the current model**,
+not replace it with raw NOAA and not promote a flat-only rule. If this layer is
+revisited, the narrow test should partially pool fallback slope/all-position
+corrections toward zero using held-out *logger-versus-NOAA* accuracy and
+survey-habitat/depth compatibility, then rerun the fixed mortality folds. The
+shrinkage must be learned without mortality outcomes. Given the near-zero
+residual association and the already positive correction at Mackay, this is a
+secondary calibration refinement, not a likely substitute for event-timed
+freshwater and local cyclone forcing.
+
+## Only three next steps survive this audit
+
+### 1. Direct, event-timed freshwater exposure at priority reefs
+
+Build a two-part freshwater layer representing probability of an ecologically
+important low-salinity pulse and conditional deficit/duration. Use direct
+salinity when available and treat rainfall, river discharge, colour and
+hydrodynamic connectivity as uncertain predictors of that latent exposure—not
+as interchangeable salinity measurements. Prioritise Mackay, Swinger, Eyrie,
+Linnet and appropriate low-impact controls in the same event and region.
+
+Promotion should require leave-one-event-out validation, a river/catchment or
+spatial holdout, improved severe-case error, and credible low-salinity-tail
+calibration. The current selected-model rows have complete broad rainfall and
+water-colour proxies but **no direct salinity predictor**. Adding further sums,
+lags or interactions of the same proxy products is unlikely to close the gap.
+
+### 2. Local cyclone forcing and a separate damage-magnitude calibration
+
+Replace the single deterministic activation view with an uncertainty-aware
+exposure distribution combining storm track, event timing, wave energy and
+direction, bathymetry, reef aspect/sheltering and depth. Keep forcing,
+activation and mortality magnitude distinct. Penrith/Carter/Yonge indicate
+underestimated magnitude despite activation; Mackay/Broomfield/Orpheus indicate
+possible missed activation; Thetford/St Crispin/Hastings are essential
+high-exposure, lower-loss negative controls.
+
+Promotion should be based on held-out cyclone events or storms, labelled and
+unlabelled negative controls, severe RMSE, false-extreme rate and calibration of
+the cyclone component. A more permissive gate alone is contraindicated by the
+2024 overpredictions.
+
+### 3. Observation-footprint and latent reef-event reconciliation
+
+Quantify how LTMP, manta and MMP differ in spatial footprint, depth, survey
+date, baseline uncertainty and taxonomic aggregation. Carry those uncertainties
+into a latent reef-event mortality layer or observation-error sensitivity.
+This is not a device for shrinking inconvenient outcomes: the latent state must
+be estimated without using event identity as an operational predictor, and the
+raw programme observations must remain auditable.
+
+This work could explain the 27% within-reef-event error component and prevent
+environmental predictors from being selected to fit observation mismatch.
+
+## Steps that should not proceed now
+
+| Proposed move | Why it is not justified |
+|---|---|
+| Add more generic thermal metrics | MHW, intensity-duration, empirical frequency and cooling screens did not transfer consistently; local-first DHW is already present. |
+| Replace local-first DHW with flat-only loggers | The current hierarchy already prefers shallow/flat records; a blanket restriction loses coverage and may mismatch slope surveys. |
+| Add more rainfall/colour lags and interactions | These axes are already richly represented; residual signs vary by event and programme. |
+| Lower the cyclone gate or increase its coefficient | High-activation Jasper reefs are already overpredicted while some labelled reefs remain unactivated. |
+| Reintroduce a residual BRT | It improves known-event interpolation but worsens event-held-out and severe error. |
+| Add reef identity or event identity | Reef residuals are often sign-inconsistent, and event identity is unavailable prospectively. |
+| Downsample zeros or delete low-DHW losses | Previous tests worsened transfer and would discard plausible compound events. |
+| Treat optical plume products as salinity | Their low-salinity-tail calibration is inadequate and the apparent skill relies on spatial priors. |
+| Promote satellite night cooling | The proposed day/night contrast failed hourly-logger construct validation. |
+
+## Promotion sequence
+
+The next comparison should not be one large model containing all three changes.
+Run locked ablations in this order:
+
+1. selected model versus a new freshwater *measurement* layer;
+2. selected model versus rebuilt cyclone exposure, then exposure plus a new
+   cyclone magnitude layer;
+3. repeat both comparisons under the observation-footprint sensitivity; and
+4. test the combined freshwater-plus-cyclone candidate only if each component
+   improves its relevant held-out cases without worsening overall event
+   transfer or false extremes.
+
+The operational model remains unchanged unless those gates pass.

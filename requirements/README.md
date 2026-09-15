@@ -4,5 +4,6 @@ The Python extraction dependencies are split by remote product so the modelling 
 
 - `patmosx.txt`: PATMOS-x cloud reconstruction.
 - `era5.txt`: ERA5 weather extraction.
+- `imos-thermal.txt`: IMOS/SSTAARS metrics and NOAA thermal IDF extraction.
 
 Core validation tests also require NumPy and pandas.

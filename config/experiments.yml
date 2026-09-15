@@ -1,0 +1,363 @@
+version: 1
+updated: '2026-09-15'
+finding_word_limit: 45
+experiments:
+  - id: selected_model_residual_gap_audit
+    title: Selected-model residual gap audit
+    track: investigation
+    status: diagnostic
+    question: Where is selected-model residual error concentrated, and which mechanism-first improvements remain defensible?
+    finding: Error is concentrated in 2024 and labelled cyclone/multi-disturbance rows. Northern and Southern 2024 underprediction is broad; Central error is mixed and reef-specific. Prioritise direct event-timed freshwater exposure and uncertainty-aware local cyclone damage, not more proxy terms or residual learners.
+    report: analysis/investigations/remaining_residual_gap_audit.qmd
+    evidence: [output/selected_model_residual_gap_audit/event_summary.csv, output/selected_model_residual_gap_audit/event_region_summary.csv, output/selected_model_residual_gap_audit/cause_summary.csv, output/selected_model_residual_gap_audit/priority_reef_events.csv, output/selected_model_residual_gap_audit/error_decomposition.csv]
+    updated: '2026-09-15'
+
+  - id: imos_thermal_metrics
+    title: IMOS nighttime thermal-metric assessment
+    track: investigation
+    status: not_promoted
+    question: Do IMOS DHW, duration/intensity, cooling, or NOAA IDF rarity metrics improve mortality prediction?
+    finding: Standard MHW duration/intensity improved some event-held-out tests but not consistently across spatial and complete-case validation. A NOAA empirical IDF block improved reef-blocked LTMP/MMP but worsened event transfer; satellite cooling failed mortality and logger tests. Retain NOAA DHW; no new metric is promoted.
+    report: analysis/investigations/imos_thermal_metric_assessment.qmd
+    evidence: [output/imos_thermal_screen/source_comparison.csv, output/imos_thermal_screen/blocked_metrics.csv, output/imos_thermal_screen/complete_case_metrics.csv, output/imos_thermal_screen/coverage_audit.csv, output/imos_thermal_screen/logger_cooling_validation.csv, data/processed/noaa_idf_metrics_validation.manifest.json]
+    updated: '2026-09-15'
+
+  - id: best_fit_model
+    title: Best-fit model and prediction pathway
+    track: current
+    status: selected
+    question: Which validated architecture should produce initial GBR mortality forecasts?
+    finding: The selected initial-forecast route is the cause-aware two-part INLA composite with local-first DHW, separate COTS and cyclone hazards, raw RRN pressure, and dated Manta COTS state; leave-one-event-out validation governs promotion.
+    report: analysis/current/03_Best_Fit_Model.qmd
+    evidence: [config/model_registry.yml, output/prospective_cots_nowcast/cv_predictions.csv]
+    updated: '2026-09-07'
+
+  - id: cots_enso_control
+    title: COTS, ENSO and reef-control assessment
+    track: current
+    status: selected
+    question: Do raw COTS pressure and ENSO occurrence controls improve event transfer?
+    finding: Raw interval COTS density was promoted over its log transform; RONI and SOI occurrence corrections were rejected because gains for 2022 came at the expense of 2020 and 2024 transfer.
+    report: analysis/current/04_COTS_ENSO_reef_control_assessment.qmd
+    evidence: [output/cots_raw_enso_controls/model_comparison.csv]
+    updated: '2026-09-07'
+
+  - id: early_bleaching_update
+    title: Spatial early-bleaching update assessment
+    track: current
+    status: not_promoted
+    question: Should early aerial and RHIS observations update the initial forecast?
+    finding: An event-centred reliability-weighted aerial/RHIS anomaly had expected residual direction but negligible skill; block RMSE worsened 0.00006 and locked 2025 failed across both designs. Keep it as a separate condition layer; initial forecast unchanged.
+    report: analysis/current/05_spatial_early_bleaching_update_assessment.qmd
+    evidence: [output/spatial_early_bleaching_update/model_comparison.csv, output/spatial_early_bleaching_update/promotion_checks.csv, output/spatial_early_bleaching_update/residual_anomaly_diagnostics.csv, output/spatial_early_bleaching_update/consensus_anomaly_guard.csv, output/initial_forecast_2025/locked_metrics.csv, output/initial_forecast_2025/locked_manifest.csv, data/processed/aerial_early_bleaching_source_audit.csv]
+    updated: '2026-09-11'
+
+  - id: prospective_cots_brt
+    title: Prospective COTS and INLA-BRT assessment
+    track: current
+    status: selected
+    question: Which COTS state and residual learner are safe for prospective forecasts?
+    finding: Raw RRN pressure plus dated Manta observations through February defines the operational COTS state; the residual BRT was not promoted because it worsened leave-one-event-out and severe-event error.
+    report: analysis/current/06_prospective_cots_and_inla_brt_assessment.qmd
+    evidence: [output/prospective_cots_nowcast/cv_predictions.csv, output/inla_brt_residual_ensemble/model_comparison.csv]
+    updated: '2026-09-07'
+
+  - id: standalone_brt_envelope
+    title: Standalone BRT envelope and ensemble assessment
+    track: current
+    status: retained
+    question: Can a direct nonlinear BRT improve transfer or complement INLA?
+    finding: The BRT improves reef-blocked interpolation, especially with applicability blending, but is markedly worse for unseen events and severe mortality; retain it for within-event interpolation and nonlinear diagnostics, not the initial forecast.
+    report: analysis/current/07_standalone_brt_envelope_ensemble_assessment.qmd
+    evidence: [output/standalone_brt_envelope/model_comparison.csv]
+    updated: '2026-09-07'
+
+  - id: aims_cyclone_upwelling
+    title: AIMS salinity, cyclone and upwelling assessment
+    track: investigation
+    status: data_pipeline
+    question: Can AIMS observations directly supply salinity and related compound-stress predictors?
+    finding: AIMS observations are useful for calibration but too sparse for direct GBR-wide interpolation; retain a two-part freshwater-risk proxy and acknowledge the absence of direct 2024 logger coverage.
+    report: analysis/investigations/aims_cyclone_upwelling_assessment.qmd
+    evidence: [output/aims_environmental_assessment]
+    updated: '2026-09-07'
+
+  - id: aims_noaa_dhw_validation
+    title: AIMS-NOAA DHW validation
+    track: investigation
+    status: retained
+    question: Does NOAA DHW require a fixed correction at Lizard Island and elsewhere?
+    finding: Local observations support NOAA underestimation near Lizard, but the bias varies through space and time; use a supported local-first or partially pooled correction rather than a universal fixed uplift.
+    report: analysis/investigations/aims_noaa_dhw_validation.qmd
+    evidence: [output/aims_noaa_dhw_validation]
+    updated: '2026-09-07'
+
+  - id: cause_aware_hazards
+    title: Cause-aware competing-hazard assessment
+    track: investigation
+    status: superseded
+    question: Can mortality causes be separated so non-thermal losses do not flatten the heat response?
+    finding: Cause-labelled annual transitions support separate thermal, COTS and cyclone hazards; disturbance labels supervise those components but are not operational predictors. The original hard cyclone gate was later replaced by a validated logistic activation.
+    report: analysis/investigations/cause_aware_competing_hazard_assessment.qmd
+    evidence: [output/cause_aware_competing_hazards]
+    updated: '2026-09-07'
+
+  - id: cots_timing_lanina
+    title: COTS timing and La Nina residual assessment
+    track: investigation
+    status: selected
+    question: Do expanded COTS timing, cover or La Nina terms improve the cause-aware model?
+    finding: Logistic cyclone activation was selected, but expanded COTS timing and cover variants were not; the remaining La Nina residual pattern is documented rather than patched with event identity.
+    report: analysis/investigations/cots_timing_lanina_residual_assessment.qmd
+    evidence: [output/cots_timing_lanina_assessment]
+    updated: '2026-09-07'
+
+  - id: decomposed_annual_change
+    title: Decomposed annual-change assessment
+    track: investigation
+    status: retained
+    question: Should annual cover change be predicted with a core or modifier-rich decomposition?
+    finding: The core decomposition transfers more safely to novel events, while modifier-rich variants can improve within-event prediction; neither is universally superior, so the core route anchors forecasts and richer variants remain sensitivities.
+    report: analysis/investigations/decomposed_annual_change_assessment.qmd
+    evidence: [output/decomposed_annual_change]
+    updated: '2026-09-07'
+
+  - id: event_dhw_correction
+    title: Event-specific DHW correction assessment
+    track: investigation
+    status: retained
+    question: Can historical event-specific spatial DHW bias correction improve transfer?
+    finding: A partially pooled correction estimated only from historical local observations modestly improves leave-one-event-out predictions, but no universal uplift is supported; corrections must preserve forecast-time availability.
+    report: analysis/investigations/event_dhw_correction_assessment.qmd
+    evidence: [output/event_dhw_correction]
+    updated: '2026-09-07'
+
+  - id: bleaching_only_dhw_binomial
+    title: Bleaching-compatible DHW-only binomial assessment
+    track: investigation
+    status: not_promoted
+    question: Does local-first logger adjustment improve a DHW-only mortality-occurrence model and alter event response shape?
+    finding: Logger adjustment improves pooled event-held-out Brier score but worsens reef, sector and programme transfer; event slopes change materially, showing exposure sensitivity rather than a stable DHW-only mortality relationship.
+    report: analysis/investigations/bleaching_only_dhw_binomial_assessment.qmd
+    evidence: [output/bleaching_only_dhw_binomial]
+    updated: '2026-09-11'
+
+  - id: extreme_loss_ensemble
+    title: Extreme-loss ensemble assessment
+    track: investigation
+    status: retained
+    question: Can a gated tail learner recover severe 2024 mortality without excessive false alarms?
+    finding: Soft gating modestly improves known severe 2024 predictions, while aggressive tail weighting raises false extremes and weakens transfer; retain only conservative forms as upper-risk sensitivities.
+    report: analysis/investigations/extreme_loss_ensemble_assessment.qmd
+    evidence: [output/extreme_loss_ensemble]
+    updated: '2026-09-07'
+
+  - id: formal_models
+    title: Formal BRMS-BRT model comparison
+    track: investigation
+    status: retained
+    question: How do boundary-aware BRMS, BRT and their cross-fitted ensembles compare?
+    finding: Full-predictor boundary-aware BRMS and nonlinear BRT remain reproducible programme-specific comparators and ensemble components; selection uses blocked predictive performance, with uncertainty and environmental-novelty checks required for GBR-wide use.
+    report: analysis/investigations/formal_model_report.qmd
+    evidence: [output/formal_models/model_comparison_metrics.csv]
+    updated: '2026-09-07'
+
+  - id: inla_history_screen
+    title: INLA prior-exposure screen
+    track: investigation
+    status: retained
+    question: Which repeated-heat-history terms improve the two-part INLA model?
+    finding: Prior thermal history adds useful signal for Manta but is not uniformly beneficial across programmes, so history terms require blocked validation rather than automatic inclusion.
+    report: analysis/investigations/inla_history_screen.qmd
+    evidence: [output/inla_history_screen]
+    updated: '2026-09-07'
+
+  - id: inla_severe_tail
+    title: INLA severe-tail assessment
+    track: investigation
+    status: retained
+    question: Does explicit tail correction improve severe mortality prediction?
+    finding: Tail correction improves reef-blocked severe predictions but worsens event-held-out transfer; retain it only as an event-risk sensitivity, not the central forecast.
+    report: analysis/investigations/inla_severe_tail_assessment.qmd
+    evidence: [output/inla_severe_tail]
+    updated: '2026-09-07'
+
+  - id: inla_spatiotemporal
+    title: INLA spatiotemporal screen
+    track: investigation
+    status: selected
+    question: Which spatial structure transfers safely across bleaching events?
+    finding: A persistent spatial field in the two-part INLA model is retained for the main driver; event-specific spatial fields are useful for nowcasts and diagnostics but not initial unseen-event forecasts.
+    report: analysis/investigations/inla_spatiotemporal_screen.qmd
+    evidence: [output/inla_spatiotemporal_screen]
+    updated: '2026-09-07'
+
+  - id: joint_compound_stress
+    title: Joint compound-stress assessment
+    track: investigation
+    status: not_promoted
+    question: Do rainfall and calm-wind interactions explain the 2024 mortality amplification?
+    finding: Rainfall and calm conditions improve some 2024 spatial BRT fits but do not transfer consistently to unseen events or MMP, and BRMS does not support a stable positive DHW-rain interaction; retain them as sensitivities.
+    report: analysis/investigations/joint_compound_stress_assessment.qmd
+    evidence: [output/joint_compound_stress]
+    updated: '2026-09-07'
+
+  - id: joint_extreme_relative
+    title: Joint extreme-relative-loss screen
+    track: investigation
+    status: retained
+    question: Can a relative-loss tail expert improve severe cases without destabilising routine predictions?
+    finding: The tail expert raises severe predictions but costs aggregate skill and creates false alarms; retain only a softly gated or conservative ensemble as a risk layer.
+    report: analysis/investigations/joint_extreme_relative_screen.qmd
+    evidence: [output/joint_extreme_relative_screen]
+    updated: '2026-09-07'
+
+  - id: latent_annual_cover
+    title: Latent-state and annual-cover assessment
+    track: investigation
+    status: retained
+    question: Does a shared latent state or annual transition target improve cross-programme prediction?
+    finding: A shared latent model helps MMP but worsens LTMP and Manta, so it does not replace the ensemble; annual cover transitions remain a worthwhile complementary target.
+    report: analysis/investigations/latent_and_annual_cover_assessment.qmd
+    evidence: [output/latent_and_annual_cover]
+    updated: '2026-09-07'
+
+  - id: local_first_dhw
+    title: Local-first DHW correction assessment
+    track: investigation
+    status: selected
+    question: How should local temperature observations correct NOAA DHW without leakage?
+    finding: Use a strict logger, station and local-interpolation hierarchy with historical-only estimation; this removes legacy survey-linked artefacts while retaining substantial supported correction near Lizard in 2024.
+    report: analysis/investigations/local_first_dhw_correction_assessment.qmd
+    evidence: [output/local_first_dhw_correction]
+    updated: '2026-09-07'
+
+  - id: low_dhw_lizard
+    title: Low-DHW sensitivity and Lizard freshwater audit
+    track: investigation
+    status: not_promoted
+    question: Are low-DHW high-loss rows flattening the response and causing severe underprediction?
+    finding: Removing low-DHW high-loss rows steepens the marginal curve but does not improve extreme prediction and worsens Manta RMSE; retain these ecologically plausible compound events and model their mechanisms explicitly.
+    report: analysis/investigations/low_dhw_sensitivity_and_lizard_audit.qmd
+    evidence: [output/low_dhw_sensitivity/overall_metrics.csv]
+    updated: '2026-09-07'
+
+  - id: model_validation
+    title: Benchmark model validation
+    track: investigation
+    status: superseded
+    question: How well do simple DHW benchmarks transfer under blocked validation?
+    finding: Simple benchmarks provide transparent explanatory baselines but cannot supply the desired prediction machine; retain them for calibration and comparison while evaluating full-predictor BRMS, BRT and ensembles with blocked metrics.
+    report: analysis/investigations/model_validation_report.qmd
+    evidence: [output/model_validation/selected_models.csv]
+    updated: '2026-09-07'
+
+  - id: prediction_outliers
+    title: Prediction outlier and response-family assessment
+    track: investigation
+    status: diagnostic
+    question: Which reef-years are systematically under- or overpredicted, and does binomial sensitivity help?
+    finding: The outlier register isolates severe underprediction and low-DHW overprediction for ecological review; the pseudo-binomial model remains a shape sensitivity because mortality is not an independent-trial count and one fold fails the R-hat promotion gate.
+    report: analysis/investigations/prediction_outlier_assessment.qmd
+    evidence: [output/prediction_outliers/priority_reef_years.csv]
+    updated: '2026-09-07'
+
+  - id: prediction_uncertainty
+    title: Prediction uncertainty assessment
+    track: investigation
+    status: retained
+    question: Which uncertainty components must accompany GBR-wide mortality predictions?
+    finding: Posterior uncertainty, framework disagreement, residual process error and covariate-support risk are distinct; report them separately, with current residual intervals treated as marginal rather than complete uncertainty.
+    report: analysis/investigations/prediction_uncertainty_report.qmd
+    evidence: [output/prediction_uncertainty]
+    updated: '2026-09-07'
+
+  - id: rainfall_salinity
+    title: Rainfall-assisted salinity reconstruction
+    track: investigation
+    status: data_pipeline
+    question: Can operational river discharge strengthen the rainfall and optical freshwater proxy when eReefs salinity is unavailable?
+    finding: Adding pilot WMIP discharge slightly improved balanced Brier score but reduced average precision against AIMS salinity. Retain it as an unpromoted source/plume-risk sensitivity pending outlet, rating, regulation and routing audits; do not call it quantitative salinity.
+    report: analysis/investigations/rainfall_salinity_reconstruction.qmd
+    evidence: [docs/freshwater-input-contract.md, config/freshwater_sources.yml, output/wmip_freshwater_pilot, output/rainfall_salinity_reconstruction]
+    updated: '2026-09-07'
+
+  - id: repeated_exposure_composition
+    title: Repeated exposure and coral-composition assessment
+    track: investigation
+    status: retained
+    question: How should prior heat exposure and Acropora composition enter prediction models?
+    finding: Distinguish years since the last severe exposure from the count of severe years since 2016, and retain preceding-year Acropora composition as an ecologically important predictor subject to blocked validation.
+    report: analysis/investigations/repeated_exposure_and_composition_assessment.qmd
+    evidence: [output/repeated_exposure_composition]
+    updated: '2026-09-07'
+
+  - id: rrn_pressure
+    title: RRN pressure assessment
+    track: investigation
+    status: retained
+    question: Which operational data best represent COTS and cyclone pressure?
+    finding: Water-quality-centre pressure provides useful additional context but does not replace direct COTS information; cyclone effects are smaller and programme-specific, requiring cause-aware routing.
+    report: analysis/investigations/rrn_pressure_assessment.qmd
+    evidence: [output/rrn_pressure_assessment]
+    updated: '2026-09-07'
+
+  - id: rrn_target_reefs
+    title: RRN target-reef diagnostics
+    track: investigation
+    status: diagnostic
+    question: What explains the largest 2024 misses at priority reefs?
+    finding: COTS, water-quality and connectivity context explain some priority misses, while Mackay remains unresolved at current proxy resolution; preceding Acropora composition alone does not explain the pattern.
+    report: analysis/investigations/rrn_target_reef_diagnostics.qmd
+    evidence: [output/rrn_target_reef_diagnostics]
+    updated: '2026-09-07'
+
+  - id: salinity_kd490
+    title: Salinity and IMOS Kd490 comparison
+    track: investigation
+    status: not_promoted
+    question: Can IMOS optical data impute missing quantitative eReefs salinity?
+    finding: 'IMOS Kd490 supports a ranked plume-risk sensitivity but not quantitative salinity imputation: apparent skill relies heavily on the spatial prior and low-salinity tails transfer poorly. Keep IMOS optical predictors separate from freshwater claims.'
+    report: analysis/investigations/salinity_kd490_comparison.qmd
+    evidence: [output/salinity_kd490_comparison]
+    updated: '2026-09-07'
+
+  - id: shape_aware_models
+    title: Shape-aware model comparison
+    track: investigation
+    status: retained
+    question: Do ecological shape constraints improve programme-specific predictions?
+    finding: 'No single route dominates: shape-aware ensembles help LTMP, a benchmark can remain competitive for Manta, and shape-aware BRMS helps MMP; extrapolation beyond observed DHW support requires explicit constraints.'
+    report: analysis/investigations/shape_aware_model_comparison.qmd
+    evidence: [output/shape_aware_model_comparison]
+    updated: '2026-09-07'
+
+  - id: sst_chla_screen
+    title: SST and chlorophyll feature screen
+    track: investigation
+    status: retained
+    question: Do acute temperature and chlorophyll features add stable predictive information?
+    finding: SST and chlorophyll features are plausible complements to DHW but their gains are not stable across programmes and validation schemes; retain them as candidate predictors for formally blocked models.
+    report: analysis/investigations/sst_chla_feature_screen.qmd
+    evidence: [output/sst_chla_feature_screen]
+    updated: '2026-09-07'
+
+  - id: wind_doldrums
+    title: Wind and doldrum-condition assessment
+    track: investigation
+    status: data_pipeline
+    question: Which product can represent calm conditions consistently through 2024?
+    finding: Sentinel-1 coverage is unsuitable for daily calm exposure, whereas ERA5 agrees sufficiently with available eReefs checks and covers 2024; retain mean wind and calm-duration summaries with provenance.
+    report: analysis/investigations/wind_doldrum_assessment.qmd
+    evidence: [output/wind_doldrum_assessment]
+    updated: '2026-09-07'
+
+  - id: zero_mortality_curves
+    title: Zero mortality and modifier-dependent curve assessment
+    track: investigation
+    status: not_promoted
+    question: Are genuine zeros or omitted modifiers chiefly responsible for severe underprediction?
+    finding: Zero downsampling worsens held-out RMSE and its severe uplift disappears after prevalence correction; most severe underprediction lies in conditional magnitude and unresolved modifiers, with correlated Acropora terms requiring reparameterisation.
+    report: analysis/investigations/zero_mortality_and_modifier_curves.qmd
+    evidence: [output/zero_mortality_sensitivity/overall_metrics.csv]
+    updated: '2026-09-07'

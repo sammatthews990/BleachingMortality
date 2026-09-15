@@ -396,7 +396,13 @@ def prefix_summary(summary, prefix):
     )
 
 
-def main(batch_size=20, backend='aws'):
+def main(
+    batch_size=20,
+    backend='aws',
+    event_years=EVENT_YEARS,
+    output_file=OUTPUT_FILE,
+    part_dir=PART_DIR,
+):
     environment = pd.read_csv(ENVIRONMENT_FILE)
     reef_columns = ['LABEL_ID', 'LOC_NAME_S', 'lon', 'lat']
     reefs = environment[reef_columns].drop_duplicates().reset_index(drop=True)
@@ -425,15 +431,15 @@ def main(batch_size=20, backend='aws'):
         f'{len(all_grid)} total reef/coastal ERA5 cells'
     )
 
-    PART_DIR.mkdir(parents=True, exist_ok=True)
+    part_dir.mkdir(parents=True, exist_ok=True)
     grid_years = []
     aws_dataset = open_aws_era5() if backend == 'aws' else None
     expected_route = (
         'aws-public-icechunk-temporal'
         if backend == 'aws' else 'open-meteo-era5-mirror'
     )
-    for year in EVENT_YEARS:
-        part_path = PART_DIR / f'era5_grid_{year}.csv'
+    for year in event_years:
+        part_path = part_dir / f'era5_grid_{year}.csv'
         cached_route = None
         if part_path.exists():
             cached_header = pd.read_csv(
@@ -465,7 +471,7 @@ def main(batch_size=20, backend='aws'):
     grid_summary = pd.concat(grid_years, ignore_index=True)
 
     outputs = []
-    for year in EVENT_YEARS:
+    for year in event_years:
         year_summary = grid_summary.loc[grid_summary['year'].eq(year)].copy()
         reef_summary = prefix_summary(year_summary, 'era5_reef_')
         coastal_summary = prefix_summary(year_summary, 'era5_coastal_').rename(
@@ -486,8 +492,8 @@ def main(batch_size=20, backend='aws'):
     output = pd.concat(outputs, ignore_index=True)
     if output.duplicated(reef_columns + ['year']).any():
         raise RuntimeError('Duplicate reef-feature-year rows in ERA5 output')
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    output.to_csv(OUTPUT_FILE, index=False)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output.to_csv(output_file, index=False)
     coverage = output.groupby('year').agg(
         rows=('LABEL_ID', 'size'),
         q1_days=('era5_reef_q1_n_days', 'min'),
@@ -496,7 +502,7 @@ def main(batch_size=20, backend='aws'):
         wind=('era5_reef_wind_q1_mean', 'mean'),
     )
     print(coverage)
-    print(f'Wrote {len(output)} rows to {OUTPUT_FILE}')
+    print(f'Wrote {len(output)} rows to {output_file}')
 
 
 if __name__ == '__main__':
@@ -505,5 +511,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '--backend', choices=('aws', 'open-meteo'), default='aws'
     )
+    parser.add_argument('--years', nargs='+', type=int, default=list(EVENT_YEARS))
+    parser.add_argument('--output', type=Path, default=OUTPUT_FILE)
+    parser.add_argument('--part-dir', type=Path, default=PART_DIR)
     arguments = parser.parse_args()
-    main(batch_size=arguments.batch_size, backend=arguments.backend)
+    main(
+        batch_size=arguments.batch_size,
+        backend=arguments.backend,
+        event_years=tuple(arguments.years),
+        output_file=arguments.output,
+        part_dir=arguments.part_dir,
+    )

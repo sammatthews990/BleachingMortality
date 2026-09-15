@@ -15,6 +15,12 @@ Boundary outcomes are retained. The primary model is two-part:
 
 Their product is expected relative mortality. A binomial response using reconstructed counts is retained as a likelihood sensitivity, not assumed to be literally observed colony survival.
 
+The standalone raw-versus-logger-adjusted DHW diagnostic instead uses a
+Bernoulli endpoint for whether relative mortality is greater than zero. It
+contains only an intercept and DHW slope, excludes explicitly attributed COTS,
+cyclone and flood rows, and reports event, sector, reef and programme transfer.
+It does not model positive mortality magnitude or participate in selection.
+
 ## Disturbance attribution
 
 The thermal/freshwater component is trained on the restricted bleaching-mortality rows. Rows explicitly attributed to COTS or cyclones do not train the thermal response. Separate COTS and cyclone occurrence/magnitude hazards use the longer cause-labelled annual transition record and are combined with the thermal component on the mortality scale:
@@ -47,6 +53,8 @@ The independent direct BRT uses the full attainable operational predictor set an
 ## Validation and selection
 
 Leave-one-event-out validation is primary because the deployment target is a new bleaching event. Reef-blocked validation evaluates mapping within a known event, and region-blocked validation is a stress test. The 2024 event remains in cross-validation and in the final full-data fit; it is not permanently withheld because it is the broadest and most severe observed event.
+
+The 2025 outcome is a separate forward assessment. Its initial prediction is reconstructed with training outcomes ending in 2024 and without aerial or RHIS inputs. The later aerial/RHIS nowcast is separately labelled and must improve both the blocked historical tests and locked 2025 metrics before promotion.
 
 Primary predictive evidence is overall and event-specific RMSE, predictive R-squared, severe-event RMSE, false-extreme rate and occurrence calibration. Information criteria and coefficient interpretation supplement but do not override held-out prediction.
 

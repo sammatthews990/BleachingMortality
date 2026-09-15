@@ -161,6 +161,37 @@ predictor_grid <- tidyr::crossing(
     left_join(ereefs, by = c('ReefID', 'event_year')) |>
     left_join(cyclone, by = c('ReefID', 'event_year'))
 
+# The WMIP pilot is an optional acquisition sensitivity. Its March snapshot
+# matches the existing Q1 calibration window. Absence of the file leaves the
+# established calibration grid unchanged; it is not a production prerequisite.
+wmip_file <- file.path(processed_dir, 'freshwater_reef_event.csv')
+if (file.exists(wmip_file)) {
+    wmip <- read_csv(wmip_file, show_col_types = FALSE) |>
+        filter(
+            cutoff_name == 'march',
+            product_mode %in% c('initial_forecast', 'environmental_hindcast')
+        ) |>
+        select(
+            ReefID, event_year,
+            wmip_issue_time_utc = issue_time_utc,
+            wmip_routed_discharge_total_ml,
+            wmip_routed_discharge_max7_m3_s,
+            wmip_connection_weight_sum,
+            wmip_nearest_source_distance_km,
+            wmip_dominant_source_id,
+            wmip_routing_method,
+            wmip_use_in_primary_mortality_model =
+                use_in_primary_mortality_model
+        )
+    if (anyDuplicated(wmip[c('ReefID', 'event_year')])) {
+        stop('WMIP March pilot has duplicate reef-event keys')
+    }
+    predictor_grid <- predictor_grid |>
+        left_join(wmip, by = c('ReefID', 'event_year'),
+                  relationship = 'one-to-one')
+    message('Joined the optional WMIP March freshwater-source pilot')
+}
+
 training_points <- aims_linked |>
     left_join(
         predictor_grid,

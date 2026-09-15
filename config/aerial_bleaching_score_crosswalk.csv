@@ -1,0 +1,13 @@
+source_scale,native_category,lower_bleached_cover,upper_bleached_cover,midpoint_bleached_cover,high_bleaching,review_action
+historical_hughes,0,0,0.01,0.005,0,documented
+historical_hughes,1,0.01,0.10,0.055,0,documented
+historical_hughes,2,0.10,0.30,0.20,0,documented
+historical_hughes,3,0.30,0.60,0.45,1,documented
+historical_hughes,4,0.60,1.00,0.80,1,documented
+historical_hughes,5,0.60,1.00,0.80,1,unexpected_2020_score_topcoded_to_documented_gt60_class
+contemporary_aims_sop11,0,0,0.01,0.005,0,documented
+contemporary_aims_sop11,1,0.01,0.10,0.055,0,documented
+contemporary_aims_sop11,2,0.11,0.30,0.205,0,documented
+contemporary_aims_sop11,3,0.31,0.60,0.455,1,documented
+contemporary_aims_sop11,4,0.61,0.90,0.755,1,documented
+contemporary_aims_sop11,5,0.90,1.00,0.95,1,documented

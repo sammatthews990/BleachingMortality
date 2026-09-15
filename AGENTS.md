@@ -7,10 +7,21 @@ This project estimates reef-level coral mortality associated with bleaching even
 ## Start here
 
 - Read `README.md` for the human overview.
+- Read `config/experiments.yml` before searching analyses or outputs; it is the compact record of questions, findings and evidence.
 - Read `docs/pipeline.md` before running or changing the production pipeline.
 - Read `docs/methods.md` before changing outcomes, predictors, validation, or likelihoods.
 - Treat `config/model_registry.yml` as the source of truth for the selected model.
 - Treat `config/pipeline.toml` as the source of truth for execution order.
+
+## Token-efficient working rules
+
+- Load context in layers: this file, the experiment/model registries, then only the linked report or source needed for the task.
+- Do not recursively read `data/`, `output/`, `reports/`, `archive/` or all investigation notebooks. Search filenames or symbols first with `rg`.
+- Treat `analysis/exploration.qmd` as the fast human overview. It renders from `config/experiments.yml` without fitting models or reading large result tables.
+- Every completed experiment must update one registry record in the same change: one short question, one decision status, one finding of at most 45 words, and links to its report and primary evidence.
+- Prefer targeted checks while developing. Run full suites or model fits only when the change can affect them.
+- In handovers and conversation, report decisions, changed paths and failed checks; link to logs or reports instead of copying them.
+- Keep `.ai/` notes limited to the active task. Promote durable findings to the registry or `docs/`, then remove stale scratch context.
 
 ## Conventions
 
@@ -38,6 +49,8 @@ This project estimates reef-level coral mortality associated with bleaching even
 - Preview without fitting: `python src/pipeline/run_pipeline.py --profile current --dry-run`
 - Run Python tests: `python -m unittest discover -s tests -v`
 - Parse all R sources: `Rscript src/pipeline/check_r_syntax.R`
+- Validate the experiment ledger: `Rscript src/evaluation/validate_experiment_registry.R`
+- Render the lightweight findings report: `quarto render analysis/exploration.qmd`
 - Render the current report set: `quarto render`
 
 A change is complete only when relevant tests pass and the registry, pipeline manifest, and documentation agree.

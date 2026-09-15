@@ -3,8 +3,11 @@ name = 'GBR coral bleaching mortality'
 registry = 'config/model_registry.yml'
 
 [profiles]
-current = ['environment-check', 'outcomes', 'validation', 'pressure-context', 'screening-models', 'selected-model', 'machine-learning', 'diagnostics', 'current-reports']
-formal-comparators = ['environment-check', 'outcomes', 'validation', 'formal-models', 'formal-evaluation']
+current = ['environment-check', 'outcomes', 'validation', 'pressure-context', 'screening-models', 'selected-model', 'within-event-update', 'machine-learning', 'diagnostics', 'residual-gap-audit', 'experiment-ledger', 'current-reports']
+formal-comparators = ['environment-check', 'outcomes', 'validation', 'formal-models', 'formal-evaluation', 'experiment-ledger']
+dhw-diagnostic = ['bleaching-only-dhw-diagnostic', 'experiment-ledger']
+imos-thermal-screen = ['imos-thermal-acquisition', 'imos-thermal-screening', 'experiment-ledger']
+model-gap-audit = ['residual-gap-audit', 'experiment-ledger']
 
 [[stages]]
 name = 'environment-check'
@@ -52,6 +55,85 @@ commands = [
 ]
 
 [[stages]]
+name = 'within-event-update'
+description = 'Build the locked 2025 initial assessment, then validate the separate six-event aerial/RHIS update.'
+inputs = [
+  'data/AerialBleach2022_25/2022_AIMSGBRMPA_Cantin_GBRAerial_Final.csv',
+  'data/AerialBleach2022_25/2024_AIMSGBRMPA_Cantin_GBRAerial_Final.csv',
+  'data/AerialBleach2022_25/2025_AIMSGBRMPA_Cantin_GBRAerial_Final.csv',
+  'data/Hughes2021/data/bleach_2016.csv',
+  'data/Hughes2021/data/bleach_2017.csv',
+  'data/Hughes2021/data/bleach_2020.csv',
+  'data/250929_COTS-Manta-Cull-RHIS-Data-Matthews-and-Schlawinsky.xlsx',
+  'data/AIMS-Reef_Reference.csv',
+  'data/Great_Barrier_Reef_Features/Great_Barrier_Reef_Features.shp',
+  'config/aerial_bleaching_score_crosswalk.csv',
+  'data/processed/mortality_outcomes_manta.rds',
+  'data/processed/mortality_outcomes_ltmp.rds',
+  'data/processed/mortality_outcomes_mmp.rds',
+  'data/processed/era5_weather_reef_year_2025.csv',
+  'data/processed/patmosx_cloud_reef_year_2025.csv',
+  'data/processed/rrn_pressure_reef_year.csv',
+  'output/prospective_cots_nowcast/cv_predictions.csv',
+  'output/cause_aware_competing_hazards/full_thermal_component.rds',
+  'output/explanatory_event_dhw/event_dhw_brt_data.csv'
+]
+commands = [
+  'Rscript src/data/build_aerial_early_bleaching.R',
+  'Rscript src/data/build_2025_initial_forecast_rows.R',
+  'Rscript src/evaluation/build_locked_2025_initial_forecast.R',
+  'Rscript src/evaluation/test_spatial_early_bleaching_update.R'
+]
+
+[[stages]]
+name = 'bleaching-only-dhw-diagnostic'
+description = 'Compare raw and local-first DHW in a standalone bleaching-compatible binomial occurrence model.'
+inputs = [
+  'data/processed/validation_rows_ltmp.rds',
+  'data/processed/validation_rows_manta.rds',
+  'data/processed/validation_rows_mmp.rds',
+  'data/processed/initial_forecast_rows_2025_ltmp.rds',
+  'data/processed/initial_forecast_rows_2025_manta.rds',
+  'data/processed/initial_forecast_rows_2025_mmp.rds',
+  'data/processed/noaa_dhw_correction_layer_local_first_validation.csv'
+]
+commands = ['Rscript src/evaluation/test_bleaching_only_dhw_binomial.R']
+
+[[stages]]
+name = 'imos-thermal-acquisition'
+description = 'Extract SSTAARS-matched IMOS DHW, Hobday MHW and paired day/night metrics at validation reefs and hourly logger sites.'
+inputs = [
+  'data/processed/validation_rows_ltmp.rds',
+  'data/processed/validation_rows_manta.rds',
+  'data/processed/validation_rows_mmp.rds'
+]
+commands = [
+  'Rscript src/data/build_environment_screen_grid.R',
+  'python src/data/extract_imos_thermal_metrics.py',
+  'python src/data/extract_noaa_idf_metrics.py',
+  'Rscript src/data/extract_aims_logger_hourly.R',
+  'Rscript src/data/build_aims_logger_thermal_grid.R',
+  'python src/data/extract_imos_thermal_metrics.py --input data/processed/aims_wq_logger_thermal_grid.csv --output data/processed/imos_thermal_metrics_aims_loggers.csv'
+]
+
+[[stages]]
+name = 'imos-thermal-screening'
+description = 'Screen IMOS DHW, duration, intensity and cooling plus NOAA empirical IDF candidates; validate satellite cooling against hourly loggers.'
+inputs = [
+  'data/processed/imos_thermal_metrics_validation.csv',
+  'data/processed/noaa_idf_metrics_validation.csv',
+  'data/processed/imos_thermal_metrics_aims_loggers.csv',
+  'data/processed/aims_wq_logger_hourly_event_summary.csv',
+  'data/processed/validation_rows_ltmp.rds',
+  'data/processed/validation_rows_manta.rds',
+  'data/processed/validation_rows_mmp.rds'
+]
+commands = [
+  'Rscript src/evaluation/screen_imos_thermal_metrics.R',
+  'Rscript src/evaluation/validate_imos_night_cooling.R'
+]
+
+[[stages]]
 name = 'machine-learning'
 description = 'Refit retained residual and independent BRT comparisons.'
 inputs = ['output/prospective_cots_nowcast/cv_predictions.csv', 'output/explanatory_event_dhw/event_dhw_brt_data.csv']
@@ -71,9 +153,24 @@ commands = [
 ]
 
 [[stages]]
+name = 'residual-gap-audit'
+description = 'Locate selected-model event-held-out error by event, region, reef, cause and observation scale without fitting a new model.'
+inputs = [
+  'output/prospective_cots_nowcast/cv_predictions.csv',
+  'output/explanatory_event_dhw/event_dhw_brt_data.csv'
+]
+commands = ['Rscript src/evaluation/audit_selected_model_residual_gaps.R']
+
+[[stages]]
+name = 'experiment-ledger'
+description = 'Validate that every analysis has a compact, reproducible findings record.'
+inputs = ['config/experiments.yml']
+commands = ['Rscript src/evaluation/validate_experiment_registry.R']
+
+[[stages]]
 name = 'current-reports'
 description = 'Render the current registry-driven report set.'
-inputs = ['config/model_registry.yml']
+inputs = ['config/model_registry.yml', 'config/experiments.yml']
 commands = ['quarto render']
 
 [[stages]]

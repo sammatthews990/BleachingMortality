@@ -1,0 +1,237 @@
+---
+title: "Thermal duration, intensity, rarity and cooling assessment"
+date: 2026-09-15
+format:
+  html:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(readr)
+})
+root <- normalizePath('../..', winslash = '/', mustWork = TRUE)
+out <- file.path(root, 'output', 'imos_thermal_screen')
+coverage <- read_csv(file.path(out, 'coverage_audit.csv'), show_col_types = FALSE)
+metrics <- read_csv(file.path(out, 'blocked_metrics.csv'), show_col_types = FALSE)
+source <- read_csv(file.path(out, 'source_comparison.csv'), show_col_types = FALSE)
+logger_validation <- read_csv(
+  file.path(out, 'logger_cooling_validation.csv'), show_col_types = FALSE
+)
+```
+
+## Decision
+
+Do **not** replace local-first NOAA DHW or promote the MHW, cooling, or IDF
+blocks from this screen.
+
+Coverage-normalised IMOS/SSTAARS DHW produced small leave-one-event-out RMSE
+improvements for LTMP and manta tow, but worsened reef-blocked performance and
+both MMP comparisons. The observed-days-only sensitivity did not change that
+cross-programme conclusion. Duration, three-day peak and persistent-hot-night
+terms did not improve LTMP or manta transfer.
+
+The standard MHW duration/intensity block is the most promising new construct.
+It modestly improves LTMP in both full-row schemes and improves manta and MMP
+leave-one-event-out RMSE, but the latter gains do not reproduce under reef
+blocking. Matched complete-case results leave only the manta event-held-out
+gain clearly favourable. MMP complete-case event folds remain underpowered.
+
+The paired cooling proxy fails more directly. It worsens LTMP and manta, its
+apparent MMP event-held-out gain reverses on observed complete cases, and it
+does not track peak-window cooling in the available hourly logger subset.
+
+The NOAA empirical intensity-duration-frequency block improves reef-blocked
+LTMP and MMP performance but worsens unseen-event transfer for LTMP and manta.
+This is relevant to the retained within-event BRT, not the initial forecast.
+
+## Exposure contract
+
+The source-control metric reconstructs NOAA-style DHW from IMOS 0.02-degree
+nighttime SST and the SSTAARS 1992--2016 nighttime climatology:
+
+1. derive maximum monthly mean (MMM) from the SSTAARS harmonic fit;
+2. calculate HotSpot as bias-corrected nighttime SST minus SSTAARS MMM;
+3. retain the full HotSpot only when it is at least 1 degree C;
+4. sum over 84 calendar days, divide by seven, and take the calendar-year
+   maximum to match `ann_maxdhw`.
+
+Short internal gaps of at most two days are interpolated. The primary metric is
+coverage-normalised only when at least 70% of an 84-day window is available;
+the unscaled observed-days estimate is retained as a sensitivity. The centre
+pixel is primary, with a quality-controlled fallback within 3 km and an
+absolute 5 km reef-distance cap.
+
+The coral-threshold block uses the fixed 1 November--30 April window: longest run at
+or above MMM + 1 degree C, maximum three-day HotSpot, and number of hot nights.
+Extreme dose above MMM + 2 degrees C appears only in the descriptive full-data
+importance pool.
+
+Standard MHW events require at least five days above a daily SSTAARS 90th
+percentile threshold; qualifying events separated by no more than two days are
+joined. The daily threshold is periodic interpolation of the published twelve
+SSTAARS mid-month percentiles, and categories use the official median/90th-
+percentile formula. The primary block contains maximum duration and maximum
+intensity.
+
+Cooling pairs observed daytime skin SST on local date D with observed
+nighttime skin SST on D+1. A site-event needs at least five hot-day pairs and
+50% pair coverage. No interpolation or 14-day mosaic enters this contrast.
+
+## Coverage
+
+```{r}
+coverage |>
+  mutate(
+    dhw_fraction = finite_imos_dhw / reef_events,
+    structure_fraction = finite_structure / reef_events
+  ) |>
+  select(
+    Event = year, `Reef-events` = reef_events, `Finite DHW` = finite_imos_dhw,
+    `DHW fraction` = dhw_fraction, `Finite structure` = finite_structure,
+    `Structure fraction` = structure_fraction,
+    `Finite MHW` = finite_mhw, `Finite cooling` = finite_cooling,
+    `Finite NOAA IDF` = finite_idf_frequency,
+    `Median hot-pair coverage` = median_hot_pair_coverage,
+    `Median event coverage` = median_event_coverage
+  ) |>
+  knitr::kable(digits = 3)
+```
+
+IMOS DHW is available for 283 of 304 reef-events. SSTAARS has no finite water
+pixel within 5 km for the other cases, mainly repeated far-northern reefs. Only
+211 reef-events meet the MHW/structure coverage rule, including 55 of 103 in
+2024. The observed-pair cooling contrast is available for 260 reef-events. The
+DHW source test is usable, but duration results remain conservative pending a
+higher-coverage GeoPolar/AusTemp assessment.
+
+## NOAA versus IMOS-equivalent DHW
+
+Negative RMSE and Brier changes favour IMOS; positive R-squared changes favour
+IMOS.
+
+```{r}
+source |>
+  transmute(
+    Programme = toupper(programme_key), Validation = scheme,
+    `NOAA RMSE` = rmse_noaa_dhw, `IMOS RMSE` = rmse_imos_dhw,
+    `IMOS - NOAA RMSE` = rmse_change_imos_minus_noaa,
+    `Observed IMOS - NOAA RMSE` = rmse_change_observed_imos_minus_noaa,
+    `IMOS - NOAA R2` = r2_change_imos_minus_noaa,
+    `IMOS - NOAA Brier` = brier_change_imos_minus_noaa,
+    `IMOS - NOAA severe RMSE` = severe_rmse_change_imos_minus_noaa
+  ) |>
+  knitr::kable(digits = 4)
+```
+
+The strongest favourable result is occurrence discrimination: scaled IMOS DHW
+reduces LTMP leave-one-event-out Brier score by about 0.05. That does not become
+a stable mortality-scale gain. Manta event-held-out RMSE changes by less than
+0.001, while MMP and reef-blocked comparisons favour NOAA.
+
+## Candidate blocks
+
+```{r}
+metrics |>
+  mutate(
+    programme_key = toupper(programme_key),
+    candidate = recode(candidate,
+      noaa_dhw = 'NOAA', imos_dhw = 'IMOS scaled',
+      imos_dhw_observed = 'IMOS observed',
+      noaa_plus_structure = 'NOAA + structure',
+      imos_plus_structure = 'IMOS + structure',
+      noaa_plus_mhw = 'NOAA + MHW', imos_plus_mhw = 'IMOS + MHW',
+      noaa_plus_cooling = 'NOAA + cooling',
+      noaa_plus_compact = 'NOAA + MHW + cooling',
+      noaa_plus_id_profile = 'NOAA + IMOS ID profile',
+      noaa_plus_idf_frequency = 'NOAA + NOAA IDF')
+  ) |>
+  ggplot(aes(candidate, rmse, colour = programme_key, group = programme_key)) +
+  geom_point(size = 2.2) + geom_line() + facet_wrap(~scheme, scales = 'free_y') +
+  labs(x = NULL, y = 'Held-out mortality RMSE', colour = 'Programme') +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+Adding structure worsens both schemes for LTMP and manta. NOAA plus structure
+improves MMP event-held-out RMSE from about 0.235 to 0.221, but worsens its
+reef-blocked RMSE and is not reproduced with IMOS DHW.
+
+The matched MHW complete-case sensitivity retains a sizeable manta event-held-
+out improvement (RMSE change -0.0073) but is approximately neutral under reef
+blocking (+0.0004). LTMP's complete-case changes are small and inconsistent.
+MMP event-held-out fits are unsupported because at least one training fold has
+fewer than eight positive rows or only one occurrence class.
+
+## Logger validation of the cooling proxy
+
+```{r}
+logger_validation |>
+  transmute(Comparison = comparison, N = n, `Spearman rho` = spearman_rho) |>
+  knitr::kable(digits = 3)
+```
+
+The comparison uses 10 AIMS water-quality logger sites across nine event years.
+Hourly clock values are interpreted as local GBR time, as encoded by the
+source CSV. Logger metrics are mean daily range and median afternoon-to-
+following-predawn decline in a temperature-defined 30-day peak window. Neither
+the raw nor event-centred relationship supports the satellite contrast as a
+proxy for nocturnal reef cooling.
+
+## Intensity-duration-frequency sensitivity
+
+The NOAA-native IDF prototype uses maximum mean CoralTemp nighttime SST over
+1, 3, 7, 14, 28, 56 and 84 days. Return periods are smoothed empirical
+exceedance frequencies against a fixed 1986--2012 reference, which predates all
+validation events. The candidate contains mean log return period across
+durations and a long-minus-short log-return-period contrast. It does not fit a
+copula or extrapolate beyond its 28-year empirical ceiling.
+
+```{r}
+idf <- metrics |>
+  filter(candidate %in% c('noaa_dhw', 'noaa_plus_idf_frequency')) |>
+  select(programme_key, scheme, candidate, rmse) |>
+  tidyr::pivot_wider(names_from = candidate, values_from = rmse) |>
+  mutate(change = noaa_plus_idf_frequency - noaa_dhw)
+idf |>
+  transmute(
+    Programme = toupper(programme_key), Validation = scheme,
+    `NOAA RMSE` = noaa_dhw, `NOAA + IDF RMSE` = noaa_plus_idf_frequency,
+    `IDF - NOAA RMSE` = change
+  ) |>
+  knitr::kable(digits = 4)
+```
+
+The clearest gain is MMP reef-blocked RMSE (-0.0154); LTMP reef-blocked RMSE
+also improves slightly (-0.0008). Leave-one-event-out RMSE worsens for LTMP
+(+0.0045) and manta (+0.0070) and is essentially unchanged for MMP (-0.0002).
+This split is consistent with a spatial rarity surface that may aid within-
+event interpolation but does not transfer reliably to a new thermal regime.
+
+## Full-data importance and recommendation
+
+In the combined full-data mechanism pool, NOAA DHW ranks above IMOS DHW for
+direct mortality and positive magnitude in every programme. IMOS DHW ranks
+above NOAA for LTMP occurrence, consistent with its Brier-score improvement.
+Some MHW, acute-tail and hot-night terms receive nontrivial apparent
+importance. MHW duration/intensity merit a small formal assessment only after
+higher-coverage extraction. The present cooling contrast should not advance;
+NOAA IDF should remain a within-event BRT sensitivity.
+
+Retain local-first NOAA DHW. Before another formal model candidate, evaluate
+official GeoPolar/AusTemp daily SST against this reconstruction. Broader
+subdaily logger coverage or a different remotely sensed cooling construct is
+required before revisiting night cooling as a reef-wide predictor.
+
+Primary evidence is in `output/imos_thermal_screen/`: `source_comparison.csv`,
+`blocked_metrics.csv`, `complete_case_metrics.csv`, `coverage_audit.csv` and
+`full_data_importance.csv`; logger evidence is in
+`logger_cooling_validation.csv`, and the IDF construction manifest is
+`data/processed/noaa_idf_metrics_validation.manifest.json`. The literature rationale is in
+`docs/thermal-exposure-metric-research.md`.

@@ -23,7 +23,10 @@ class PipelineRunnerTests(unittest.TestCase):
         stages = select_stages(self.config, 'current', [])
         names = [stage['name'] for stage in stages]
         self.assertLess(names.index('selected-model'), names.index('diagnostics'))
+        self.assertLess(names.index('selected-model'), names.index('within-event-update'))
+        self.assertLess(names.index('within-event-update'), names.index('current-reports'))
         self.assertLess(names.index('diagnostics'), names.index('current-reports'))
+        self.assertLess(names.index('experiment-ledger'), names.index('current-reports'))
 
     def test_all_commands_point_to_existing_sources(self):
         for stage in self.config['stages']:

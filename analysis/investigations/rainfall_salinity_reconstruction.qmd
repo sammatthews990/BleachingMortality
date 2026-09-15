@@ -31,7 +31,7 @@ predictions <- read_csv(
   file.path(input_dir, 'occurrence_predictions.csv'), show_col_types = FALSE
 )
 risk_2024 <- read_csv(
-  '../data/processed/ereefs_salinity_2024_rainfall_sensitivity.csv',
+  '../../data/processed/ereefs_salinity_2024_rainfall_sensitivity.csv',
   show_col_types = FALSE
 )
 ```
@@ -190,3 +190,56 @@ The map remains a sensitivity layer until the event-held-out results above
 demonstrate improvement over the spatial prior. It is not automatically added
 to the mortality model, and the partial January 2024 eReefs record is not
 treated as a full-quarter validation target.
+
+# WMIP river-discharge pilot
+
+The Queensland WMIP pilot adds rated river discharge without treating it as
+salinity. The static crosswalk contains Pioneer as a southern acquisition
+control, while Daintree/Bloomfield and Mulgrave/Russell cover Mackay Reef and a
+small northern region. Mackay Reef is `16-015` near 16 degrees south; it is not
+routed from the Pioneer River near Mackay city.
+Because these historical records were retrieved in 2026, the resulting event
+tables are labelled `environmental_hindcast`. They contain no biological
+updates, but they must not be interpreted or scored as operational initial
+forecasts.
+
+```{r wmip-pilot-results}
+wmip_dir <- '../../output/wmip_freshwater_pilot'
+wmip_metrics <- read_csv(
+  file.path(wmip_dir, 'event_held_out_metrics.csv'),
+  show_col_types = FALSE
+)
+wmip_decision <- read_csv(
+  file.path(wmip_dir, 'decision.csv'),
+  show_col_types = FALSE
+)
+
+wmip_metrics |>
+  filter(held_out_event == 'event_mean') |>
+  select(
+    Model = model,
+    Rows = rows,
+    `Low-salinity rows` = low_salinity_rows,
+    `Average precision` = average_precision,
+    `Balanced Brier` = balanced_brier
+  ) |>
+  mutate(across(where(is.numeric), ~ round(.x, 3))) |>
+  kable(caption = 'AIMS event-held-out WMIP pilot screen')
+```
+
+Across `r wmip_decision$validation_rows` reef-proximal AIMS rows and
+`r wmip_decision$validation_events` events, adding provisionally routed
+discharge slightly improves balanced Brier score but reduces average precision.
+That mixed result fails the promotion rule. The gauge values also retain fair
+or poor native quality flags, and the outlet locations, high-flow rating limits,
+regulation and transport kernel still require review.
+
+```{r wmip-component-map, out.width='100%'}
+knitr::include_graphics(
+  file.path(wmip_dir, 'component_map_2024.png')
+)
+```
+
+The panels are within-layer percentiles, not common physical units. Discharge,
+ERA5 rainfall, Kd490 and chlorophyll remain separate components. No combined
+PSU estimate is produced, and the pilot is not passed to the mortality model.

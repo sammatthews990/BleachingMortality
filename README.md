@@ -17,6 +17,7 @@ The direct BRT remains useful for interpolation after an event state is represen
 |-- AGENTS.md                 standing instructions for people and AI tools
 |-- README.md                 project overview and quick start
 |-- analysis/                 executable Quarto analyses
+|   |-- exploration.qmd       fast registry-driven findings overview
 |   |-- current/              reports supporting the selected model
 |   `-- investigations/       retained scientific screens and sensitivities
 |-- archive/                  superseded notebooks, plans and legacy assets
@@ -54,10 +55,23 @@ To run one named stage:
 python src/pipeline/run_pipeline.py --stage selected-model
 ```
 
+To rebuild the locked 2025 initial-forecast assessment and validate the separate six-event aerial/RHIS within-event update:
+
+```powershell
+python src/pipeline/run_pipeline.py --stage within-event-update
+```
+
 To rerun the formal BRMS/BRT comparison separately:
 
 ```powershell
 python src/pipeline/run_pipeline.py --profile formal-comparators
+```
+
+To compare raw and local-first logger-adjusted DHW in the standalone
+bleaching-compatible binomial occurrence diagnostic:
+
+```powershell
+python src/pipeline/run_pipeline.py --profile dhw-diagnostic
 ```
 
 ## Tests
@@ -67,15 +81,19 @@ python -m unittest discover -s tests -v
 Rscript src/pipeline/check_r_syntax.R
 ```
 
-Render the five current model reports with `quarto render`. Rendered files are written under `reports/` and are not versioned.
+Start with `quarto render analysis/exploration.qmd` for the fast experiment synthesis. Render the exploration page, five current model reports and the standalone DHW diagnostic with `quarto render`. Rendered files are written under `reports/` and are not versioned.
 
 ## Documentation
 
 - `docs/pipeline.md` gives the ordered production workflow and data boundaries.
 - `docs/methods.md` records the response, event timing, predictors, model structure and validation logic.
+- `docs/aerial-early-bleaching-input-contract.md` defines the audited within-event aerial input and its promotion boundary.
+- `analysis/investigations/bleaching_only_dhw_binomial_assessment.qmd` compares raw and logger-adjusted DHW without changing production selection.
 - `docs/model-status.md` distinguishes the selected model from retained comparators and rejected candidates.
+- `docs/2025-initial-forecast-contract.md` defines the retrospective locked-input 2025 assessment and its separation from the nowcast.
 - `docs/validation.md` contains the blocked validation protocol.
 - `docs/history.md` maps the original exploratory notebooks to the current pipeline.
 - `docs/conventions.md` contains coding, naming and provenance rules.
+- `docs/token-efficient-workflow.md` explains the summary-first experiment and conversation workflow.
 
 Transient plans and handover notes belong in `.ai/` and are intentionally ignored. Reviewed decisions belong in `docs/` or `config/`.

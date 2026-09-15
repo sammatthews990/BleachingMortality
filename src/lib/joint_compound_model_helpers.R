@@ -78,15 +78,19 @@ assign_balanced_group_folds <- function(data, group, folds = 5L) {
     sizes$fold[match(data[[group]], sizes[[group]])]
 }
 
-load_joint_compound_rows <- function() {
+load_joint_compound_rows <- function(
+    mortality_files = validation_files,
+    weather_file = 'data/processed/era5_weather_reef_year.csv',
+    require_complete_pressures = TRUE
+) {
     mortality <- bind_rows(lapply(joint_programmes, function(programme) {
-        readRDS(validation_files[[programme]]) |>
+        readRDS(mortality_files[[programme]]) |>
             mutate(source_observation_id = as.character(source_observation_id))
     })) |>
         mutate(.mortality_row_id = row_number())
 
     weather <- read_csv(
-        'data/processed/era5_weather_reef_year.csv', show_col_types = FALSE
+        weather_file, show_col_types = FALSE
     ) |>
         group_by(year, grid_lat, grid_lon) |>
         summarise(
@@ -259,8 +263,13 @@ load_joint_compound_rows <- function() {
             'cyc_interval_maxHrs4mw', 'log1p_cyc_interval_maxHrs4mw'
         ), drop = FALSE]
     )
-    if (any(missing_rrn)) {
+    if (any(missing_rrn) && require_complete_pressures) {
         stop(sum(missing_rrn), ' joint rows have incomplete RRN pressures')
+    }
+    if (any(missing_rrn) && !require_complete_pressures) {
+        message(sum(missing_rrn), paste(
+            'forecast rows have incomplete current RRN pressures;',
+            'pre-2025 training medians will be used'))
     }
     missing_cots <- sum(!is.finite(joined$log1p_cot_idwmeanpertow))
     if (missing_cots > 0L) {

@@ -27,6 +27,10 @@ events <- read_csv(file.path(out, 'event_metrics.csv'), show_col_types = FALSE)
 sources <- read_csv(file.path(out, 'early_source_summary.csv'), show_col_types = FALSE)
 coverage <- read_csv(file.path(out, 'spatial_source_coverage.csv'), show_col_types = FALSE)
 correlation <- read_csv(file.path(out, 'signal_correlation.csv'), show_col_types = FALSE)
+promotion <- read_csv(file.path(out, 'promotion_checks.csv'), show_col_types = FALSE)
+residual_diagnostics <- read_csv(file.path(out, 'residual_anomaly_diagnostics.csv'), show_col_types = FALSE)
+consensus_guard <- read_csv(file.path(out, 'consensus_anomaly_guard.csv'), show_col_types = FALSE)
+effects <- read_csv(file.path(out, 'fixed_effects.csv'), show_col_types = FALSE)
 include_figure <- function(id) {
   path <- list.files(fig_dir, pattern = paste0('^', id, '.*\\.png$'), full.names = TRUE)
   if (length(path)) cat(paste0('![](../../output/fig/', basename(path[[1]]), ')\n'))
@@ -36,11 +40,13 @@ round_numeric <- function(x, digits = 3) mutate(x, across(where(is.numeric), ~ro
 
 ## Decision
 
-The spatial early-event update is now implemented and reproducible, but **no candidate is promoted into the current best forecast**. The initial operational forecast remains unchanged. Early aerial/RHIS information is retained as a gated within-event update layer that must be revalidated when dated aerial observations for 2022 and 2024 are available.
+The 2016, 2017 and 2020 ordinal scores are now harmonised with the dated 2022, 2024 and 2025 surveys on a common bleached-cover midpoint scale, but **no candidate is promoted**. The selected initial forecast remains unchanged. Aerial/RHIS information remains a separate, off-by-default within-event sensitivity.
 
-The strongest current candidate combines aerial severe-bleaching scores with RHIS community-weighted bleaching burden and bleaching-associated recently dead coral. With the target sector removed from the early-data surface, it improves RMSE from 0.1380 to **0.1338** and predictive R-squared from 0.228 to **0.275** across 2016, 2017 and 2020. However, severe RMSE worsens from 0.381 to **0.409**, principally because the update suppresses severe 2017 losses. It therefore fails the severe-tail safeguard.
+The primary aerial-severity-plus-April-RHIS-burden update spans all six mortality-labelled events. It increases overall RMSE by **0.0022** with target-sector exclusion and **0.0053** with latitude-block exclusion, and increases occurrence Brier score by **0.0315** and **0.0388**. On the locked 2025 assessment it also increases RMSE by **0.0019** and **0.0044**, respectively.
 
-RHIS-only updates cover all five events but worsen overall RMSE, predictive R-squared and occurrence Brier score. Allowing early observations to modify conditional magnitude as well as occurrence performs worse again. The event-time evidence should therefore not yet be used as an unconstrained mortality multiplier.
+The result is a validation failure, not a data-ingestion failure: the harmonised source retains 4,950 reef-events and all six event years. The locked 2025 initial reconstruction excludes 2025 outcomes and all aerial/RHIS inputs from fitting, then evaluates 63 mortality rows at 47 reefs under the unchanged initial-forecast architecture.
+
+A second-generation, reliability-weighted consensus anomaly has the expected residual direction in most events, but produces negligible transferable gain. Sector-excluded RMSE changes by **-0.00030** while block-excluded RMSE changes by **+0.00006**. The locked 2025 guard fails because sector-excluded RMSE and Brier worsen, even though the block-excluded values improve slightly. This candidate is also not promoted.
 
 ## What was tested
 
@@ -56,15 +62,19 @@ $$
 
 where (mathbf E_i) contains early bleaching signals. Coefficients are estimated using other bleaching events. The target sector or latitude block is removed before its spatial signal is calculated, so the update cannot validate itself with observations from the target geography.
 
-A compact two-part sensitivity also updated (m_i^{(0)}). It was rejected because it worsened both overall and severe-event transfer.
+The tested signals are the common bleached-cover midpoint, the high-bleaching sensitivity, dated contemporary severity, RHIS severity or burden, and parsimonious aerial-plus-RHIS combinations. The primary candidate is common aerial severity plus one April 30 RHIS burden signal. The conditional magnitude component remains fixed in every candidate.
+
+
+The second-generation candidate first standardises aerial severity and April 30 RHIS burden within each event, weights each source by effective sample size and distance, attenuates locations supported by only one source, and removes the reliability-weighted event mean. It then estimates one non-negative occurrence coefficient with the initial probability as an offset, no new intercept, and fixed conditional magnitude.
 
 ## Leakage controls
 
 - RHIS records are restricted to January–April of the event year. April 30 is the primary cutoff; March 31 is a stricter timing sensitivity.
 - Only records with `Bleaching Present = TRUE` contribute recently dead coral. Later post-event mortality surveys and disturbance labels are never used.
-- Aerial records are used only for 2016, 2017 and 2020. The supplied file has no survey-date field, so its within-event timing cannot be independently checked and is recorded as unavailable provenance.
+- Contemporary aerial survey dates are supplied for 2022, 2024 and 2025. Dates remain unavailable for the supplied 2016-2020 historical files, so their common severity is event-time rather than cutoff-specific.
+- Codes above 5 denote no-view or unsuitable-coral-cover statuses and never enter severity. The reviewed crosswalk maps native ordinal bins to cover midpoints; unexpected historical 2020 score 5 values are flagged and top-coded to the documented greater-than-60% class.
 - Each validation fold holds out an entire event for coefficient fitting and an entire target sector or latitude block for construction of the early-data field.
-- The model's conditional mortality magnitude remains fixed except in the explicitly labelled two-part sensitivity.
+- The model's conditional mortality magnitude remains fixed.
 
 ## RHIS conversion
 
@@ -102,36 +112,82 @@ Bleaching is already widespread in RHIS by April: prevalence ranges from 0.621 i
 
 ## Spatial support
 
-The source field uses a 150-km Gaussian kernel truncated at 450 km and requires an effective sample size of at least three. Sector exclusion retains reasonable RHIS support for most events (83–98% for April burden), whereas the latitude-block test is deliberately harsher and has poor 2016 RHIS coverage. Aerial scores have dense independent support in all three available events.
+The source field uses a 150-km Gaussian kernel truncated at 450 km and requires an effective sample size of at least three. Sector exclusion retains RHIS support for 82–100% of target reefs by event, whereas the latitude-block test is deliberately harsher. Common aerial severity supports every historical target and 81% of 2025 target reefs; missing 2025 support is retained as missingness rather than extrapolated without evidence.
 
 ```{r}
 coverage_table <- coverage |>
-  filter(field %in% c('rhis_burden', 'aerial_severe_bleaching'),
-         cutoff %in% c('April 30', 'not supplied')) |>
+  filter(field %in% c('rhis_burden', 'aerial_high_bleaching',
+                      'severity_march_31'),
+         cutoff %in% c('April 30', 'event-time', 'March 31')) |>
   transmute(
     source, design, event = event_year,
     signal = recode(field, rhis_burden = 'RHIS burden',
-                    aerial_severe_bleaching = 'Aerial severe score'),
+                    aerial_high_bleaching = 'Aerial high indicator',
+                    severity_march_31 = 'Dated aerial severity'),
     coverage, median_effective_n, median_nearest_km
   ) |>
   round_numeric(2)
 kable(coverage_table, caption = 'Coverage after excluding each target sector or spatial block.')
 ```
 
+## Reliability-weighted consensus diagnostic
+
+The consensus is designed to represent local departure from the observed event state, not event identity or event-wide prevalence. For source (s), reliability is
+
+$$
+r_s = \frac{n_{\mathrm{eff},s}}{n_{\mathrm{eff},s}+3}
+      \exp(-d_s/450),
+$$
+
+where (d_s) is distance in kilometres to the nearest retained source observation. The two within-event standardised signals are reliability averaged, multiplied by half the summed reliability, and reliability-centred within the event. Unsupported locations receive a zero anomaly and therefore retain the initial prediction.
+
+```{r}
+diagnostic_table <- residual_diagnostics |>
+  filter(signal == 'consensus_anomaly') |>
+  transmute(
+    design, event = event_year, supported_reefs, support_fraction,
+    mortality_residual_rho = spearman_mortality_residual,
+    occurrence_residual_rho = spearman_occurrence_residual
+  ) |>
+  round_numeric(3)
+kable(diagnostic_table, caption = 'Event-wise Spearman association between the consensus anomaly and initial-forecast residuals.')
+```
+
+The expected positive direction occurs in five of six events for mortality residuals under both exclusions, and in four of six block-excluded and five of six sector-excluded events for occurrence residuals. This clears the directional diagnostic, but direction alone is not sufficient for promotion.
+
+```{r}
+coefficient_table <- effects |>
+  filter(candidate == 'Reliability-weighted aerial-RHIS anomaly') |>
+  group_by(design) |>
+  summarise(
+    minimum_coefficient = min(mean),
+    median_coefficient = median(mean),
+    maximum_coefficient = max(mean),
+    median_objective_gain = median(objective_gain_from_zero),
+    .groups = 'drop'
+  ) |>
+  round_numeric(4)
+kable(coefficient_table, caption = 'Held-event-out constrained occurrence coefficients. Coefficients cannot be negative.')
+```
+
+Sector-excluded fits retain small positive coefficients (0.260-0.421), while block-excluded fits are often effectively zero (0.002-0.169). The harsher block design therefore provides little evidence that the spatial update is robust beyond broad geography.
+
 ## Validation results
 
 ```{r}
 comparison_table <- comparison |>
   transmute(
-    candidate, design,
+    candidate, design, events = n_events,
     updated_RMSE = updated_rmse,
     initial_RMSE = initial_rmse,
     RMSE_change = delta_rmse,
+    MAE_change = delta_mae,
     updated_predictive_R2 = updated_predictive_r2,
     predictive_R2_change = delta_predictive_r2,
     updated_severe_RMSE = updated_severe_rmse,
     severe_RMSE_change = delta_severe_rmse,
-    Brier_change = delta_occurrence_brier
+    Brier_change = delta_occurrence_brier,
+    false_extreme_change = delta_false_extreme_rate
   ) |>
   arrange(RMSE_change) |>
   round_numeric(4)
@@ -142,13 +198,22 @@ kable(comparison_table, caption = 'Event-held-out and spatially independent upda
 include_figure('Fig-NOWCAST-02_spatial_update_validation')
 ```
 
-The combined aerial–RHIS occurrence update is the only candidate with a lower aggregate RMSE, and only under sector exclusion. It also lowers occurrence Brier score, showing that the early observations contain real information. Its severe-tail penalty prevents promotion. Neither March 31 restriction nor the two-part magnitude update solves that problem.
+No current candidate passes promotion. The prespecified primary architecture, common aerial severity plus one April RHIS burden signal, worsens aggregate RMSE and occurrence Brier under both spatial designs. It also worsens both metrics on the locked 2025 event, so 2025 is now an explicit promotion guard rather than merely one contributor to pooled performance.
+
+
+The constrained consensus is much safer than the original two-signal regression, but is practically neutral: pooled RMSE changes by -0.00030 for sector exclusion and +0.00006 for block exclusion; occurrence Brier changes by -0.00147 and +0.00029. It fails the aggregate-both-designs and locked-2025-both-designs guards.
+
+```{r}
+promotion_table <- promotion |>
+  select(candidate, spatial_designs, diagnostic_direction_guard_both_designs, prospective_2025_guard_both_designs, promotion_review_eligible, decision)
+kable(promotion_table, caption = 'Promotion decision after applying both spatial-design and event-transfer guards.')
+```
 
 ```{r, results='asis'}
 include_figure('Fig-NOWCAST-03_event_transfer')
 ```
 
-The combined sector-independent candidate improves overall RMSE in each of 2016, 2017 and 2020, but its severe RMSE worsens sharply in 2017. This is the key failure mode to resolve before operational use.
+Some individual held-out events improve, but no candidate transfers consistently enough to offset deterioration elsewhere. This is why the result is not used operationally; incomplete 2025 aerial support is also retained explicitly rather than hidden by unrestricted spatial extrapolation.
 
 ## Complementarity
 
@@ -156,15 +221,15 @@ The combined sector-independent candidate improves overall RMSE in each of 2016,
 kable(round_numeric(correlation, 3), caption = 'Spearman correlations among spatial RHIS signals.')
 ```
 
-Community-weighted severity and burden correlate at 0.912 under sector exclusion. Burden and recently dead coral correlate at 0.815. They should not be expanded into a larger unconstrained predictor block. The parsimonious next comparison is aerial severity plus one RHIS burden signal; recently dead coral should remain a separately reported warning unless it demonstrates incremental held-out value after more events are added.
+Community-weighted RHIS severity and burden remain strongly correlated, so they are tested one at a time. A larger predictor block is not justified with six events. The event-centred consensus is the safest architecture tested because it avoids an event intercept and constrains the direction, but its near-zero skill means it should be published only as a separate observed-condition layer, not used to recalibrate mortality.
 
 ## Operational contract
 
 1. The selected initial forecast is generated without aerial or RHIS event observations.
-2. Early observations may be ingested through `src/evaluation/test_spatial_early_bleaching_update.R` and mapped to spatially cross-fitted signals.
+2. Aerial observations are harmonised by `src/data/build_aerial_early_bleaching.R`, then optionally joined by `src/evaluation/test_spatial_early_bleaching_update.R` and mapped to spatially cross-fitted signals.
 3. The current update is **off by default**. It may be shown as a sensitivity/uncertainty layer, not blended into the official prediction.
-4. Promotion requires lower overall RMSE and occurrence Brier score, no material severe-RMSE penalty, and gains that persist under both event-held-out and spatially independent validation.
-5. Aerial survey dates and 2022/2024 scores must be supplied before the next promotion decision.
+4. Promotion requires the expected residual direction in at least four of all six events, lower overall RMSE, MAE and occurrence Brier score, no material severe-RMSE or false-extreme penalty, gains under both event-held-out and spatially independent validation, and lower 2025 RMSE and occurrence Brier under both spatial designs.
+5. The 2025 initial forecast is a retrospective locked-input reconstruction, not an archived issued forecast. Its outcomes satisfy the May cutoff and are used only for assessment; the aerial/RHIS update remains a separately labelled nowcast.
 
 ## Most important next steps
 
@@ -172,8 +237,12 @@ Community-weighted severity and burden correlate at 0.912 under sector exclusion
 
 ## Reproducibility
 
-- Source-processing and validation script: `src/evaluation/test_spatial_early_bleaching_update.R`
+- Aerial harmonisation: `src/data/build_aerial_early_bleaching.R`
+- Within-event validation: `src/evaluation/test_spatial_early_bleaching_update.R`
+- Input contract: `docs/aerial-early-bleaching-input-contract.md`
+- Locked 2025 contract: `docs/2025-initial-forecast-contract.md`
 - Processed RHIS source: `data/processed/rhis_early_bleaching_reef_event.csv`
 - Processed aerial source: `data/processed/aerial_early_bleaching_reef_event.csv`
+- Aerial coverage/provenance audit: `data/processed/aerial_early_bleaching_source_audit.csv`
 - Predictions and metrics: `output/spatial_early_bleaching_update/`
 - Registered figures: `output/fig/Fig-NOWCAST-01` to `Fig-NOWCAST-03`

@@ -30,7 +30,7 @@ best_model:
     - RRN event-season density has no within-season date and is assumed to precede bleaching mortality; exact-date Manta and culling information is limited to the end of February. The model combines raw RRN excess with latest/prior-three-year Manta pressure, time since peak and event-year hindcast probability.
     - Nested residual BRTs improve reef-blocked skill but worsen event-held-out overall and severe RMSE; they are not part of the operational ensemble.
     - Independent full-predictor direct and two-part BRTs, plus predictor-only environmental-envelope blends, improve some reef-blocked interpolation metrics but worsen new-event RMSE and severe RMSE. They are not used for the initial forecast; the direct BRT is retained for within-event interpolation and diagnostic sensitivity.
-    - Spatially independent aerial/RHIS early-event updates are implemented but disabled by default: the only aggregate RMSE gain is limited to 2016/2017/2020 and worsens severe-event RMSE, while RHIS-only transfer worsens the five-event forecast.
+    - Harmonised six-event aerial severity and RHIS burden remain a separate nowcast. A reliability-weighted, event-centred, non-negative occurrence update has expected residual direction but negligible skill and fails the locked-2025 both-design guard; it is disabled by default and never enters the initial forecast.
     - Cause labels are incomplete and annual coral-cover transitions can contain multiple simultaneous causes.
 candidates:
   - id: persistent_rw1_cyclone_cots_partial_pool

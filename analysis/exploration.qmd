@@ -1,0 +1,92 @@
+---
+title: 'Experiment findings'
+subtitle: 'A lightweight, reproducible decision index'
+format:
+  html:
+    toc: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+---
+
+```{r setup}
+registry_path <- 'config/experiments.yml'
+if (!file.exists(registry_path)) registry_path <- '../config/experiments.yml'
+registry <- yaml::read_yaml(registry_path)
+experiments <- registry$experiments
+
+status_labels <- c(
+  selected = 'Selected',
+  retained = 'Retained comparator or sensitivity',
+  not_promoted = 'Tested, not promoted',
+  superseded = 'Superseded',
+  diagnostic = 'Diagnostic',
+  data_pipeline = 'Data pipeline'
+)
+
+experiment_rows <- do.call(rbind, lapply(experiments, function(x) {
+  data.frame(
+    id = x$id, title = x$title, track = x$track, status = x$status,
+    finding = x$finding, report = x$report, updated = as.character(x$updated),
+    stringsAsFactors = FALSE
+  )
+}))
+```
+
+This page is generated only from `config/experiments.yml`. It answers “what has already been tested?” before detailed reports, model outputs or raw data are opened. Last registry review: `r registry$updated`.
+
+## Current synthesis
+
+```{r current-synthesis, results='asis'}
+current <- experiments[vapply(experiments, function(x) identical(x$track, 'current'), logical(1))]
+for (x in current) {
+  cat('### ', x$title, '\n\n', sep = '')
+  cat('**', status_labels[[x$status]], '.** ', x$finding, '\n\n', sep = '')
+  cat('Detailed report: `', x$report, '`\n\n', sep = '')
+}
+```
+
+## Experiment index
+
+```{r experiment-index}
+index <- experiment_rows[, c('id', 'title', 'track', 'status', 'updated')]
+index$status <- unname(status_labels[index$status])
+names(index) <- c('ID', 'Experiment', 'Track', 'Decision', 'Updated')
+knitr::kable(index, row.names = FALSE)
+```
+
+## Reproducible findings blocks
+
+Each block is intentionally brief. The report contains methods and diagnostics; the evidence paths identify the smallest set of generated artefacts needed to verify the finding.
+
+```{r findings-blocks, results='asis'}
+for (x in experiments) {
+  evidence <- unlist(x$evidence, use.names = FALSE)
+  available <- file.exists(evidence)
+  evidence_text <- paste0(
+    '`', evidence, '`',
+    ifelse(available, ' (available locally)', ' (generated artefact not present)')
+  )
+  cat('<details>\n<summary><strong>', x$title, '</strong> — ',
+      status_labels[[x$status]], '</summary>\n\n', sep = '')
+  cat('- **ID:** `', x$id, '`\n', sep = '')
+  cat('- **Question:** ', x$question, '\n', sep = '')
+  cat('- **Finding:** ', x$finding, '\n', sep = '')
+  cat('- **Report:** `', x$report, '`\n', sep = '')
+  cat('- **Evidence:** ', paste(evidence_text, collapse = '; '), '\n', sep = '')
+  cat('- **Reviewed:** ', as.character(x$updated), '\n\n', sep = '')
+  cat('</details>\n\n')
+}
+```
+
+## Adding an experiment
+
+Add or update the detailed analysis, then add one compact record to `config/experiments.yml`. Run:
+
+```powershell
+Rscript src/evaluation/validate_experiment_registry.R
+quarto render analysis/exploration.qmd
+```
+
+Evidence availability is informative rather than a validation failure because generated `output/` files are deliberately not committed.

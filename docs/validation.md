@@ -47,6 +47,16 @@ coverage of the observed DHW range but means there is no untouched final event;
 performance claims must therefore be described as blocked cross-validation,
 not external validation.
 
+## Locked 2025 assessment
+
+The selected architecture is also assessed on 2025 outcomes using a
+retrospective locked-input reconstruction trained only through 2024. This is
+not an archived forecast issued during 2025. The initial prediction contains no
+aerial or RHIS observations; those signals are admitted only to the separately
+labelled within-event update. Missing 2025 optical/current inputs use explicit
+pre-2025 climatology as documented in `docs/2025-initial-forecast-contract.md`.
+
+
 ## Development-set validation schemes
 
 Three complementary schemes are saved. They answer different questions and

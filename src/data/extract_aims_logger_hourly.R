@@ -45,6 +45,7 @@ longest_hourly_spell <- function(time, condition) {
 
 event_parts <- vector('list', nrow(sites))
 coverage_parts <- vector('list', nrow(sites))
+temperature_parts <- vector('list', nrow(sites))
 
 for (site_index in seq_len(nrow(sites))) {
     site_code <- sites$site[[site_index]]
@@ -89,13 +90,79 @@ for (site_index in seq_len(nrow(sites))) {
         ) |>
         pivot_wider(names_from = parameter, values_from = value) |>
         mutate(
+            # The CSV clock time is local at the GBR sites even though the
+            # download supplies no timezone field. Preserve that clock time
+            # when assigning day phases; converting it as UTC shifts noon to
+            # night and reverses the nocturnal contrast.
+            local_time = force_tz(sample_time, 'Australia/Brisbane'),
+            local_date = as.Date(local_time),
             event_year = if_else(
-                month(sample_time) >= 11L,
-                year(sample_time) + 1L, year(sample_time)
+                month(local_time) >= 11L,
+                year(local_time) + 1L, year(local_time)
             ),
-            in_bleaching_summer = month(sample_time) %in% c(11L, 12L, 1:4)
+            in_bleaching_summer = month(local_time) %in% c(11L, 12L, 1:4)
         ) |>
         arrange(sample_time)
+
+    daily_temperature <- hourly |>
+        filter(in_bleaching_summer, is.finite(temperature_c)) |>
+        group_by(site, event_year, local_date) |>
+        summarise(
+            observed_temperature_hours = n(),
+            daily_mean_c = mean(temperature_c),
+            daily_min_c = min(temperature_c),
+            daily_max_c = max(temperature_c),
+            daily_range_c = daily_max_c - daily_min_c,
+            afternoon_max_c = if (
+                any(hour(local_time) %in% 12:17)
+            ) max(temperature_c[hour(local_time) %in% 12:17]) else NA_real_,
+            predawn_min_c = if (
+                any(hour(local_time) %in% 0:5)
+            ) min(temperature_c[hour(local_time) %in% 0:5]) else NA_real_,
+            .groups = 'drop'
+        ) |>
+        group_by(site, event_year) |>
+        arrange(local_date, .by_group = TRUE) |>
+        mutate(
+            following_predawn_min_c = lead(predawn_min_c),
+            following_date = lead(local_date),
+            nocturnal_drop_c = if_else(
+                following_date == local_date + 1L,
+                afternoon_max_c - following_predawn_min_c,
+                NA_real_
+            )
+        ) |>
+        ungroup()
+
+    temperature_parts[[site_index]] <- daily_temperature |>
+        group_by(site, event_year) |>
+        group_modify(~ {
+            peak_date <- .x$local_date[which.max(.x$daily_mean_c)]
+            peak_window <- .x |>
+                filter(
+                    local_date >= peak_date - 15L,
+                    local_date <= peak_date + 14L
+                )
+            tibble(
+                logger_peak_date = peak_date,
+                logger_peak30_dtr_days = sum(is.finite(
+                    peak_window$daily_range_c
+                )),
+                logger_peak30_mean_dtr_c = mean(
+                    peak_window$daily_range_c, na.rm = TRUE
+                ),
+                logger_peak30_median_dtr_c = median(
+                    peak_window$daily_range_c, na.rm = TRUE
+                ),
+                logger_peak30_nocturnal_days = sum(is.finite(
+                    peak_window$nocturnal_drop_c
+                )),
+                logger_peak30_median_nocturnal_drop_c = median(
+                    peak_window$nocturnal_drop_c, na.rm = TRUE
+                )
+            )
+        }) |>
+        ungroup()
 
     coverage_parts[[site_index]] <- hourly |>
         summarise(
@@ -138,7 +205,18 @@ for (site_index in seq_len(nrow(sites))) {
         )
 }
 
-hourly_event_summary <- bind_rows(event_parts)
+hourly_event_summary <- bind_rows(event_parts) |>
+    left_join(bind_rows(temperature_parts), by = c('site', 'event_year')) |>
+    mutate(
+        across(
+            c(logger_peak30_mean_dtr_c, logger_peak30_median_dtr_c),
+            ~ if_else(logger_peak30_dtr_days >= 20L, .x, NA_real_)
+        ),
+        logger_peak30_median_nocturnal_drop_c = if_else(
+            logger_peak30_nocturnal_days >= 15L,
+            logger_peak30_median_nocturnal_drop_c, NA_real_
+        )
+    )
 hourly_coverage <- bind_rows(coverage_parts)
 
 write_csv(

@@ -23,7 +23,7 @@ fig_dir <- file.path(root, 'output', 'fig')
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
-event_years <- c(2016L, 2017L, 2020L, 2022L, 2024L)
+event_years <- c(2016L, 2017L, 2020L, 2022L, 2024L, 2025L)
 max_or_na <- function(x) if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE)
 mean_or_na <- function(x) if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
 
@@ -98,14 +98,31 @@ joint_context <- read_csv(
   distinct(source_observation_id, .keep_all = TRUE) |>
   select(source_observation_id, SECTOR, survey_date)
 
-base <- read_csv(
-  file.path(root, 'output', 'cots_raw_enso_occurrence',
-            'cots_cv_predictions.csv'), show_col_types = FALSE
+historical_base <- read_csv(
+  file.path(root, 'output', 'prospective_cots_nowcast',
+            'cv_predictions.csv'), show_col_types = FALSE
 ) |>
   filter(
-    candidate == 'cots_raw_interval_relative',
+    candidate == 'operational_rrn_raw_plus_manta_state',
     scheme == 'leave_one_event_out', event_year %in% event_years
   ) |>
+  select(
+    programme_key, source_observation_id, ReefID, ReefName, event_year,
+    observed_mortality, observed_occurrence, predicted_mortality,
+    predicted_occurrence, lon, lat
+  )
+
+forward_base <- read_csv(
+  file.path(root, 'output', 'initial_forecast_2025',
+            'locked_predictions.csv'), show_col_types = FALSE
+) |>
+  select(
+    programme_key, source_observation_id, ReefID, ReefName, event_year,
+    observed_mortality, observed_occurrence, predicted_mortality,
+    predicted_occurrence, lon, lat
+  )
+
+base <- bind_rows(historical_base, forward_base) |>
   mutate(
     source_observation_id = as.character(source_observation_id),
     ReefID = normalise_reef_id(ReefID),
@@ -115,8 +132,13 @@ base <- read_csv(
     )
   ) |>
   left_join(joint_context, by = 'source_observation_id') |>
+  left_join(
+    reef_reference |>
+      select(ReefID, SECTOR_reference = SECTOR),
+    by = 'ReefID', relationship = 'many-to-one'
+  ) |>
   mutate(
-    SECTOR = coalesce(SECTOR, 'UNKNOWN'),
+    SECTOR = coalesce(SECTOR, SECTOR_reference, 'UNKNOWN'),
     spatial_block = assign_block(lat),
     target_key = paste(ReefID, event_year, sep = '__')
   )
@@ -131,7 +153,9 @@ targets <- base |>
 rhis_raw <- read_excel(
   file.path(root, 'data',
             '250929_COTS-Manta-Cull-RHIS-Data-Matthews-and-Schlawinsky.xlsx'),
-  sheet = 'RHIS'
+  sheet = 'RHIS',
+  # Scan the complete sheet so mixed empty/text severity columns remain text.
+  guess_max = 50000
 )
 
 morphologies <- c(
@@ -253,32 +277,78 @@ write_csv(
   file.path(root, 'data', 'processed', 'rhis_early_bleaching_reef_event.csv')
 )
 
-# Hughes et al. aerial response is a binary severe-bleaching score. Survey
-# dates are absent from the supplied CSV, so this source is treated as an
-# event-time update with timing provenance explicitly marked as unavailable.
-aerial_sources <- read_csv(
-  file.path(root, 'data', 'Hughes2021', 'data', 'bleach_all.csv'),
-  show_col_types = FALSE
-) |>
+# Aerial ingestion is a separate, auditable data-preparation boundary. The
+# harmonised table retains the historical Hughes binary indicator and the
+# modern continuous category mean as distinct fields.
+aerial_file <- file.path(
+  root, 'data', 'processed', 'aerial_early_bleaching_reef_event.csv'
+)
+if (!file.exists(aerial_file)) {
+  stop(
+    'Missing harmonised aerial input. Run ',
+    'Rscript src/data/build_aerial_early_bleaching.R'
+  )
+}
+aerial_sources <- read_csv(aerial_file, show_col_types = FALSE) |>
+  filter(event_year %in% event_years, observation_usable) |>
   transmute(
-    ReefID = normalise_reef_id(ReefID), event_year = as.integer(year),
-    aerial_severe_bleaching = as.numeric(bin.score), aerial_dhw = DHW
+    ReefID = normalise_reef_id(ReefID), event_year = as.integer(event_year),
+    ReefName, source_lon = as.numeric(lon), source_lat = as.numeric(lat),
+    survey_date = as.Date(survey_date),
+    first_survey_date = as.Date(first_survey_date),
+    last_survey_date = as.Date(last_survey_date),
+    aerial_high_bleaching = as.numeric(aerial_high_bleaching),
+    aerial_bleached_cover_midpoint = as.numeric(aerial_bleached_cover_midpoint),
+    aerial_severity_01 = as.numeric(aerial_severity_01),
+    severity_march_31 = as.numeric(severity_march_31),
+    high_march_31 = as.numeric(high_march_31),
+    n_native_units, n_scored_units, timing_provenance
   ) |>
-  filter(event_year %in% c(2016L, 2017L, 2020L)) |>
   left_join(
     reef_features |>
-      select(ReefID, lon, lat, SECTOR, spatial_block, reef_name_reference),
+      select(ReefID, ref_lon = lon, ref_lat = lat, SECTOR, spatial_block,
+             reef_name_reference),
     by = 'ReefID'
   ) |>
+  mutate(
+    lon = coalesce(source_lon, ref_lon), lat = coalesce(source_lat, ref_lat),
+    SECTOR = coalesce(SECTOR, 'UNKNOWN'),
+    spatial_block = coalesce(spatial_block, assign_block(lat)),
+    ReefName = coalesce(ReefName, reef_name_reference)
+  ) |>
   filter(is.finite(lon), is.finite(lat)) |>
-  distinct(ReefID, event_year, .keep_all = TRUE) |>
-  mutate(timing_provenance = 'Event-time aerial survey; date absent in source file')
+  select(-source_lon, -source_lat, -ref_lon, -ref_lat)
 
-write_csv(
-  aerial_sources,
-  file.path(root, 'data', 'processed', 'aerial_early_bleaching_reef_event.csv')
+# The canonical AIMS reference covers monitoring reefs rather than every aerial
+# source reef. Fill missing latitudinal sectors from the nearest referenced
+# reef so sector exclusion does not silently discard most contemporary data.
+sector_reference <- reef_features |>
+  filter(!is.na(SECTOR), SECTOR != 'UNKNOWN', is.finite(lon), is.finite(lat)) |>
+  distinct(ReefID, .keep_all = TRUE)
+sector_reference_sf <- st_as_sf(
+  sector_reference, coords = c('lon', 'lat'), crs = 4326, remove = FALSE
 )
-
+fill_missing_sector <- function(rows) {
+  rows <- rows |>
+    mutate(sector_assignment = if_else(
+      !is.na(SECTOR) & SECTOR != 'UNKNOWN', 'exact_reef_id', 'unassigned'
+    ))
+  missing <- which(
+    (is.na(rows$SECTOR) | rows$SECTOR == 'UNKNOWN') &
+      is.finite(rows$lon) & is.finite(rows$lat)
+  )
+  if (length(missing)) {
+    points <- st_as_sf(
+      rows[missing, ], coords = c('lon', 'lat'), crs = 4326, remove = FALSE
+    )
+    nearest <- st_nearest_feature(points, sector_reference_sf)
+    rows$SECTOR[missing] <- sector_reference$SECTOR[nearest]
+    rows$sector_assignment[missing] <- 'nearest_reference_reef'
+  }
+  rows
+}
+aerial_sources <- fill_missing_sector(aerial_sources)
+rhis_sources <- fill_missing_sector(rhis_sources)
 # ---------------------------------------------------------------------------
 # Kernel summaries. The target sector/block is excluded before calculating
 # each signal; no target mortality response enters these summaries.
@@ -341,7 +411,10 @@ signal_specs <- tribble(
   'RHIS', 'March 31', 'rhis_severity', 'rhis_severity_mar',
   'RHIS', 'March 31', 'rhis_burden', 'rhis_burden_mar',
   'RHIS', 'March 31', 'rhis_recent_dead', 'rhis_recent_dead_mar',
-  'Aerial', NA_character_, 'aerial_severe_bleaching', 'aerial_severe'
+  'Aerial', 'event-time', 'aerial_high_bleaching', 'aerial_high',
+  'Aerial', 'event-time', 'aerial_bleached_cover_midpoint',
+  'aerial_severity_common',
+  'Aerial', 'March 31', 'severity_march_31', 'aerial_severity_mar'
 )
 
 feature_table <- targets
@@ -379,6 +452,95 @@ for (design in c('sector', 'block')) {
     )
   }
 }
+standardise_event_signal <- function(x) {
+  observed <- x[is.finite(x)]
+  if (length(observed) < 2L) return(ifelse(is.finite(x), 0, NA_real_))
+  spread <- sd(observed)
+  if (!is.finite(spread) || spread < 1e-8) spread <- 1
+  (x - mean(observed)) / spread
+}
+
+source_reliability <- function(signal, effective_n, nearest_km) {
+  supported <- is.finite(signal) & is.finite(effective_n) &
+    is.finite(nearest_km) & effective_n >= 3
+  reliability <- rep(0, length(signal))
+  reliability[supported] <-
+    effective_n[supported] / (effective_n[supported] + 3) *
+    exp(-nearest_km[supported] / 450)
+  pmin(pmax(reliability, 0), 1)
+}
+
+build_consensus_anomaly <- function(rows, design) {
+  aerial_name <- paste('aerial_severity_common', design, sep = '_')
+  rhis_name <- paste('rhis_burden_apr', design, sep = '_')
+  aerial_effective_name <- paste0(aerial_name, '_effective_n')
+  aerial_nearest_name <- paste0(aerial_name, '_nearest_km')
+  rhis_effective_name <- paste0(rhis_name, '_effective_n')
+  rhis_nearest_name <- paste0(rhis_name, '_nearest_km')
+
+  rows |>
+    transmute(
+      target_key, ReefID, event_year,
+      aerial_signal = .data[[aerial_name]],
+      aerial_effective_n = .data[[aerial_effective_name]],
+      aerial_nearest_km = .data[[aerial_nearest_name]],
+      rhis_signal = .data[[rhis_name]],
+      rhis_effective_n = .data[[rhis_effective_name]],
+      rhis_nearest_km = .data[[rhis_nearest_name]]
+    ) |>
+    group_by(event_year) |>
+    mutate(
+      aerial_z = standardise_event_signal(aerial_signal),
+      rhis_z = standardise_event_signal(rhis_signal),
+      aerial_reliability = source_reliability(
+        aerial_signal, aerial_effective_n, aerial_nearest_km
+      ),
+      rhis_reliability = source_reliability(
+        rhis_signal, rhis_effective_n, rhis_nearest_km
+      ),
+      source_weight_sum = aerial_reliability + rhis_reliability,
+      consensus_reliability = source_weight_sum / 2,
+      consensus_z = if_else(
+        source_weight_sum > 0,
+        (
+          coalesce(aerial_z, 0) * aerial_reliability +
+            coalesce(rhis_z, 0) * rhis_reliability
+        ) / source_weight_sum,
+        0
+      ),
+      consensus_centre = if (sum(consensus_reliability) > 0) {
+        weighted.mean(consensus_z, consensus_reliability)
+      } else 0,
+      consensus_anomaly = if_else(
+        consensus_reliability > 0,
+        (consensus_z - consensus_centre) * consensus_reliability,
+        0
+      ),
+      aerial_weighted_anomaly = coalesce(aerial_z, 0) * aerial_reliability,
+      rhis_weighted_anomaly = coalesce(rhis_z, 0) * rhis_reliability,
+      source_count = as.integer(aerial_reliability > 0) +
+        as.integer(rhis_reliability > 0),
+      design = design
+    ) |>
+    ungroup()
+}
+
+consensus_feature_audit <- bind_rows(
+  build_consensus_anomaly(feature_table, 'sector'),
+  build_consensus_anomaly(feature_table, 'block')
+)
+consensus_features <- consensus_feature_audit |>
+  select(target_key, design, consensus_anomaly, consensus_reliability) |>
+  pivot_wider(names_from = design, values_from = c(
+    consensus_anomaly, consensus_reliability
+  ))
+feature_table <- feature_table |>
+  left_join(consensus_features, by = 'target_key', relationship = 'one-to-one')
+write_csv(
+  consensus_feature_audit,
+  file.path(out_dir, 'consensus_anomaly_features.csv')
+)
+
 write_csv(feature_table, file.path(out_dir, 'spatial_early_features.csv'))
 write_csv(coverage, file.path(out_dir, 'spatial_source_coverage.csv'))
 
@@ -396,9 +558,12 @@ source_summary <- bind_rows(
   aerial_sources |>
     group_by(event_year) |>
     summarise(
-      source = 'Aerial', cutoff = 'date absent', reefs = n(), records = n(),
-      bleaching_prevalence = mean(aerial_severe_bleaching),
-      mean_severity = NA_real_, mean_burden = NA_real_,
+      source = 'Aerial',
+      cutoff = if_else(first(event_year) >= 2022L, 'March 31', 'date unavailable'),
+      reefs = n(), records = sum(n_native_units),
+      bleaching_prevalence = mean(aerial_high_bleaching),
+      mean_severity = mean(aerial_severity_01, na.rm = TRUE),
+      mean_burden = NA_real_,
       mean_recent_dead = NA_real_, .groups = 'drop'
     )
 )
@@ -503,26 +668,85 @@ fit_magnitude_update <- function(training, assessment, features) {
   )
 }
 
+fit_monotone_consensus_update <- function(training, assessment, feature) {
+  training_x <- as.numeric(training[[feature]])
+  assessment_x <- as.numeric(assessment[[feature]])
+  training_x[!is.finite(training_x)] <- 0
+  assessment_x[!is.finite(assessment_x)] <- 0
+  observed <- as.numeric(training$observed_occurrence)
+  base_logit <- qlogis(pmin(pmax(training$predicted_occurrence, .001), .999))
+  ridge_precision <- 4
+
+  objective <- function(coefficient) {
+    probability <- plogis(base_logit + coefficient * training_x)
+    -sum(dbinom(observed, size = 1, prob = probability, log = TRUE)) +
+      .5 * ridge_precision * coefficient^2
+  }
+  upper_bound <- 8
+  optimum <- optimize(objective, interval = c(0, upper_bound), tol = 1e-9)
+  null_objective <- objective(0)
+  coefficient <- if (null_objective <= optimum$objective + 1e-8) {
+    0
+  } else {
+    optimum$minimum
+  }
+  assessment_probability <- plogis(
+    qlogis(pmin(pmax(assessment$predicted_occurrence, .001), .999)) +
+      coefficient * assessment_x
+  )
+
+  step <- 1e-3
+  curvature <- if (coefficient > step) {
+    (objective(coefficient + step) - 2 * objective(coefficient) +
+       objective(coefficient - step)) / step^2
+  } else {
+    NA_real_
+  }
+  coefficient_sd <- if (is.finite(curvature) && curvature > 0) {
+    1 / sqrt(curvature)
+  } else {
+    NA_real_
+  }
+
+  list(
+    occurrence = assessment_probability,
+    fixed = tibble(
+      term = paste0(feature, '_nonnegative'),
+      mean = coefficient,
+      sd = coefficient_sd,
+      `0.025quant` = pmax(coefficient - 1.96 * coefficient_sd, 0),
+      `0.5quant` = coefficient,
+      `0.975quant` = coefficient + 1.96 * coefficient_sd,
+      mode = coefficient,
+      constrained_at_zero = coefficient == 0,
+      upper_bound_reached = coefficient >= upper_bound - 1e-4,
+      ridge_precision = ridge_precision,
+      objective_gain_from_zero = null_objective - objective(coefficient)
+    )
+  )
+}
+
 candidate_specs <- tribble(
   ~candidate, ~scope, ~feature_key, ~update_components,
   'RHIS severity only (April 30)', 'all_events', 'rhis_severity_apr',
   'occurrence',
-  'RHIS burden + recent dead (April 30)', 'all_events',
-  'rhis_burden_apr;rhis_recent_dead_apr',
+  'RHIS burden only (April 30)', 'all_events', 'rhis_burden_apr',
   'occurrence',
-  'RHIS burden + recent dead (March 31)', 'all_events',
-  'rhis_burden_mar;rhis_recent_dead_mar',
+  'RHIS burden only (March 31)', 'all_events', 'rhis_burden_mar',
   'occurrence',
-  'Aerial severe bleaching', 'aerial_events', 'aerial_severe', 'occurrence',
-  'Aerial + RHIS burden/recent dead', 'aerial_events',
-  'aerial_severe;rhis_burden_apr;rhis_recent_dead_apr',
-  'occurrence',
-  'RHIS burden/recent dead: two-part update', 'all_events',
-  'rhis_burden_apr;rhis_recent_dead_apr',
-  'occurrence_and_magnitude',
-  'Aerial + RHIS: two-part update', 'aerial_events',
-  'aerial_severe;rhis_burden_apr;rhis_recent_dead_apr',
-  'occurrence_and_magnitude'
+  'Aerial harmonised severity', 'aerial_events',
+  'aerial_severity_common', 'occurrence',
+  'Aerial severity + RHIS burden (April 30)', 'aerial_events',
+  'aerial_severity_common;rhis_burden_apr', 'occurrence',
+  'Aerial high-bleaching indicator', 'aerial_events',
+  'aerial_high', 'occurrence',
+  'Aerial high + RHIS burden sensitivity', 'aerial_events',
+  'aerial_high;rhis_burden_apr', 'occurrence',
+  'Dated aerial severity (March 31)', 'dated_aerial_events',
+  'aerial_severity_mar', 'occurrence',
+  'Dated aerial severity + RHIS burden (March 31)',
+  'dated_aerial_events', 'aerial_severity_mar;rhis_burden_mar',
+  'occurrence'
 )
 
 model_rows <- base |>
@@ -531,6 +755,86 @@ model_rows <- base |>
                             -spatial_block),
     by = 'target_key', relationship = 'many-to-one'
   )
+safe_spearman <- function(x, y) {
+  keep <- is.finite(x) & is.finite(y)
+  if (sum(keep) < 5L || n_distinct(x[keep]) < 2L ||
+      n_distinct(y[keep]) < 2L) return(NA_real_)
+  cor(x[keep], y[keep], method = 'spearman')
+}
+
+reef_initial_residuals <- model_rows |>
+  group_by(target_key, ReefID, event_year) |>
+  summarise(
+    observed_mortality = mean(observed_mortality),
+    observed_occurrence = mean(observed_occurrence),
+    initial_mortality = mean(predicted_mortality),
+    initial_occurrence = mean(predicted_occurrence),
+    mortality_residual = observed_mortality - initial_mortality,
+    occurrence_residual = observed_occurrence - initial_occurrence,
+    .groups = 'drop'
+  )
+
+residual_anomaly_rows <- consensus_feature_audit |>
+  left_join(
+    reef_initial_residuals,
+    by = c('target_key', 'ReefID', 'event_year'),
+    relationship = 'many-to-one'
+  )
+write_csv(
+  residual_anomaly_rows,
+  file.path(out_dir, 'residual_anomaly_rows.csv')
+)
+
+residual_diagnostics <- residual_anomaly_rows |>
+  select(
+    target_key, ReefID, event_year, design,
+    consensus_reliability, aerial_reliability, rhis_reliability,
+    mortality_residual, occurrence_residual,
+    observed_mortality, observed_occurrence,
+    consensus_anomaly, aerial_weighted_anomaly, rhis_weighted_anomaly
+  ) |>
+  pivot_longer(
+    c(consensus_anomaly, aerial_weighted_anomaly, rhis_weighted_anomaly),
+    names_to = 'signal', values_to = 'anomaly'
+  ) |>
+  mutate(
+    supported = case_when(
+      signal == 'consensus_anomaly' ~ consensus_reliability > 0,
+      signal == 'aerial_weighted_anomaly' ~ aerial_reliability > 0,
+      signal == 'rhis_weighted_anomaly' ~ rhis_reliability > 0,
+      TRUE ~ FALSE
+    )
+  ) |>
+  group_by(design, signal, event_year) |>
+  summarise(
+    target_reefs = n(),
+    supported_reefs = sum(supported),
+    support_fraction = mean(supported),
+    spearman_mortality_residual = safe_spearman(
+      anomaly[supported], mortality_residual[supported]
+    ),
+    spearman_occurrence_residual = safe_spearman(
+      anomaly[supported], occurrence_residual[supported]
+    ),
+    spearman_observed_mortality = safe_spearman(
+      anomaly[supported], observed_mortality[supported]
+    ),
+    spearman_observed_occurrence = safe_spearman(
+      anomaly[supported], observed_occurrence[supported]
+    ),
+    .groups = 'drop'
+  ) |>
+  mutate(
+    positive_mortality_residual_direction =
+      spearman_mortality_residual > 0,
+    positive_occurrence_residual_direction =
+      spearman_occurrence_residual > 0
+  )
+write_csv(
+  residual_diagnostics,
+  file.path(out_dir, 'residual_anomaly_diagnostics.csv')
+)
+
 predictions <- tibble()
 fixed_effects <- tibble()
 
@@ -541,7 +845,9 @@ for (design in c('sector', 'block')) {
     features <- paste(feature_stems, design, sep = '_')
     rows <- model_rows
     if (spec$scope == 'aerial_events') {
-      rows <- rows |> filter(event_year %in% c(2016L, 2017L, 2020L))
+      rows <- rows |> filter(event_year %in% event_years)
+    } else if (spec$scope == 'dated_aerial_events') {
+      rows <- rows |> filter(event_year %in% c(2022L, 2024L, 2025L))
     }
     for (held_event in sort(unique(rows$event_year))) {
       training <- rows |> filter(event_year != held_event)
@@ -597,6 +903,55 @@ for (design in c('sector', 'block')) {
   }
 }
 
+consensus_candidate <- 'Reliability-weighted aerial-RHIS anomaly'
+for (design in c('sector', 'block')) {
+  feature <- paste('consensus_anomaly', design, sep = '_')
+  reliability <- paste('consensus_reliability', design, sep = '_')
+  for (held_event in event_years) {
+    training <- model_rows |> filter(event_year != held_event)
+    assessment <- model_rows |> filter(event_year == held_event)
+    fitted <- fit_monotone_consensus_update(
+      training, assessment, feature
+    )
+    updated_occurrence <- pmin(pmax(fitted$occurrence, .001), .999)
+    predictions <- bind_rows(
+      predictions,
+      assessment |>
+        transmute(
+          source_observation_id, programme_key, ReefID, ReefName,
+          event_year, lon, lat, SECTOR, spatial_block,
+          observed_mortality, observed_occurrence,
+          initial_mortality = predicted_mortality,
+          initial_occurrence = predicted_occurrence,
+          predicted_occurrence = updated_occurrence,
+          predicted_magnitude = base_conditional_magnitude,
+          predicted_mortality =
+            updated_occurrence * base_conditional_magnitude,
+          candidate = consensus_candidate,
+          scope = 'all_events',
+          update_components = 'occurrence',
+          design = design, held_event = held_event,
+          across(all_of(c(feature, reliability)))
+        )
+    )
+    fixed_effects <- bind_rows(
+      fixed_effects,
+      fitted$fixed |>
+        mutate(
+          component = 'occurrence',
+          candidate = consensus_candidate,
+          scope = 'all_events',
+          design = design,
+          held_event = held_event,
+          constraint = paste(
+            'non-negative half-normal MAP; no intercept;',
+            'event-centred signal; magnitude fixed'
+          )
+        )
+    )
+  }
+}
+
 write_csv(predictions, file.path(out_dir, 'cv_predictions.csv'))
 write_csv(fixed_effects, file.path(out_dir, 'fixed_effects.csv'))
 
@@ -614,11 +969,15 @@ comparison <- predictions |>
       initial |> rename_with(~ paste0('initial_', .x))
     ) |>
       mutate(
+        n_events = n_distinct(.x$event_year),
         delta_rmse = updated_rmse - initial_rmse,
+        delta_mae = updated_mae - initial_mae,
         delta_predictive_r2 = updated_predictive_r2 - initial_predictive_r2,
         delta_severe_rmse = updated_severe_rmse - initial_severe_rmse,
         delta_occurrence_brier = updated_occurrence_brier -
-          initial_occurrence_brier
+          initial_occurrence_brier,
+        delta_false_extreme_rate = updated_false_extreme_rate -
+          initial_false_extreme_rate
       )
   }) |>
   ungroup() |>
@@ -648,6 +1007,97 @@ event_metrics <- predictions |>
 
 write_csv(comparison, file.path(out_dir, 'model_comparison.csv'))
 write_csv(event_metrics, file.path(out_dir, 'event_metrics.csv'))
+
+prospective_2025_checks <- event_metrics |>
+  filter(event_year == 2025) |>
+  transmute(
+    candidate, scope, design,
+    prospective_2025_guard = delta_rmse < 0 & delta_occurrence_brier < 0
+  )
+if (nrow(prospective_2025_checks) == 0) {
+  stop('The locked 2025 assessment is missing from the event metrics.')
+}
+
+event_transfer_checks <- event_metrics |>
+  group_by(candidate, scope, design) |>
+  summarise(
+    event_count = n(),
+    events_with_lower_rmse = sum(delta_rmse < 0),
+    event_improvement_fraction = mean(delta_rmse < 0),
+    .groups = 'drop'
+  )
+
+consensus_diagnostic_checks <- residual_diagnostics |>
+  filter(signal == 'consensus_anomaly') |>
+  group_by(design) |>
+  summarise(
+    diagnostic_events = sum(
+      is.finite(spearman_mortality_residual) &
+        is.finite(spearman_occurrence_residual)
+    ),
+    positive_mortality_residual_events = sum(
+      spearman_mortality_residual > 0, na.rm = TRUE
+    ),
+    positive_occurrence_residual_events = sum(
+      spearman_occurrence_residual > 0, na.rm = TRUE
+    ),
+    diagnostic_direction_guard = diagnostic_events == length(event_years) &
+      positive_mortality_residual_events >= 4 &
+      positive_occurrence_residual_events >= 4,
+    .groups = 'drop'
+  )
+write_csv(
+  consensus_diagnostic_checks,
+  file.path(out_dir, 'consensus_anomaly_guard.csv')
+)
+promotion_checks <- comparison |>
+  mutate(
+    aggregate_guard = delta_rmse < 0 & delta_mae < 0 &
+      delta_occurrence_brier < 0,
+    severe_guard = is.na(delta_severe_rmse) | delta_severe_rmse <= .005,
+    false_extreme_guard = delta_false_extreme_rate <= .01
+  ) |>
+  left_join(
+    event_transfer_checks,
+    by = c('candidate', 'scope', 'design'), relationship = 'one-to-one'
+  ) |>
+  left_join(
+    prospective_2025_checks,
+    by = c('candidate', 'scope', 'design'), relationship = 'one-to-one'
+  ) |>
+  left_join(
+    consensus_diagnostic_checks,
+    by = 'design', relationship = 'many-to-one'
+  ) |>
+  mutate(
+    diagnostic_direction_guard = if_else(
+      candidate == consensus_candidate,
+      coalesce(diagnostic_direction_guard, FALSE),
+      TRUE
+    )
+  ) |>
+  group_by(candidate, scope) |>
+  summarise(
+    spatial_designs = n_distinct(design),
+    aggregate_guard_both_designs = all(aggregate_guard),
+    severe_guard_both_designs = all(severe_guard),
+    false_extreme_guard_both_designs = all(false_extreme_guard),
+    event_transfer_guard_both_designs = all(
+      events_with_lower_rmse >= 2 & event_improvement_fraction >= .5
+    ),
+    diagnostic_direction_guard_both_designs =
+      all(diagnostic_direction_guard),
+    prospective_2025_guard_both_designs = all(prospective_2025_guard),
+    promotion_review_eligible = spatial_designs == 2 &
+      aggregate_guard_both_designs & severe_guard_both_designs &
+      false_extreme_guard_both_designs & event_transfer_guard_both_designs &
+      diagnostic_direction_guard_both_designs &
+      prospective_2025_guard_both_designs,
+    decision = if_else(
+      promotion_review_eligible, 'eligible_for_review', 'not_promoted'
+    ), .groups = 'drop'
+  )
+write_csv(promotion_checks, file.path(out_dir, 'promotion_checks.csv'))
 
 signal_correlation <- feature_table |>
   select(target_key, event_year, matches('^(rhis|aerial).+_(sector|block)$')) |>
@@ -689,12 +1139,12 @@ p_sources <- source_summary |>
 save_figure_bundle(
   p_sources, 'Fig-NOWCAST-01_early_source_coverage', source_summary,
   caption = paste(
-    'Availability and prevalence of RHIS bleaching observations by April 30',
-    'for each event; aerial data are summarised separately because dates are',
-    'not present in the supplied file.'
+    'Availability and prevalence of RHIS bleaching observations by April 30.',
+    'Aerial dates are verified for 2022 and 2024; dates remain unavailable',
+    'for the Hughes 2016, 2017 and 2020 source.'
   ),
   interpretation = paste(
-    'Rapid in-water observations exist for all five events and can support a',
+    'Rapid in-water observations exist for all six events and can support a',
     'within-event occurrence update.'
   ),
   caveats = paste(
@@ -744,8 +1194,8 @@ save_figure_bundle(
     'the selected initial operational forecast.'
   ),
   caveats = paste(
-    'Aerial comparisons cover 2016, 2017 and 2020 only; 2022 and 2024 aerial',
-    'scores have not yet been supplied.'
+    'Harmonised event-time aerial severity spans six events. Strictly dated',
+    'aerial severity is tested separately for 2022, 2024 and 2025.'
   ),
   model_id = 'spatial_early_bleaching_update', framework = 'INLA occurrence update',
   figure_type = 'held-out validation', analysis_role = 'operational update validation',
@@ -786,8 +1236,9 @@ save_figure_bundle(
     'event such as 2020.'
   ),
   caveats = paste(
-    'With five events, event-level heterogeneity remains a major source of',
-    'uncertainty; aerial candidates have only three event folds.'
+    'With six events, event-level heterogeneity remains a major source of',
+    'uncertainty. The strictly dated-aerial comparison has only the 2022,',
+    '2024 and 2025 event folds.'
   ),
   model_id = 'spatial_early_bleaching_update', framework = 'INLA occurrence update',
   figure_type = 'event transfer', analysis_role = 'operational update validation',

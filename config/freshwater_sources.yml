@@ -1,0 +1,66 @@
+version: 1
+updated: '2026-09-07'
+status: proposed_ingestion_contract
+
+wmip:
+  base_url: https://water-monitoring.information.qld.gov.au/cgi/webservice.exe
+  api_guide: https://water-monitoring.information.qld.gov.au/wini/documents/WMIP_API_2025.pdf
+  function: get_ts_traces
+  datasource: ATQ
+  varfrom: '140.00'
+  varto: '140.00'
+  data_type: mean
+  interval: day
+  multiplier: 1
+  report_time: end
+  units: m3_s
+  timezone: station_local
+  licence: CC-BY-4.0
+  polling_minimum_minutes: 60
+
+event_windows:
+  wet_season_start: '12-01'
+  march_snapshot_end: '03-31'
+  april_snapshot_end: '04-30'
+  event_year_rule: January-April belongs to the preceding May-April event
+
+product_modes:
+  initial_forecast:
+    biological_updates_allowed: false
+    availability_rule: observation and retrieval time must not exceed issue time
+  within_event_update:
+    biological_updates_allowed: true
+    availability_rule: retain separate environmental and biological cutoffs
+
+  environmental_hindcast:
+    biological_updates_allowed: false
+    availability_rule: historical values retrieved after issue time; never score as an operational snapshot
+    operational_snapshot: false
+quality:
+  unavailable_labels:
+    - Data not yet available
+  unavailable_action: set value to missing and retain native value and quality code
+  flagged_action: retain value with quality flag and include in sensitivity audit
+  negative_discharge_action: fail
+  revisions: retain immutable retrieval snapshots
+
+pilot:
+  crosswalk: config/freshwater_gauge_crosswalk.csv
+  scope_note: Mackay Reef is 16-015 near 16S; Pioneer is a separate southern API control
+  priority_basins:
+    - PIONEER
+    - DAINTREE
+    - MULGRAVE_RUSSEL
+
+outputs:
+  gauge_day: data/processed/freshwater_gauge_day.csv
+  catchment_event: data/processed/freshwater_catchment_event.csv
+  reef_event: data/processed/freshwater_reef_event.csv
+  provenance_audit: data/processed/freshwater_ingestion_audit.json
+
+promotion_guards:
+  claims_salinity_psu: false
+  join_to_existing_freshwater_calibration_only: true
+  add_to_canonical_environment_table: false
+  add_to_selected_model: false
+  refit_models: false

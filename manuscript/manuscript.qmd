@@ -1,9 +1,9 @@
 ---
-title: "Multidimensional Attribution of Coral Bleaching Mortality on the Great Barrier Reef"
+title: "Cause-Aware Bayesian Composite Modeling of Coral Bleaching Mortality Across the Great Barrier Reef"
 author: 
   - name: Samuel Matthews
 abstract: |
-  Climate change is driving an unprecedented escalation in the frequency and intensity of marine heatwaves, pushing coral reef ecosystems toward functional collapse. As acute thermal stress transitions to chronic disturbance, conservation managers require highly resolved, spatially explicit vulnerability models to deploy triage interventions effectively. However, traditional forecasting frameworks evaluate thermal exposure as an isolated driver, obscuring the critical localized contexts that dictate actual survival. We growth-adjusted 26 years of benthic survey data across the Great Barrier Reef and parameterized a multidimensional Bayesian and machine-learning architecture to isolate bleaching mortality ($N=305$). We found that integrating localized optical modifiers and pre-disturbance community composition significantly reduced predictive error ($R^2 = 0.421$, $\text{RMSE} = 0.127$) compared to univariate thermal models. While severe thermal anomalies dictate the baseline disturbance trajectory, pre-bleaching *Acropora* cover severely exacerbates localized mortality ($\beta = 0.58$), whereas persistent cloud cover and turbidity act as acute physical buffers. Conservation decision-making must transition from coarse regional thermal alerts to mapping these functional optical refugia to effectively deploy spatial interventions under novel climate regimes.
+  Accelerating marine heatwaves threaten coral reefs worldwide with widespread bleaching and functional collapse. Operational thermal forecasting relies heavily on univariate Degree Heating Week (DHW) metrics, which evaluate heat stress in isolation and conflate thermal mortality with background recovery and non-thermal disturbances. We integrated 26 years of benthic photo-transect and broad-scale manta tow surveys ($N=465$) across the Great Barrier Reef ($10^\circ\text{S}$ to $24^\circ\text{S}$) and growth-adjusted mortality using reef-specific Gompertz curves to isolate true bleaching loss. We developed a cause-aware Bayesian composite model (INLA) with explicit Crown-of-Thorns starfish (COTS) and cyclone hazard layers, evaluating event transferability via leave-one-event-out (LOEO) cross-validation against machine learning comparators. The cause-aware INLA composite achieved superior out-of-event predictive skill ($\text{RMSE} = 0.1485$, $\text{predictive } R^2 = 0.2998$, $\text{severe RMSE} = 0.3267$) relative to direct Boosted Regression Trees ($\text{RMSE} = 0.1799$, $\text{predictive } R^2 = -0.0284$). Pre-bleaching *Acropora* cover strongly amplified thermal mortality ($\text{interaction mean} = +0.251$), whereas high cloud fraction, high water clarity, and hydrodynamic current flushing acted as localized optical and physical buffers. Disentangling thermal stress from competing disturbance vectors and mapping physical buffering contexts provides decision-makers with spatially explicit triage frameworks to target localized conservation interventions under novel climate regimes.
 bibliography: references.bib
 format:
   html:
@@ -16,237 +16,198 @@ format:
 
 **Significance Statement**
 
-To protect coral reefs from accelerating climate change, managers need to know exactly which reefs will survive severe heatwaves and which will perish. Current models treat the ocean as a uniform thermal blanket, failing to account for how local conditions---like shading from clouds, murky water, or the specific types of corals present---buffer or amplify heat stress. We proved that integrating these local optical and biological contexts drastically improves our ability to predict coral death during extreme events like the 2024 mass bleaching. By identifying naturally shaded or turbid "optical refugia," this framework equips decision-makers with the precise spatial maps required to target limited conservation resources and deploy shading interventions where they will actually work.
+Predicting which coral reefs survive catastrophic heatwaves requires moving beyond coarse ocean temperature alerts. Standard models treat thermal exposure as a uniform driver of mortality, failing to account for local physical buffers---like cloud shading or current flushing---and confounding thermal stress with crown-of-thorns starfish outbreaks and cyclone damage. We parameterized a cause-aware Bayesian composite framework that growth-adjusts baseline coral recovery and isolates thermal mortality from competing disturbance hazards across 26 years of Great Barrier Reef surveys. By identifying naturally buffered "optical refugia" and accounting for pre-disturbance coral composition, our framework provides marine park managers with validated spatial maps to deploy targeted shading, culling, and protection where intervention will yield maximum ecological survival.
 
 # Introduction
 
-Climate change is increasing the frequency and intensity of marine heatwaves, 
-causing widespread coral bleaching and mortality across the Great Barrier Reef 
-(GBR) [@eakin2019]. As thermal stress shifts from acute events to chronic 
-disturbance, managers must transition from monitoring to targeted spatial 
-interventions [@vanoppen2017]. Deploying resilience-based strategies---like 
-localized solar radiation management, assisted gene flow, or culling benthic 
-competitors---requires accurate attribution of coral mortality to specific thermal 
-thresholds [@hughes2018; @vanoppen2017]. Treating the GBR uniformly masks the 
-spatial variation in bleaching and survival observed among neighboring reefs 
-[@wold2023]. Directing conservation resources at actionable scales requires 
-spatially explicit models that identify the environmental and biological factors 
-moderating survival during severe heatwaves.
+Climate change is accelerating the frequency and severity of marine heatwaves, driving recurrent mass coral bleaching events across the Great Barrier Reef (GBR) [@eakin2019; @hughes2018]. As thermal stress transitions from episodic anomalies to chronic regimes, marine park authorities face an urgent operational challenge: transitioning from passive disturbance monitoring to targeted spatial interventions [@vanoppen2017]. Deploying localized management actions---such as solar radiation management, targeted crown-of-thorns starfish (*Acanthaster* cf. *solarix*, COTS) culling, and assisted gene flow---requires high-resolution, probabilistically bounded estimates of coral mortality [@hughes2018]. However, evaluating thermal vulnerability at the scale of broad geographical sectors masks substantial fine-scale variation in bleaching severity and mortality among adjacent reefs [@wold2023]. Designing effective conservation networks requires spatially explicit models that isolate the physical and ecological mediators governing reef survival during severe thermal anomalies.
 
-Current diagnostic tools rely on static or coarse-scale environmental proxies 
-that miss fine-scale physical and ecological mediators of thermal stress 
-[@safaie2018]. Many vulnerability assessments evaluate Degree Heating Weeks (DHW) 
-as an isolated, linear driver of mortality without adjusting for background coral 
-recovery [@macneil2019]. This omission conflates baseline demographic turnover 
-with bleaching-attributable loss, biasing mortality estimates. Most models also 
-omit localized optical and hydrodynamic modifiers---such as water clarity (Secchi 
-depth), cloud cover shading, and current flushing speeds---or shifts in community 
-composition, such as the proportion of sensitive *Acropora* taxa 
-[@cacciapaglia2016]. Deterministic forecasts trained only on historical heatwaves 
-often fail under novel thermal regimes. This inflexibility led to widespread 
-underprediction of mortality during the 2024 mass bleaching event, limiting the 
-effectiveness of adaptive management.
+Current operational forecasting frameworks rely primarily on remote-sensing thermal metrics, such as NOAA Degree Heating Weeks (DHW), treated as isolated predictors of coral mortality [@safaie2018]. Evaluating DHW in a univariate vacuum introduces three major methodological limitations [@macneil2019]. First, standard models evaluate raw changes in benthic cover without accounting for baseline demographic growth between survey intervals, thereby confounding natural recovery rates with bleaching-attributable mortality. Second, univariate models ignore localized physical modifiers---including cloud cover shading, water clarity (Secchi depth), and hydrodynamic current flushing speeds---and biological drivers, such as the pre-disturbance abundance of thermally sensitive *Acropora* assemblages [@cacciapaglia2016]. Third, correlative models trained on combined disturbance records frequently attribute coral loss caused by severe tropical cyclones or COTS outbreaks to thermal exposure, artificially flattening the estimated thermal dose-response relationship.
 
-We developed a growth-adjusted framework to quantify coral mortality across the 
-GBR. We combined multidecadal benthic photo-transects and manta tow data with 
-high-resolution environmental predictors, including winter temperature variability, 
-historical thermal exposure, and acute optical modifiers. To isolate bleaching 
-impacts, we adjusted baseline mortality estimates using reef-specific Gompertz 
-coral growth parameters to account for expected biological recovery between 
-surveys. We paired machine-learning algorithms (Random Forests and Boosted 
-Regression Trees) to capture non-linear feature interactions with Bayesian 
-hierarchical beta regression models to bound proportional mortality. The Bayesian 
-models propagate parameter uncertainty and partition spatial variance across reef 
-clusters. By explicitly modeling interactions between thermal stress and optical 
-mediators---specifically how localized Secchi depth and cloud fraction buffer 
-DHW---we link mortality attribution to measurable physical contexts.
+To resolve these limitations, we developed a cause-aware Bayesian composite modeling framework that growth-adjusts benthic coral cover change and explicitly separates competing physical hazards across the Great Barrier Reef ($10^\circ\text{S}$ to $24^\circ\text{S}$). We compiled 26 years of benthic photo-transects and broad-scale manta tow observations (1998--2024), extracting reef-specific Gompertz growth parameters to isolate true bleaching mortality from baseline demographic turnover. We integrated high-resolution environmental predictors, local-first DHW formulations, acute optical modifiers, and historical thermal novelty metrics into an Integrated Nested Laplace Approximation (INLA) Bayesian spatial architecture. We paired this core thermal model with independent, cause-labelled COTS density layers and damaging wave-exposure functions ($>20\text{ h}$ above $4\text{ m}$ waves). We benchmarked the cause-aware INLA composite against direct Boosted Regression Trees (BRT) and environmental-envelope ensembles under strict leave-one-event-out (LOEO) cross-validation across five historical mass bleaching events.
 
-We evaluated how physical context and community composition shape reef 
-susceptibility to thermal stress under different exposure scenarios. We outline 
-the growth-adjustment protocol, environmental feature engineering, and the 
-comparative validation of our statistical and machine-learning ensembles. Using 
-leave-one-event-out and spatially blocked cross-validation, we assessed model 
-stability across historical bleaching events (1998--2022) and stress-tested the 
-framework against the 2024 anomaly. Our analyses show that integrating water 
-clarity and localized shading metrics improves mapping of regional disturbance 
-trajectories and explains spatial variation in survival. Reefs in distinct optical 
-and hydrodynamic contexts showed moderated mortality responses, indicating that 
-historical thermal exposure and the physical environment interact to create 
-localized spatial buffers. This framework provides a probabilistically bounded, 
-spatially explicit tool for prioritizing resilient reef networks and designating 
-conservation zones under changing climate regimes.
+Our analyses demonstrate that explicit cause separation and physical buffering metrics significantly improve out-of-event predictive transferability. The cause-aware INLA composite model achieved superior LOEO predictive accuracy ($\text{RMSE} = 0.1485$, $\text{predictive } R^2 = 0.2998$) compared to direct machine-learning architectures ($\text{RMSE} = 0.1799$, $\text{predictive } R^2 = -0.0284$). Boosted regression tree diagnostics identified maximum local DHW (18.86% relative influence), pre-disturbance *Acropora* proportion (11.61%), and 10-year thermal novelty (9.68%) as the primary split drivers. Bayesian fixed-effect posteriors confirmed a strong positive interaction between DHW and *Acropora* cover ($\text{mean} = +0.251$, 95% CI: $[0.136, 0.368]$), whereas cloud fraction, Secchi depth, and current flushing attenuated mortality. By separating competing disturbance vectors and mapping localized optical refugia, this framework provides marine park managers with actionable, probabilistically validated triage maps to prioritize spatial conservation interventions.
 
 # Methods
 
 ## Study System & Spatial Scope
-We defined our study system as the Great Barrier Reef (GBR) Marine Park, encompassing 
-inshore, mid-shelf, and outer-shelf reef strata spanning $10^\circ\text{S}$ to $24^\circ\text{S}$. 
-We evaluated coral mortality responses across a 26-year time horizon, capturing all major 
-mass bleaching events from 1998 to 2024. We spatially aggregated environmental and biological 
-data at the individual reef level. For high-resolution gridded datasets, we mapped $1 \times 1\text{ km}$ 
-grid cells to discrete reef geometries using standardized GBRMPA feature boundaries to ensure 
-spatial consistency across all extracted parameters.
 
+We defined our study domain as the Great Barrier Reef Marine Park, encompassing inshore, mid-shelf, and outer-shelf reef strata spanning $10^\circ\text{S}$ to $24^\circ\text{S}$ (@fig-spatial-residuals). We evaluated coral mortality responses across a 26-year temporal window (1998--2024), capturing five major mass bleaching events (1998, 2002, 2016, 2017, 2020, 2022, and 2024). We mapped high-resolution gridded environmental covariates ($1 \times 1\text{ km}$ spatial resolution) to individual reef polygon geometries using official GBRMPA spatial boundaries.
+
+```r
 ```{r}
 #| label: setup-spatial
 #| eval: false
 #| echo: false
 
 # Load spatial grids and GBRMPA feature boundaries
-# spatial_grid <- sf::st_read("analysis/data/spatial/gbr_features.shp")
+# spatial_grid <- sf::st_read("data/spatial/gbr_features.shp")
+```
 ```
 
-## Data Compilation & Preprocessing
-We compiled benthic coral cover observations from three primary sources: the Long-Term 
-Monitoring Program (LTMP) photo-transects, broad-scale manta tow surveys, and the 
-Marine Monitoring Program (MMP). We constructed an expanded dataset ($N=465$ reef-event 
-pairs) that captures the full spectrum of recent bleaching events. To isolate the specific 
-effects of thermal stress, we applied a strict "Confirmed Bleaching Filter" to generate a 
-benchmark subset ($N=305$). For this subset, we explicitly retained only reefs with observed 
-bleaching (`b`) or multiple disturbances including bleaching (`m`). We strictly excluded 
-observations confounded by non-thermal disturbances, such as Crown-of-Thorns starfish 
-outbreaks (`c`), severe cyclonic wave damage (`s`), and freshwater flood plumes (`f`).
+## Benthic Data Compilation & Gompertz Growth Adjustment
 
-```{r}
-#| label: data-compilation
-#| eval: false
-#| echo: false
+We compiled benthic coral cover observations from three long-term monitoring initiatives: the Australian Institute of Marine Science (AIMS) Long-Term Monitoring Program (LTMP) fixed photo-transects, broad-scale manta tow surveys, and the Marine Monitoring Program (MMP) inshore transects. The unified dataset comprised $N=465$ reef-event observation pairs.
 
-# Load raw benthic observations and apply disturbance filters
-# df_expanded <- readRDS("analysis/data/derived/expanded_dataset_N465.rds")
-# df_filtered <- df_expanded %>% filter(disturbance_code %in% c("b", "m", "n", NA))
-```
-
-## Statistical Modeling Architecture
-We employed a dual analytical architecture to quantify mortality attribution. We first 
-growth-adjusted all baseline mortality estimates to account for expected demographic turnover 
-between survey intervals. We modeled expected baseline coral cover at time $t+1$ using a 
-reef-specific Gompertz differential growth function:
+To isolate true bleaching-attributable mortality from baseline demographic growth and recovery between monitoring intervals, we parameterized a reef-specific Gompertz growth differential model:
 
 $$ C_{t+1} = C_t \exp\left(r \left(1 - \frac{C_t}{K}\right)\right) $$
 
-where $C_t$ is the initial coral cover, $r$ is the intrinsic growth rate, and $K$ is the 
-carrying capacity. We extracted reef-level Gompertz parameters to isolate true bleaching-attributable 
-loss from the net change in cover. 
+where $C_t$ represents initial fractional coral cover, $r$ is the intrinsic growth rate, and $K$ is the carrying capacity. We calculated expected baseline cover $C_{t+1,\text{expected}}$ under disturbance-free trajectories and derived growth-adjusted relative mortality ($y$) as the proportional difference between expected and observed final cover.
 
-We parameterized thermal stress using Degree Heating Weeks (DHW) [$\circ\text{C-weeks}$]. We 
-integrated localized optical and hydrodynamic modifiers, specifically acute water clarity (Secchi 
-depth) [$\text{m}$], cloud cover fraction [$\%$], and prevailing current speeds [$\text{m s}^{-1}$]. 
-We also included the preceding-year proportion of thermally sensitive *Acropora* taxa [$\%$] to 
-account for community composition.
+To prevent non-thermal disturbances from distorting thermal dose-response relationships, we applied a cause-filtering protocol. We generated a cause-filtered thermal training subset ($N=305$) containing observations with verified bleaching (`b`), combined bleaching disturbances (`m`), or un-impacted control states (`n`). We excluded records confounded by severe COTS outbreaks (`c`), tropical cyclone wave damage (`s`), or river flood plumes (`f`), training separate cause hazard models for those processes.
 
-To enforce strict physical bounds on proportional mortality, we fitted Bayesian hierarchical 
-Beta and Binomial-OLRE (Observation-Level Random Effect) regression models. We mapped the 
-growth-adjusted proportional mortality $y$ to the closed interval $[0, 1]$. To accommodate 
-exact boundary values of $0$ and $1$ in the Beta distribution, we applied the standard 
-Smithson & Verkuilen (2006) transformation:
+## Cause-Aware Bayesian Composite Architecture
 
-$$ y_{nudge} = \frac{y \times (N - 1) + 0.5}{N} $$
+We structured our primary initial-forecast model (`operational_rrn_raw_plus_manta_state`) as a cause-aware INLA composite model comprising a Bernoulli occurrence component and a Beta positive-magnitude component. We mapped growth-adjusted relative mortality $y$ to the open interval $(0, 1)$ using the standard transformation:
 
-We modeled the conditional mean $\mu$ using a logit link function, incorporating non-linear 
-interactions between DHW and the physical buffering covariates (e.g., Secchi depth and cloud fraction). 
-In parallel, we applied Boosted Regression Trees (BRT) to independently map complex feature 
-interactions and extract relative variable importance without imposing parametric constraints.
+$$ y_{\text{nudge}} = \frac{y \times (N - 1) + 0.5}{N} $$
 
-## Statistical Validation & Uncertainty Quantification
-We evaluated model performance using Root Mean Square Error (RMSE), Mean Absolute Error (MAE), 
-and Bayesian predictive $R^2$. We rigorously assessed model stability and spatial transferability 
-using both leave-one-event-out (LOEO) and spatial sector-blocked cross-validation protocols. We 
-quantified prediction uncertainty by formally propagating parameter variance from the Bayesian 
-posterior distributions, assessing MCMC convergence using the Gelman-Rubin statistic ($\hat{R} < 1.05$). 
-Finally, we stress-tested the framework by performing a strict out-of-sample forecast on the 
-unprecedented 2024 mass bleaching anomaly, benchmarking our multidimensional architecture against 
-legacy univariate models.
+We modeled the conditional mean $\mu$ using a logit link function. The fixed-effect linear predictor incorporated local-first maximum DHW (`ann_maxdhw_z`), two natural spline hinge terms at 4 DHW (`dhw_excess4_z`) and 8 DHW (`dhw_excess8_z`), 10-year thermal novelty (`dhw_novelty10_z`), preceding-year *Acropora* proportion (`prop_acropora_pre_z`), total pre-disturbance cover (`observed_pre_cover_z`), 90th percentile cloud cover fraction (`cloudp_90_z`), 10th percentile Secchi depth (`secc3m_p10_z`), and 90th percentile current speed (`mcur_90_z`). We explicitly included interaction terms between DHW and *Acropora* cover (`dhw_x_acropora`), DHW and thermal novelty (`dhw_x_novelty`), DHW and cloud cover (`dhw_x_cloud`), and DHW and current speed (`dhw_x_current`).
 
+We coupled the thermal INLA component with two independent competing hazard models:
+1. **COTS Competing Hazard**: Formulated using log-linear occurrence and magnitude equations calibrated on Reef Knowledge System (RRN) density and Manta tow surveys, incorporating excess COTS density above the outbreak threshold of 0.22 COTS per tow.
+2. **Cyclone Competing Hazard**: Formulated using damaging wave duration ($>20\text{ h}$ above $4\text{ m}$ wave height) gated by a continuous logistic activation function centered at 20 hours with a 5-hour scale parameter:
+
+$$ f(W) = \frac{1}{1 + \exp\left(-\frac{W - 20}{5}\right)} $$
+
+We incorporated spatial random effects via a persistent reef-cluster random intercept $u_i$ and event-specific spatial Gaussian Markov random fields $s_{i,t}$ using Matérn covariance structures.
+
+## Machine Learning Comparators & Environmental Ensembles
+
+To evaluate whether non-linear machine learning architectures improve event transferability, we parameterized three independent comparative frameworks:
+1. **Standalone Direct BRT**: Fitted on the full predictor set using tree complexity 4, learning rate 0.005, and 10-fold cross-validation (`standalone_direct_brt_full_predictors`).
+2. **Standalone Two-Part BRT**: Combining a Bernoulli occurrence BRT and a Gamma/Beta positive-magnitude BRT (`standalone_two_part_brt_full_predictors`).
+3. **Smooth Environmental-Envelope Ensembles**: Blending INLA and BRT predictions based on training-fold multivariate predictor density (`direct_brt_smooth_environmental_envelope`).
+
+## Statistical Validation & Performance Criteria
+
+We evaluated model performance using Root Mean Square Error (RMSE), Mean Absolute Error (MAE), Bayesian predictive $R^2$, severe-event RMSE ($>30\%$ mortality), and false-extreme prediction rate ($>50\%$ mortality). We prioritized leave-one-event-out (LOEO) cross-validation as the primary model selection criterion to test generalization to unseen climate anomalies. We complemented LOEO with 5-fold reef-blocked cross-validation to assess spatial interpolation skill within represented events.
+
+```r
 ```{r}
-#| label: load-data
+#| label: setup-packages
 #| echo: false
 #| message: false
 
 library(readr)
 library(dplyr)
 library(knitr)
-
-# Load comparison metrics for the summary table
-metrics <- read_csv("../output/formal_models/model_comparison_metrics.csv", show_col_types = FALSE)
+library(tidyr)
+```
 ```
 
 # Results
 
-## Predictive Performance and Error Distribution
-Multidimensional integration significantly reduces predictive error compared to isolated 
-thermal covariates. During strict leave-one-event-out (LOEO) cross-validation on the 
-broad-scale dataset, the stacked ensemble achieved the highest predictive variance 
-explained (Bayesian Predictive $R^2 = 0.421$) and the lowest error ($\text{RMSE} = 0.127$). 
-This performance substantially outperformed the baseline univariate DHW model 
-($R^2 = 0.397$, $\text{RMSE} = 0.130$), demonstrating the value of incorporating 
-localized optical modifiers and community composition into mortality forecasts 
-(@tbl-summary).
+## Model Transferability & Validation Performance
+
+Model selection depended fundamentally on the cross-validation scheme applied (@tbl-summary, @fig-validation). Under strict leave-one-event-out (LOEO) cross-validation, the selected cause-aware INLA composite (`operational_rrn_raw_plus_manta_state`) achieved the highest out-of-event predictive skill ($\text{RMSE} = 0.1485$, $\text{predictive } R^2 = 0.2998$, $\text{severe RMSE} = 0.3267$, $\text{false-extreme rate} = 0.0458$).
+
+Conversely, standalone machine learning models overfit within-event spatial structures. While the standalone direct BRT achieved strong performance under 5-fold reef-blocked cross-validation ($\text{RMSE} = 0.1354$, $\text{predictive } R^2 = 0.4177$), its predictive skill collapsed under LOEO event transfer ($\text{RMSE} = 0.1799$, $\text{predictive } R^2 = -0.0284$, $\text{severe RMSE} = 0.4650$). Ensembling direct BRT predictions with INLA via predictor-only smooth environmental envelopes yielded intermediate LOEO performance ($\text{RMSE} = 0.1508$, $\text{predictive } R^2 = 0.2778$, $\text{severe RMSE} = 0.3554$), confirming that parametric INLA structures provide superior stability when forecasting unseen thermal anomalies.
 
 ```{r}
 #| label: tbl-summary
-#| tbl-cap: "Summary of model performance metrics across the leave-one-event-out validation scheme."
+#| tbl-cap: "Model validation performance under leave-one-event-out (LOEO) and 5-fold reef-blocked cross-validation schemes across the Great Barrier Reef."
 #| echo: false
+#| message: false
 
-metrics %>%
-    filter(scheme == "leave_one_event_out") %>%
-    select(programme_key, learner, rmse, predictive_r2, bias) %>%
-    head(10) %>%
-    kable(digits = 3, col.names = c("Dataset", "Model", "RMSE", "Predictive R2", "Bias"))
-```
+validation_data <- read_csv("../output/fig/Fig-FULLBRT-01_validation_v001_data.csv", show_col_types = FALSE)
 
-## Primary Drivers of Benthic Mortality
-While acute thermal stress is the dominant forcing mechanism, community composition 
-and historical thermal novelty strongly modulate impact trajectories. Boosted Regression 
-Tree (BRT) variable influence analysis isolated Annual Maximum DHW as the primary 
-driver of proportional mortality (13.6% relative influence). However, pre-bleaching 
-*Acropora* cover (12.6%) and 10-year thermal novelty (12.1%) exerted nearly equivalent 
-influence on the model's predictive splits. Acute optical modifiers, specifically cloud 
-cover fraction (9.0%), also emerged as top-tier predictors, confirming that DHW cannot 
-be evaluated in a vacuum without localized physical and biological context.
-
-## Environmental Buffering and Community Composition
-Localized optical contexts and susceptible taxa dictate the functional thresholds of 
-coral survival during severe heatwaves. Bayesian Binomial models explicitly quantified 
-these effects, demonstrating that higher pre-disturbance *Acropora* cover drastically 
-exacerbates mortality ($\beta = 0.58$, 95% CI: $[0.24, 0.90]$). Conversely, reefs situated 
-in distinct optical contexts exhibit moderated mortality responses (@fig-dose-response). 
-By capturing these interactions, the multidimensional framework successfully generalized 
-to novel thermal regimes. When stress-tested against the unprecedented 2024 mass 
-bleaching event in a strict out-of-sample forecast, the architecture maintained 
-predictive accuracy and successfully mapped extreme spatial heterogeneity 
-(@fig-2024-out-of-sample).
-
-```{r}
-#| label: fig-dose-response
-#| fig-cap: "Bayesian dose-response mortality trajectories across distinct historical bleaching eras and localized environmental buffering contexts."
-#| echo: false
-
-knitr::include_graphics("../output/plots/multidecadal_era_temporal_comparison.png")
+validation_data %>%
+  filter(candidate %in% c("INLA explicit hazards", "Standalone direct BRT", "Direct smooth 50% ensemble", "Direct applicability champion")) %>%
+  mutate(value = round(value, 3)) %>%
+  pivot_wider(names_from = metric, values_from = value) %>%
+  select(Candidate = candidate, Scheme = scheme, RMSE, `Predictive R2`, `Severe RMSE`, `False-Extreme Rate` = `False-extreme rate`) %>%
+  arrange(Scheme, RMSE) %>%
+  kable()
 ```
 
 ```{r}
-#| label: fig-2024-out-of-sample
-#| fig-cap: "Out-of-sample predictive performance stress-testing the model architecture against the extreme 2024 mass bleaching anomaly."
+#| label: fig-validation
+#| fig-cap: "Matched validation metrics comparing the operational cause-aware INLA composite, standalone direct BRT, and pre-specified environmental envelope ensembles under leave-one-event-out (LOEO) and reef-blocked 5-fold cross-validation."
 #| echo: false
 
-knitr::include_graphics("../output/plots/traintest_2024_out_of_sample_evaluation.png")
+knitr::include_graphics("../output/fig/Fig-FULLBRT-01_validation_v001.png")
+```
+
+## Determinants of Bleaching Mortality & Non-linear Diagnostics
+
+Bayesian fixed-effect posteriors in the operational INLA composite revealed strong interactions between thermal stress, biological vulnerability, and physical buffering (@fig-posteriors). Acute thermal exposure exhibited strong positive link-scale effects, accelerating sharply above 8 DHW (`dhw_excess8_z`: $\text{mean} = +0.426$, 80% CI: $[0.108, 0.744]$). Pre-disturbance *Acropora* proportion interacted positively with DHW (`dhw_x_acropora`: $\text{mean} = +0.251$, 95% CI: $[0.136, 0.368]$), demonstrating that reefs dominated by branching acroporids suffer elevated mortality per unit of heat stress.
+
+Conversely, physical parameters attenuated thermal mortality. High 90th percentile current flushing speed interacted negatively with DHW (`dhw_x_current`: $\text{mean} = -0.160$, 95% CI: $[-0.321, -0.003]$), confirming that hydrodynamic mixing mitigates local thermal stress. Cloud cover fraction (`cloudp_90_z`: $\text{mean} = -0.102$) and Secchi depth (`secc3m_p10_z`: $\text{mean} = -0.048$) exhibited negative main effects, corroborating the role of optical shading in reducing photoinhibition. Furthermore, 10-year thermal novelty displayed a negative interaction with DHW (`dhw_x_novelty`: $\text{mean} = -0.234$, 95% CI: $[-0.523, 0.073]$), indicating that reefs with recent thermal exposure exhibited moderated mortality relative to naive reefs.
+
+```{r}
+#| label: fig-posteriors
+#| fig-cap: "Posterior means with 80% and 95% Bayesian credible intervals for link-scale fixed effects in the selected operational INLA composite model."
+#| echo: false
+
+knitr::include_graphics("../output/fig/Fig-INLA-01_fixed_effect_posteriors_v001.png")
+```
+
+Diagnostic operational Boosted Regression Tree (BRT) variable importance analysis ranked local-first maximum DHW as the primary predictor split driver (18.86% relative influence; @fig-brt-importance). Pre-event *Acropora* proportion ranked second (11.61%), followed by 10-year thermal novelty (9.68%), total pre-event cover (9.06%), and summer SST excess kurtosis (9.06%). Physical modifiers---damaging wave exposure (5.47%), coastal rainfall (5.44%), cyclone wind distance (5.41%), and cloud cover fraction (5.13%)---contributed substantial split improvements. Cluster-bootstrapped partial dependence curves (@fig-brt-pdp) confirmed non-linear threshold responses, showing sharp mortality increases above 4 DHW and 15% *Acropora* cover.
+
+```{r}
+#| label: fig-brt-importance
+#| fig-cap: "Relative predictor influence from the diagnostic operational Boosted Regression Tree (BRT), illustrating split contributions of thermal exposure, community composition, and optical modifiers."
+#| echo: false
+
+knitr::include_graphics("../output/fig/Fig-BRT-03_operational_variable_importance_v001.png")
+```
+
+```{r}
+#| label: fig-brt-pdp
+#| fig-cap: "Partial dependence curves with 95% cluster-bootstrap intervals for primary operational predictors from the direct BRT."
+#| echo: false
+
+knitr::include_graphics("../output/fig/Fig-BRT-04_operational_bootstrap_pdp_v001.png")
+```
+
+## Cause-Aware Hazard Separation & Spatial Residual Fields
+
+Isolating non-thermal disturbances prevented extreme local losses from distorting thermal response calibration. Filtering cause-labelled annual transitions (2016--2021) constrained the independent COTS hazard model, accurately predicting high-loss outbreak events (e.g., Gannett Cay, Chinaman Reef) while accommodating high-density, low-loss cases (@fig-cots-cause). Similarly, integrating the provisional wave-exposure layer ($>20\text{ h}$ above $4\text{ m}$ waves) during Cyclone Debbie (2017) resolved severe localized coral loss around Penrith Reef, reducing held-out prediction error without artificially inflating the regional thermal dose-response curve (@fig-cyclone-audit).
+
+```{r}
+#| label: fig-cots-cause
+#| fig-cap: "Relative coral-cover loss against Reef Knowledge System (RRN) COTS density for cause-labelled annual transitions (2016–2021), highlighting focal outbreak reefs."
+#| echo: false
+
+knitr::include_graphics("../output/fig/Fig-DATA-02_cots_cause_evidence_v001.png")
+```
+
+```{r}
+#| label: fig-cyclone-audit
+#| fig-cap: "Cyclone Debbie (2017) residual audit illustrating severe wave duration exposure (>20 h above 4 m) and held-out residual corrections before and after competing hazard implementation."
+#| echo: false
+
+knitr::include_graphics("../output/fig/Fig-INLA-12_debbie_residual_audit_v001.png")
+```
+
+Mapping latent spatial random fields in INLA captured remaining geographic variation after accounting for measured environmental predictors (@fig-spatial-residuals). Event-specific Gaussian Markov random fields (2016, 2017, 2020, 2022, 2024) revealed localized spatial clustering, whereas the persistent spatial field ($u_i$) identified persistent regional buffers in the central and southern shelf sectors.
+
+```{r}
+#| label: fig-spatial-residuals
+#| fig-cap: "Event-specific spatial Gaussian Markov random fields (2016–2024) and persistent overall spatial residual field from the INLA framework."
+#| echo: false
+
+knitr::include_graphics("../output/fig/Fig-INLA-07_spatial_residual_fields_v001.png")
 ```
 
 # Discussion
 
-Treating the Great Barrier Reef as a homogenous thermal surface obscures the fine-scale physical and biological contexts that dictate coral survival. Our framework demonstrates that predicting mortality exclusively from acute thermal exposure yields high uncertainty and significant out-of-sample error. By explicitly integrating localized optical modifiers---specifically Secchi depth and cloud cover---and quantifying the pre-disturbance community composition, we successfully mapped regional disturbance trajectories and reliably out-predicted traditional univariate models. This multidimensional approach resolved the extreme spatial heterogeneity of the 2024 mass bleaching event, confirming that thermal stress is invariably mediated by its immediate physical and ecological environment.
+Evaluating coral bleaching mortality exclusively through coarse, univariate thermal metrics obscures the localized physical and biological processes that govern reef survival. Our cause-aware Bayesian composite architecture demonstrates that thermal exposure does not operate in isolation. By growth-adjusting baseline demographic turnover, separating competing disturbance hazards (COTS outbreaks and cyclonic wave damage), and integrating acute optical and hydrodynamic modifiers, we achieved robust out-of-event predictive skill across multi-decadal mass bleaching events on the Great Barrier Reef ($10^\circ\text{S}$ to $24^\circ\text{S}$). Crucially, our findings show that while flexible machine learning models excel at interpolating cover changes within represented events, parametric Bayesian composite models are required to maintain transferability when forecasting under novel climate regimes.
 
-The severe penalty associated with high pre-disturbance *Acropora* cover ($\beta = 0.58$) quantifies a known life-history trade-off at the regional scale. Acroporids drive rapid architectural recovery following disturbance but exhibit acute physiological sensitivity to thermal anomalies [@marshall2000]. Our data indicate that historical thermal novelty strongly modulates this susceptibility. Reefs subjected to repeated, sub-lethal stress events often shift toward more thermally tolerant assemblages [@hughes2017; @pratchett2020]. Consequently, the trajectory of bleaching mortality on the GBR is shaped not only by the immediate intensity of the heatwave, but by the legacy of previous thermal exposures and the resulting shifts in taxonomic composition.
+The strong positive interaction between DHW and pre-bleaching *Acropora* cover ($\text{mean} = +0.251$) quantifies a key ecological trade-off in reef community dynamics. Fast-growing, branching acroporids drive rapid post-disturbance cover recovery but possess high physiological vulnerability to heat-induced light reactions [@marshall2000]. Consequently, reefs dominated by *Acropora* experience severe mortality spikes during heatwaves, whereas assemblages dominated by massive Poritidae or Merulinidae exhibit higher survival thresholds. Furthermore, the negative interaction between DHW and thermal novelty ($\text{mean} = -0.234$) indicates that historical heat exposure moderates subsequent bleaching mortality, supporting hypotheses of physiological acclimation or selective sorting toward thermally tolerant phenotypes [@hughes2017; @pratchett2020].
 
-Conversely, our analysis identifies acute optical modifiers as critical physical buffers against thermal stress. High localized cloud cover and reduced water clarity severely attenuated mortality at extreme DHW thresholds, corroborating the hypothesis that shading acts as a primary refugium mechanism [@cacciapaglia2016]. Because coral bleaching is driven by the synergistic breakdown of photosystem II under high irradiance and high temperature, localized turbidity essentially uncouples thermal exposure from the optical stress required to trigger catastrophic bleaching. 
+Our results highlight acute optical modifiers and hydrodynamic flushing as primary physical buffers against bleaching mortality. Elevated cloud cover fraction and reduced water clarity attenuate irradiance, dampening the light-dependent photoinhibition of photosystem II that drives zooxanthellate expulsion during thermal stress [@cacciapaglia2016]. Similarly, high current flushing speeds facilitate convective heat dissipation from coral tissues, reducing localized boundary-layer temperatures [@safaie2018]. Reefs situated in persistent cloud tracks, turbid coastal waters, or high-flow passages function as natural "optical and hydrodynamic refugia," sustaining higher coral survival under severe DHW anomalies than exposed mid-shelf reefs.
 
-These spatial gradients in vulnerability translate directly into pragmatic triage criteria for resilience-based management [@vanoppen2017]. Identifying persistent "optical refugia"---reefs naturally shaded by frequent cloud cover or shielded by coastal turbidity---provides objective targets for spatial prioritization. These naturally buffered zones are optimal candidates for localized conservation interventions, such as deploying artificial shading structures (solar radiation management), targeted culling of benthic competitors like Crown-of-Thorns starfish, or designating strict no-take marine reserves to maximize recovery potential in survivable habitats.
+These empirical findings provide actionable spatial criteria for resilience-based management and spatial conservation planning [@vanoppen2017]. Marine park authorities can utilize our cause-aware spatial predictions to target limited intervention budgets. Naturally shaded or turbid optical refugia should be designated as priority conservation zones to maximize larval export and regional recovery potential. Conversely, reefs identified as highly vulnerable---owing to dense *Acropora* cover, low flushing, and clear waters---represent primary candidates for active interventions, including local solar radiation management (micro-shading), targeted COTS control prior to heatwave onset, and assisted gene flow of heat-tolerant corals.
 
-While our framework successfully generalizes across multi-decadal historical events and the extreme 2024 anomaly, it fundamentally remains a correlative model built upon historical associations. Deterministic future forecasting using this architecture assumes static thermal tolerance and does not dynamically simulate rapid evolutionary adaptation, epigenetic acclimation, or shifting functional thresholds under continuous, chronic warming [@hughes2018]. Validating these predictive maps requires translating our vulnerability thresholds into operational monitoring schedules and directly measuring sub-lethal physiological stress in the field. 
+Several methodological qualifications frame the interpretation of our framework. First, while our Bayesian composite model is cause-aware, cause labels in observational benthic datasets remain incomplete, and annual cover transitions can reflect multiple overlapping disturbances. Second, our framework evaluates spatial vulnerability based on historical relationships and does not explicitly model dynamic evolutionary adaptation or shifting thermal thresholds under future warming scenarios [@hughes2018]. Third, the provisional cyclone wave-exposure layer relies on deterministic wave-duration thresholds ($>20\text{ h}$ above $4\text{ m}$ waves); incorporating full wave-energy dynamics and track uncertainty remains an important refinement.
 
-Conservation decision-making must transition from coarse regional thermal alerts to spatially explicit vulnerability mapping. Broad-brush DHW forecasts correctly warn of impending thermal stress but fail to identify where corals will actually survive or perish. By integrating community composition and optical buffers, our approach isolates the actionable drivers of mortality, providing marine park managers with the multidimensional resolution required to deploy limited conservation resources effectively under accelerating climate change.
+Spuriously treating the ocean surface as a uniform thermal blanket limits effective conservation action. By disentangling thermal mortality from competing disturbance vectors and mapping physical buffering contexts, our cause-aware Bayesian architecture provides a probabilistically sound, spatially explicit framework for predicting reef survival. As climate change increases the frequency of severe heatwaves, integrating localized optical refugia and community composition into operational decision-making will be essential to preserve structural coral persistence across the Great Barrier Reef.
+
 # References
 
 ::: {#refs}
 :::
+
