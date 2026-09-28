@@ -7,19 +7,19 @@ experiments:
     track: investigation
     status: diagnostic
     question: Where is selected-model residual error concentrated, and which mechanism-first improvements remain defensible?
-    finding: Error is concentrated in 2024 and labelled cyclone/multi-disturbance rows. Northern and Southern 2024 underprediction is broad; Central error is mixed and reef-specific. Prioritise direct event-timed freshwater exposure and uncertainty-aware local cyclone damage, not more proxy terms or residual learners.
+    finding: Error is concentrated in 2024 and labelled cyclone/multi-disturbance rows. Local-first logger-adjusted DHW is already selected and helped 2024, but residuals do not support flat-only or slope reweighting as a major fix. Prioritise event-timed freshwater, local cyclone damage and observation reconciliation.
     report: analysis/investigations/remaining_residual_gap_audit.qmd
     evidence: [output/selected_model_residual_gap_audit/event_summary.csv, output/selected_model_residual_gap_audit/event_region_summary.csv, output/selected_model_residual_gap_audit/cause_summary.csv, output/selected_model_residual_gap_audit/priority_reef_events.csv, output/selected_model_residual_gap_audit/error_decomposition.csv]
     updated: '2026-09-15'
 
   - id: imos_thermal_metrics
-    title: IMOS nighttime thermal-metric assessment
+    title: IMOS nighttime and percentile thermal-metric assessment
     track: investigation
     status: not_promoted
-    question: Do IMOS DHW, duration/intensity, cooling, or NOAA IDF rarity metrics improve mortality prediction?
-    finding: Standard MHW duration/intensity improved some event-held-out tests but not consistently across spatial and complete-case validation. A NOAA empirical IDF block improved reef-blocked LTMP/MMP but worsened event transfer; satellite cooling failed mortality and logger tests. Retain NOAA DHW; no new metric is promoted.
+    question: Do IMOS DHW, percentile dose, duration/intensity, cooling, or NOAA IDF rarity metrics improve mortality prediction?
+    finding: IMOS percentile dose, marine-heatwave and NOAA rarity candidates produced inconsistent event, spatial and complete-case results; percentile replacement worsened every pooled comparison. Satellite cooling also failed mortality and logger checks. Retain local-first NOAA DHW; no new thermal metric is promoted.
     report: analysis/investigations/imos_thermal_metric_assessment.qmd
-    evidence: [output/imos_thermal_screen/source_comparison.csv, output/imos_thermal_screen/blocked_metrics.csv, output/imos_thermal_screen/complete_case_metrics.csv, output/imos_thermal_screen/coverage_audit.csv, output/imos_thermal_screen/logger_cooling_validation.csv, data/processed/noaa_idf_metrics_validation.manifest.json]
+    evidence: [data/processed/imos_thermal_metrics_validation.manifest.json, output/imos_thermal_screen/source_comparison.csv, output/imos_thermal_screen/blocked_metrics.csv, output/imos_thermal_screen/complete_case_metrics.csv, output/imos_thermal_screen/coverage_audit.csv, output/imos_thermal_screen/logger_cooling_validation.csv, data/processed/noaa_idf_metrics_validation.manifest.json]
     updated: '2026-09-15'
 
   - id: best_fit_model
@@ -361,3 +361,12 @@ experiments:
     report: analysis/investigations/zero_mortality_and_modifier_curves.qmd
     evidence: [output/zero_mortality_sensitivity/overall_metrics.csv]
     updated: '2026-09-07'
+  - id: surface_salinity_mortality
+    title: Surface salinity and freshwater mortality assessment
+    track: investigation
+    status: not_promoted
+    question: Do minimum SSS and hours below 30 or 26 PSU improve mortality prediction across events and depths?
+    finding: Reef-only 2011-24 layers correct prior feature mixing. Hours below 30 and 26 PSU modestly improve five-event held-out BRT RMSE; 2011 annual loss supports a duration/depth signal, but extreme support is sparse and windows undocumented. Advance duration-only formal candidates; do not promote.
+    report: analysis/investigations/surface_salinity_mortality_assessment.qmd
+    evidence: [data/processed/ereefs_surface_salinity_reef_event_manifest.csv, output/surface_salinity_mortality/salinity_source_contract.csv, output/surface_salinity_mortality/salinity_grid_reconstruction_audit.csv, output/surface_salinity_mortality/expanded_salinity_brt_metrics.csv, output/surface_salinity_mortality/expanded_salinity_brt_deltas.csv, output/surface_salinity_mortality/expanded_salinity_brt_event_metrics.csv, output/surface_salinity_mortality/expanded_salinity_inla_fit_comparison.csv, output/surface_salinity_mortality/expanded_salinity_inla_threshold_summary.csv]
+    updated: '2026-09-28'

@@ -7,3 +7,4 @@ project:
     - analysis/investigations/bleaching_only_dhw_binomial_assessment.qmd
     - analysis/investigations/imos_thermal_metric_assessment.qmd
     - analysis/investigations/remaining_residual_gap_audit.qmd
+    - analysis/investigations/surface_salinity_mortality_assessment.qmd

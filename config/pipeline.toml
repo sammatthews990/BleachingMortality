@@ -7,6 +7,7 @@ current = ['environment-check', 'outcomes', 'validation', 'pressure-context', 's
 formal-comparators = ['environment-check', 'outcomes', 'validation', 'formal-models', 'formal-evaluation', 'experiment-ledger']
 dhw-diagnostic = ['bleaching-only-dhw-diagnostic', 'experiment-ledger']
 imos-thermal-screen = ['imos-thermal-acquisition', 'imos-thermal-screening', 'experiment-ledger']
+surface-salinity-screen = ['surface-salinity-extraction', 'surface-salinity-screening', 'experiment-ledger']
 model-gap-audit = ['residual-gap-audit', 'experiment-ledger']
 
 [[stages]]
@@ -101,7 +102,7 @@ commands = ['Rscript src/evaluation/test_bleaching_only_dhw_binomial.R']
 
 [[stages]]
 name = 'imos-thermal-acquisition'
-description = 'Extract SSTAARS-matched IMOS DHW, Hobday MHW and paired day/night metrics at validation reefs and hourly logger sites.'
+description = 'Extract SSTAARS-matched IMOS DHW, percentile heat dose, Hobday MHW and paired day/night metrics at validation reefs and hourly logger sites.'
 inputs = [
   'data/processed/validation_rows_ltmp.rds',
   'data/processed/validation_rows_manta.rds',
@@ -118,7 +119,7 @@ commands = [
 
 [[stages]]
 name = 'imos-thermal-screening'
-description = 'Screen IMOS DHW, duration, intensity and cooling plus NOAA empirical IDF candidates; validate satellite cooling against hourly loggers.'
+description = 'Screen IMOS DHW, percentile dose, duration, intensity and cooling plus NOAA empirical IDF candidates; validate satellite cooling against hourly loggers.'
 inputs = [
   'data/processed/imos_thermal_metrics_validation.csv',
   'data/processed/noaa_idf_metrics_validation.csv',
@@ -131,6 +132,33 @@ inputs = [
 commands = [
   'Rscript src/evaluation/screen_imos_thermal_metrics.R',
   'Rscript src/evaluation/validate_imos_night_cooling.R'
+]
+
+[[stages]]
+name = 'surface-salinity-extraction'
+description = 'Audit the 2010-11 to 2023-24 reef-only and GBR4 salinity layers, valid-cell coverage, minimum SSS and hours below 30 and 26 PSU.'
+inputs = [
+  'data/SalinityData/reefs',
+  'data/SalinityData/gbr4'
+]
+commands = [
+  'Rscript src/data/audit_expanded_surface_salinity.R',
+  'Rscript src/data/build_reef_surface_salinity_metrics.R'
+]
+
+[[stages]]
+name = 'surface-salinity-screening'
+description = 'Run expanded event-held-out BRT screens, a separate 2011-24 annual-loss sensitivity, and matched explanatory INLA curves and contrasts.'
+inputs = [
+  'data/processed/ereefs_surface_salinity_reef_event.csv',
+  'data/processed/ereefs_surface_salinity_reef_grid_coverage.csv',
+  'data/processed/annual_coral_transitions.csv',
+  'output/explanatory_event_dhw/event_dhw_brt_data.csv'
+]
+commands = [
+  'Rscript src/evaluation/screen_expanded_surface_salinity.R',
+  'Rscript src/evaluation/fit_expanded_surface_salinity_inla.R',
+  'Rscript src/evaluation/summarise_expanded_salinity_thresholds.R'
 ]
 
 [[stages]]

@@ -1,5 +1,5 @@
 ---
-title: "Thermal duration, intensity, rarity and cooling assessment"
+title: "Thermal percentile, duration, intensity, rarity and cooling assessment"
 date: 2026-09-15
 format:
   html:
@@ -15,12 +15,28 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(ggplot2)
   library(readr)
+  library(tidyr)
 })
 root <- normalizePath('../..', winslash = '/', mustWork = TRUE)
 out <- file.path(root, 'output', 'imos_thermal_screen')
 coverage <- read_csv(file.path(out, 'coverage_audit.csv'), show_col_types = FALSE)
 metrics <- read_csv(file.path(out, 'blocked_metrics.csv'), show_col_types = FALSE)
 source <- read_csv(file.path(out, 'source_comparison.csv'), show_col_types = FALSE)
+complete_metrics <- read_csv(
+  file.path(out, 'complete_case_metrics.csv'), show_col_types = FALSE
+)
+correlations <- read_csv(
+  file.path(out, 'correlations.csv'), show_col_types = FALSE
+)
+pbd_metrics <- metrics |>
+  filter(candidate %in% c(
+    'noaa_dhw', 'imos_pbd12', 'noaa_plus_pbd12'
+  ))
+pbd_complete <- complete_metrics |>
+  filter(comparison_set == 'pbd')
+pbd_noaa_rho <- correlations |>
+  filter(feature_1 == 'ann_maxdhw', feature_2 == 'imos_pbd12_c_weeks') |>
+  pull(spearman_rho)
 logger_validation <- read_csv(
   file.path(out, 'logger_cooling_validation.csv'), show_col_types = FALSE
 )
@@ -28,14 +44,21 @@ logger_validation <- read_csv(
 
 ## Decision
 
-Do **not** replace local-first NOAA DHW or promote the MHW, cooling, or IDF
-blocks from this screen.
+Do **not** replace local-first NOAA DHW or promote the percentile heat-dose,
+MHW, cooling, or IDF blocks from this screen.
 
 Coverage-normalised IMOS/SSTAARS DHW produced small leave-one-event-out RMSE
 improvements for LTMP and manta tow, but worsened reef-blocked performance and
 both MMP comparisons. The observed-days-only sensitivity did not change that
 cross-programme conclusion. Duration, three-day peak and persistent-hot-night
 terms did not improve LTMP or manta transfer.
+
+The Li Shing Hiung et al. percentile-based dose is scientifically distinct
+from the standard MHW block, but it does not improve mortality transfer. As a
+replacement it worsens every pooled programme/design comparison. Adding it to
+NOAA gives small full-row event-held-out gains for LTMP and MMP, but worsens
+manta and every reef-blocked result; the LTMP gain reverses on matched observed
+rows and matched MMP event folds are underpowered.
 
 The standard MHW duration/intensity block is the most promising new construct.
 It modestly improves LTMP in both full-row schemes and improves manta and MMP
@@ -80,6 +103,13 @@ SSTAARS mid-month percentiles, and categories use the official median/90th-
 percentile formula. The primary block contains maximum duration and maximum
 intensity.
 
+The percentile-based dose has no five-day event rule. For every night-SST day
+above the interpolated SSTAARS 90th percentile, it accumulates the full positive
+anomaly above the SSTAARS daily climatological mean. The primary 12-week window
+is centred on the local November--April climatological peak and is
+coverage-normalised only above 70% completeness. Ten- and 11-week fields are
+retained for prespecified sensitivity, not selected from mortality outcomes.
+
 Cooling pairs observed daytime skin SST on local date D with observed
 nighttime skin SST on D+1. A site-event needs at least five hot-day pairs and
 50% pair coverage. No interpolation or 14-day mosaic enters this contrast.
@@ -90,13 +120,15 @@ nighttime skin SST on D+1. A site-event needs at least five hot-day pairs and
 coverage |>
   mutate(
     dhw_fraction = finite_imos_dhw / reef_events,
-    structure_fraction = finite_structure / reef_events
+    structure_fraction = finite_structure / reef_events,
+    pbd_fraction = finite_pbd / reef_events
   ) |>
   select(
     Event = year, `Reef-events` = reef_events, `Finite DHW` = finite_imos_dhw,
     `DHW fraction` = dhw_fraction, `Finite structure` = finite_structure,
     `Structure fraction` = structure_fraction,
-    `Finite MHW` = finite_mhw, `Finite cooling` = finite_cooling,
+    `Finite MHW` = finite_mhw, `Finite PBD12` = finite_pbd,
+    `PBD12 fraction` = pbd_fraction, `Finite cooling` = finite_cooling,
     `Finite NOAA IDF` = finite_idf_frequency,
     `Median hot-pair coverage` = median_hot_pair_coverage,
     `Median event coverage` = median_event_coverage
@@ -107,7 +139,9 @@ coverage |>
 IMOS DHW is available for 283 of 304 reef-events. SSTAARS has no finite water
 pixel within 5 km for the other cases, mainly repeated far-northern reefs. Only
 211 reef-events meet the MHW/structure coverage rule, including 55 of 103 in
-2024. The observed-pair cooling contrast is available for 260 reef-events. The
+2024. The stricter peak-centred PBD12 window is finite for 162 reef-events,
+including 50 in 2024. The observed-pair cooling contrast is available for 260
+reef-events. The
 DHW source test is usable, but duration results remain conservative pending a
 higher-coverage GeoPolar/AusTemp assessment.
 
@@ -135,6 +169,99 @@ reduces LTMP leave-one-event-out Brier score by about 0.05. That does not become
 a stable mortality-scale gain. Manta event-held-out RMSE changes by less than
 0.001, while MMP and reef-blocked comparisons favour NOAA.
 
+## Percentile-gated heat dose
+
+[Li Shing Hiung, Holbrook and Kajtar (2026)](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2025GL119516)
+replace the fixed MMM + 1 degree C gate with a local percentile threshold. At
+their standard alpha of one, the gate is the daily 90th percentile; every day
+above it contributes the *full* anomaly above the daily climatological mean.
+They remove the Hobday five-day duration requirement and find 10--12-week
+summer windows generally optimal.
+
+This is distinct from both thermal constructs already screened here. NOAA DHW
+uses a fixed MMM + 1 gate and an 84-day rolling maximum; the Hobday block
+requires a five-day event and then summarises its duration and intensity. PBD12
+instead integrates locally unusual hot days whether consecutive or isolated,
+so it can distinguish reefs with different background temperature variance.
+It is still a cumulative dose, not an intensity-frequency-duration return
+period.
+
+The published result is promising for bleaching detection, but its reported
+skill gain is not directly portable. The response is binary bleaching presence
+or severe bleaching, the SST is 0.25-degree OISST, and evaluation uses random
+80/20 splits that mix events and locations. This project predicts post-event
+mortality magnitude at 0.02 degrees and withholds whole events. The paper also
+reports convergence between definitions for extreme bleaching and long
+impact windows, precisely where much of this mortality dataset lies.
+
+Our implementation is therefore an **SSTAARS/IMOS analogue**, not a numerical
+replication: SSTAARS supplies both the daily night-SST climatology and
+periodically interpolated 90th percentile; no NOAA climatology is mixed in.
+The 12-week peak-centred window was fixed before looking at mortality. Ten- and
+11-week outputs are retained only as sensitivities; their rank correlations
+with PBD12 are 0.98--0.99. PBD12 itself correlates
+`r round(pbd_noaa_rho, 2)` with local-first NOAA DHW, leaving some distinct
+information but substantial redundancy.
+
+The full-row screen median-imputes missing PBD within each analysis fold.
+Negative RMSE changes favour PBD.
+
+```{r pbd-full-screen}
+pbd_metrics |>
+  select(programme_key, scheme, candidate, rmse) |>
+  pivot_wider(names_from = candidate, values_from = rmse) |>
+  mutate(
+    replacement_change = imos_pbd12 - noaa_dhw,
+    incremental_change = noaa_plus_pbd12 - noaa_dhw
+  ) |>
+  transmute(
+    Programme = toupper(programme_key), Validation = scheme,
+    `NOAA RMSE` = noaa_dhw, `PBD12 RMSE` = imos_pbd12,
+    `PBD12 - NOAA` = replacement_change,
+    `NOAA + PBD12 RMSE` = noaa_plus_pbd12,
+    `Addition - NOAA` = incremental_change
+  ) |>
+  knitr::kable(digits = 4, caption = 'Full-row percentile heat-dose screen')
+```
+
+PBD12 replacement is worse in all six programme/design comparisons. Adding it
+improves event-held-out RMSE slightly for LTMP (-0.0017) and MMP (-0.0042), but
+worsens manta (+0.0062) and all three reef-blocked comparisons. The apparent
+MMP 2024 gain is accompanied by a manta 2024 loss, so it does not explain the
+2024 cross-programme residual pattern consistently.
+
+Only 162 of 304 reef-events pass the peak-window coverage rule. The matched
+complete-case screen is consequently decisive for separating observed signal
+from fold-wise imputation.
+
+```{r pbd-complete-screen}
+pbd_complete |>
+  filter(candidate %in% c('noaa_dhw', 'imos_pbd12', 'noaa_plus_pbd12')) |>
+  select(programme_key, scheme, candidate, rows, rmse) |>
+  pivot_wider(names_from = candidate, values_from = rmse) |>
+  mutate(
+    replacement_change = imos_pbd12 - noaa_dhw,
+    incremental_change = noaa_plus_pbd12 - noaa_dhw
+  ) |>
+  transmute(
+    Programme = toupper(programme_key), Validation = scheme, Rows = rows,
+    `PBD12 - NOAA RMSE` = replacement_change,
+    `Addition - NOAA RMSE` = incremental_change
+  ) |>
+  knitr::kable(digits = 4, caption = 'Matched observed-row percentile sensitivity')
+```
+
+On matched rows, replacement remains worse for LTMP and MMP reef-blocking; the
+manta event fold improves by 0.0024 but its reef-blocked result is essentially
+neutral. The LTMP event-held-out addition reverses from a small gain to a 0.0057
+RMSE loss. Manta's event-held-out addition reverses its full-row loss to a
+0.0030 gain but is neutral under reef blocking. MMP event-held-out fitting is
+unsupported because one training fold has fewer than eight positive
+observations or only one occurrence class, and its reef-blocked addition
+worsens by 0.0023. These results fail the project's
+cross-programme and cross-design promotion rule. PBD12 should remain a
+well-defined research field, not enter the selected model or formal INLA stage.
+
 ## Candidate blocks
 
 ```{r}
@@ -144,6 +271,8 @@ metrics |>
     candidate = recode(candidate,
       noaa_dhw = 'NOAA', imos_dhw = 'IMOS scaled',
       imos_dhw_observed = 'IMOS observed',
+      imos_pbd12 = 'IMOS PBD12',
+      noaa_plus_pbd12 = 'NOAA + PBD12',
       noaa_plus_structure = 'NOAA + structure',
       imos_plus_structure = 'IMOS + structure',
       noaa_plus_mhw = 'NOAA + MHW', imos_plus_mhw = 'IMOS + MHW',
@@ -219,13 +348,17 @@ event interpolation but does not transfer reliably to a new thermal regime.
 In the combined full-data mechanism pool, NOAA DHW ranks above IMOS DHW for
 direct mortality and positive magnitude in every programme. IMOS DHW ranks
 above NOAA for LTMP occurrence, consistent with its Brier-score improvement.
-Some MHW, acute-tail and hot-night terms receive nontrivial apparent
-importance. MHW duration/intensity merit a small formal assessment only after
+The PBD12 field ranks second to fifth in several apparent full-data BRT
+components, illustrating why apparent importance is not promotion evidence:
+its held-out gains are not stable. Some MHW, acute-tail and hot-night terms
+also receive nontrivial apparent importance. MHW duration/intensity merit a
+small formal assessment only after
 higher-coverage extraction. The present cooling contrast should not advance;
 NOAA IDF should remain a within-event BRT sensitivity.
 
-Retain local-first NOAA DHW. Before another formal model candidate, evaluate
-official GeoPolar/AusTemp daily SST against this reconstruction. Broader
+Retain local-first NOAA DHW. Do not advance PBD12 to formal INLA assessment on
+these results. Before another formal thermal candidate, evaluate official
+GeoPolar/AusTemp daily SST against this reconstruction. Broader
 subdaily logger coverage or a different remotely sensed cooling construct is
 required before revisiting night cooling as a reef-wide predictor.
 

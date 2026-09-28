@@ -42,7 +42,7 @@ The operational terms include:
 - cyclone wave/proximity exposure and prospective COTS pressure;
 - prespecified interactions between thermal stress and ecological/environmental modifiers.
 
-eReefs salinity is used for years with coverage and for proxy calibration. It is not substituted for missing 2024 measurements. IMOS Kd490/Secchi and chlorophyll are preferred to eReefs optical outputs because the satellite products are the more direct observations. ENSO indices remain an event-state sensitivity and are not selected operational predictors.
+Reef-only eReefs GBR4 surface salinity is available for 2010-11 through 2023-24 as minimum SSS and area-mean hours below 30 and 26 PSU. It remains an unselected investigation predictor: the two-dimensional surface exposure is joined to every survey depth, reefs below 50% valid-cell area are excluded, and duration metrics require documented accumulation dates. The cell product is used for QA and unmatched sites, not as a vertical salinity layer. IMOS Kd490/Secchi and chlorophyll are preferred to eReefs optical outputs because the satellite products are the more direct observations. ENSO indices remain an event-state sensitivity and are not selected operational predictors.
 
 ## Selected statistical structure
 

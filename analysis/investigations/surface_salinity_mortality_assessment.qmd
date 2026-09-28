@@ -1,0 +1,489 @@
+---
+title: 'Expanded surface-salinity and freshwater mortality assessment'
+subtitle: 'Source audit plus 2011–2024 BRT and INLA screens of minimum SSS and hours below 30 and 26 PSU'
+date: 2026-09-28
+format:
+  html:
+    toc: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(knitr)
+  library(readr)
+  library(scales)
+  library(tidyr)
+})
+
+theme_set(theme_minimal(base_size = 12))
+root <- if (file.exists('config/model_registry.yml')) '.' else '../..'
+out <- file.path(root, 'output', 'surface_salinity_mortality')
+processed <- file.path(root, 'data', 'processed')
+
+source_audit <- read_csv(
+  file.path(out, 'salinity_source_audit.csv'), show_col_types = FALSE
+)
+source_contract <- read_csv(
+  file.path(out, 'salinity_source_contract.csv'), show_col_types = FALSE
+)
+grid_reconstruction <- read_csv(
+  file.path(out, 'salinity_grid_reconstruction_audit.csv'),
+  show_col_types = FALSE
+)
+legacy_audit <- read_csv(
+  file.path(out, 'salinity_legacy_feature_mixing_audit.csv'),
+  show_col_types = FALSE
+)
+legacy_example <- read_csv(
+  file.path(out, 'salinity_legacy_18_014_example.csv'),
+  show_col_types = FALSE
+)
+reef_coverage <- read_csv(
+  file.path(processed, 'ereefs_surface_salinity_reef_grid_coverage.csv'),
+  show_col_types = FALSE
+)
+bleaching_data <- read_csv(
+  file.path(out, 'expanded_bleaching_salinity_data.csv'),
+  show_col_types = FALSE
+)
+annual_data <- read_csv(
+  file.path(out, 'expanded_annual_transition_salinity_data.csv'),
+  show_col_types = FALSE
+)
+support <- read_csv(
+  file.path(out, 'expanded_salinity_support.csv'), show_col_types = FALSE
+)
+correlations <- read_csv(
+  file.path(out, 'expanded_salinity_correlations.csv'),
+  show_col_types = FALSE
+)
+brt_metrics <- read_csv(
+  file.path(out, 'expanded_salinity_brt_metrics.csv'), show_col_types = FALSE
+)
+brt_event <- read_csv(
+  file.path(out, 'expanded_salinity_brt_event_metrics.csv'),
+  show_col_types = FALSE
+)
+brt_deltas <- read_csv(
+  file.path(out, 'expanded_salinity_brt_deltas.csv'), show_col_types = FALSE
+)
+inla_comparison <- read_csv(
+  file.path(out, 'expanded_salinity_inla_fit_comparison.csv'),
+  show_col_types = FALSE
+)
+thresholds <- read_csv(
+  file.path(out, 'expanded_salinity_inla_threshold_summary.csv'),
+  show_col_types = FALSE
+)
+extreme_rows <- read_csv(
+  file.path(out, 'expanded_salinity_extreme_rows.csv'),
+  show_col_types = FALSE
+)
+
+bleach_h30 <- brt_deltas |>
+  filter(
+    analysis_context == 'bleaching_mortality',
+    validation_scheme == 'leave_one_event_out',
+    candidate == 'exposures_h30'
+  )
+bleach_h26 <- brt_deltas |>
+  filter(
+    analysis_context == 'bleaching_mortality',
+    validation_scheme == 'leave_one_event_out',
+    candidate == 'exposures_h26'
+  )
+bleach_sss <- brt_deltas |>
+  filter(
+    analysis_context == 'bleaching_mortality',
+    validation_scheme == 'leave_one_event_out',
+    candidate == 'exposures_sss'
+  )
+annual_h26 <- brt_deltas |>
+  filter(
+    analysis_context == 'annual_transition_sensitivity',
+    validation_scheme == 'leave_one_event_out',
+    candidate == 'exposures_h26'
+  )
+
+candidate_labels <- c(
+  exposures = 'Heat + COTS + cyclone baseline',
+  exposures_sss = 'Baseline + minimum SSS',
+  exposures_h30 = 'Baseline + hours <30 PSU',
+  exposures_h26 = 'Baseline + hours <26 PSU',
+  exposures_sss_h26 = 'Baseline + SSSmin + hours <26',
+  exposures_all = 'Baseline + all salinity metrics',
+  labels = 'Baseline + retrospective cause labels',
+  labels_sss = 'Labels model + minimum SSS',
+  labels_h30 = 'Labels model + hours <30 PSU',
+  labels_h26 = 'Labels model + hours <26 PSU',
+  labels_all = 'Labels model + all salinity metrics'
+)
+context_labels <- c(
+  bleaching_mortality = 'Bleaching-mortality outcome (5 events)',
+  annual_transition_sensitivity = 'Annual cover-loss sensitivity (14 years)'
+)
+metric_labels <- c(
+  sss_min = 'Minimum SSS (PSU)',
+  log_hours_below30 = 'Hours below 30 PSU',
+  log_hours_below26 = 'Hours below 26 PSU'
+)
+```
+
+## Decision
+
+**Advance low-salinity duration as a formal candidate, but do not add it to the
+selected model yet.** The expanded reef-only delivery changes the earlier
+conclusion: minimum SSS no longer improves transfer, whereas duration below 30
+and 26 PSU produces small, repeatable leave-one-event-out gains.
+
+In the unchanged five-event bleaching-mortality dataset, adding hours below 30
+PSU lowers direct-BRT RMSE by
+`r number(-bleach_h30$delta_rmse, accuracy = 0.0001)` (reef-bootstrap 95%
+interval `r number(-bleach_h30$delta_rmse_q975, accuracy = 0.0001)` to
+`r number(-bleach_h30$delta_rmse_q025, accuracy = 0.0001)`). Hours below 26 PSU
+lowers RMSE by `r number(-bleach_h26$delta_rmse, accuracy = 0.0001)` (interval
+`r number(-bleach_h26$delta_rmse_q975, accuracy = 0.0001)` to
+`r number(-bleach_h26$delta_rmse_q025, accuracy = 0.0001)`). Minimum SSS changes
+RMSE by `r number(bleach_sss$delta_rmse, accuracy = 0.0001)` and its interval
+crosses zero.
+
+This is promising screening evidence, not promotion evidence. Only
+`r sum(bleaching_data$hours_below30 > 0)` of `r nrow(bleaching_data)`
+reef-event-programme-depth outcomes have non-zero area-mean exposure below 30
+PSU, and only `r sum(bleaching_data$hours_below26 > 0)` have exposure below 26
+PSU. The apparent bleaching-outcome threshold for <26 PSU is supported by one
+reef. The source delivery also omits the start and end dates used to accumulate
+hours, which must be recovered before duration can become an operational term.
+
+The selected model in `config/model_registry.yml` is unchanged.
+
+## What changed in the source data
+
+The expanded delivery contains 14 paired reef and GBR4 layers from 2010–11
+through 2023–24. Every reef layer has 3,862 unique reef polygons, of which
+3,657 have valid salinity values. Reef IDs, grid IDs and the grid missing-value
+mask are stable across all seasons. Hours below 26 PSU is always nested within
+hours below 30 PSU.
+
+```{r source-summary}
+source_audit |>
+  transmute(
+    Season = season,
+    `Valid reefs` = reef_rows - missing_metric_rows,
+    `Reefs with hours <30` = positive_hours30_reefs,
+    `Reefs with hours <26` = positive_hours26_reefs,
+    `Minimum SSS` = number(minimum_sss_psu, accuracy = 0.1),
+    `Maximum hours <30` = number(maximum_hours30, accuracy = 1),
+    `Maximum hours <26` = number(maximum_hours26, accuracy = 1)
+  ) |>
+  kable(caption = 'Expanded reef-layer audit by summer')
+```
+
+The supplied reef aggregates exactly reproduce area-weighted values from the
+4 km grid for the seasonal extremes and known influential reefs: the maximum
+absolute reconstruction differences are
+`r scientific(max(abs(grid_reconstruction$sss_difference)), digits = 2)` PSU,
+`r scientific(max(abs(grid_reconstruction$hours30_difference)), digits = 2)`
+hours and
+`r scientific(max(abs(grid_reconstruction$hours26_difference)), digits = 2)`
+hours.
+
+### Why the earlier 2022–24 result is superseded
+
+The older files at the root of `data/SalinityData` contain 5,362 features, not
+3,862 reefs. They include 1,500 islands, rocks, cays, sand or mainland features
+and 670 duplicated `LABEL_ID` values. The earlier extractor combined every
+feature sharing an ID by area, so some reef exposure values were dominated by
+nearby land polygons.
+
+For `18-014`, the old delivery combined the 3.9 km² Hinchinbrook Reef polygon
+with a 388 km² Hinchinbrook Island polygon. The new reef-only value is 26.54
+PSU and 138 hours below 30; the island record was 18.41 PSU and 2,385 hours.
+This explains the largest discrepancies and removes the earlier high-SSS BRT
+artefact.
+
+```{r legacy-example}
+legacy_example |>
+  transmute(
+    Delivery = delivery, Feature = feature_type, Name = feature_name,
+    `Area (km²)` = number(area_m2 / 1e6, accuracy = 0.1),
+    `Minimum SSS` = number(sss_min_psu, accuracy = 0.01),
+    `Hours <30` = number(hours_below30, accuracy = 1)
+  ) |>
+  kable(caption = 'Feature-mixing example for LABEL_ID 18-014')
+```
+
+### Is the 4 km cell product needed?
+
+Not for the main model join. The reef-only aggregates pass exact grid
+reconstruction and all `r n_distinct(bleaching_data$ReefID)` salinity-matched
+bleaching reefs used here have at least 50% valid-grid coverage. The cell data
+remain necessary for source QA, calculating valid-area coverage, and extracting
+future monitoring locations that lack a reef polygon match.
+
+Five monitored reefs fail the coverage rule and were excluded from the annual
+sensitivity: Shute, Dent No. 1 and Hook Island No. 4 have 25.9%, 35.3% and 42.0%
+valid area; Magnetic Island No. 2 and Lizard Island North West have none. Four
+of these occur in the bleaching-outcome source. Across the full reef layer, 74
+reefs have less than 50% valid coverage and 202 have none. Raw maxima from such
+polygons should not be interpreted without this coverage screen.
+
+The only unresolved source-contract item is temporal provenance: no machine-
+readable start/end dates accompany the summary layers. Consequently, absolute
+hours cannot yet be converted to a fraction of the exposure window, and the
+2010–11 maximum of more than 5,000 hours cannot be fully audited against its
+intended season length.
+
+## Analysis design
+
+Two outcomes are kept separate:
+
+1. **Primary screening outcome:** the existing bleaching-restricted relative
+   mortality rows for 2016, 2017, 2020, 2022 and 2024. Rows are averaged to one
+   equal-weight ReefID-event-programme-depth outcome. The baseline contains
+   survey depth/programme, local-first DHW, COTS hazard and interval cyclone
+   exposure.
+2. **Annual-transition sensitivity:** consecutive annual coral-cover losses
+   for 2011–24, including the very wet 2010–11 summer. It uses raw annual DHW,
+   COTS and cyclone context and retains only pre-cover of at least 2%. This is a
+   different response and cannot select the production bleaching model.
+
+Direct BRTs use leave-one-event/year-out validation as the primary comparison
+and fixed reef-blocked folds as secondary evidence. Preprocessing is learned
+inside each fold. Salinity is never imputed. Retrospective disturbance labels
+are evaluated separately and are not operational predictors. Full-data
+Bernoulli-beta INLA fits provide smooth marginal relationships and supplementary
+WAIC/DIC only.
+
+## Multi-event BRT performance
+
+```{r brt-performance}
+brt_metrics |>
+  filter(
+    validation_scheme == 'leave_one_event_out',
+    candidate %in% c(
+      'exposures', 'exposures_sss', 'exposures_h30', 'exposures_h26',
+      'exposures_sss_h26', 'exposures_all'
+    )
+  ) |>
+  mutate(
+    Outcome = recode(analysis_context, !!!context_labels),
+    Candidate = recode(candidate, !!!candidate_labels),
+    RMSE = number(rmse, accuracy = 0.001),
+    `Predictive R²` = number(predictive_r2, accuracy = 0.001),
+    `Severe RMSE` = number(severe_rmse, accuracy = 0.001)
+  ) |>
+  select(Outcome, Candidate, RMSE, `Predictive R²`, `Severe RMSE`) |>
+  arrange(Outcome, RMSE) |>
+  kable(caption = 'Leave-one-event/year-out direct-BRT performance')
+```
+
+The duration gains are small but directionally consistent across four of five
+bleaching events. Hours below 30 improves 2017, 2020, 2022 and 2024, but worsens
+2016 slightly. Hours below 26 is nearly neutral in 2016 and improves the other
+four. In contrast, minimum SSS helps 2020 and 2024 but substantially worsens
+2017, which explains its failure to transfer.
+
+```{r event-deltas}
+baseline_event <- brt_event |>
+  filter(
+    validation_scheme == 'leave_one_event_out', candidate == 'exposures'
+  ) |>
+  select(analysis_context, event_year, baseline_rmse = rmse)
+
+brt_event |>
+  filter(
+    validation_scheme == 'leave_one_event_out',
+    analysis_context == 'bleaching_mortality',
+    candidate %in% c('exposures_sss', 'exposures_h30', 'exposures_h26')
+  ) |>
+  left_join(
+    baseline_event,
+    by = c('analysis_context', 'event_year'), relationship = 'many-to-one'
+  ) |>
+  transmute(
+    Event = event_year,
+    Metric = recode(candidate, !!!candidate_labels),
+    `RMSE change` = number(rmse - baseline_rmse, accuracy = 0.0001)
+  ) |>
+  pivot_wider(names_from = Metric, values_from = `RMSE change`) |>
+  kable(caption = 'Event-held-out RMSE change; negative values improve')
+```
+
+Reef-blocked interpolation tells a different story: minimum SSS improves the
+bleaching outcome by 0.0053 RMSE, while durations are nearly neutral. This is
+exactly why the earlier 2024-only SSS result was not sufficient. SSS carries
+within-event spatial information, but duration is the metric with better event
+transfer.
+
+When retrospective bleaching, flood, cyclone and COTS labels are added, the
+bleaching-outcome gain shrinks to 0.0005 RMSE for hours below 30 and reverses
+slightly for hours below 26; both intervals cross zero. This indicates that
+part of the duration signal overlaps recorded disturbance causes. The labels
+are incomplete, sometimes depth-specific text collapsed to a reef event, and
+unavailable prospectively, so this does not invalidate the exposure signal—but
+it sharply limits a causal freshwater claim.
+
+Adding SSS and duration together does not improve on duration alone. Hours
+below 30 and below 26 are nested and have Spearman correlation
+`r number(correlations |> filter(analysis_context == 'bleaching_mortality') |> pull(spearman_hours30_hours26), accuracy = 0.01)`
+in the bleaching data. They should remain alternative candidates, not be fit
+as interchangeable terms in the same operational model.
+
+## What does 2010–11 add?
+
+The annual-transition sensitivity contains `r nrow(annual_data)` outcomes from
+`r n_distinct(annual_data$ReefID)` reefs across all 14 years. Adding hours below
+26 lowers pooled leave-one-year-out RMSE by
+`r number(-annual_h26$delta_rmse, accuracy = 0.0001)`, but its bootstrap
+interval crosses zero (`r number(-annual_h26$delta_rmse_q975, accuracy = 0.0001)`
+to `r number(-annual_h26$delta_rmse_q025, accuracy = 0.0001)`). The pooled
+evidence is therefore suggestive, not conclusive.
+
+It is nevertheless informative for 2011: the <26 candidate lowers held-out
+2011 RMSE from 0.338 to 0.298. The event includes 43 programme-depth outcomes,
+with mean relative loss of 33.0% at MMP 2 m and 24.3% at MMP 5 m.
+
+```{r support-2011}
+support |>
+  filter(
+    analysis_context == 'annual_transition_sensitivity', event_year == 2011
+  ) |>
+  transmute(
+    Programme = toupper(programme_key), Depth = depth,
+    Rows = rows, Reefs = reefs,
+    `Mean relative loss` = percent(mean_mortality, accuracy = 0.1),
+    `Flood-labelled rows` = flood_rows,
+    `Minimum SSS` = number(minimum_sss, accuracy = 0.1),
+    `Maximum hours <26` = number(maximum_hours_below26, accuracy = 1)
+  ) |>
+  kable(caption = '2011 annual-transition support')
+```
+
+The clearest depth pattern is biological plausible but not cleanly causal:
+Pelican Island Reef had 1,385 hours below 26 PSU and 98.5% versus 28.8% loss at
+2 m and 5 m; Humpy Reef had 626 hours and 86.1% versus 14.8% loss. Stingaree and
+Tobias were also affected by Cyclone Yasi, and other reefs show weak or reversed
+depth differences. The 2011 result supports retaining depth-specific duration,
+but it does not identify a stable duration-by-depth coefficient by itself.
+
+## Smoothed INLA relationships
+
+All three metrics improve full-data INLA WAIC relative to the exposure-only
+baseline. In the bleaching outcome, delta WAIC is -14.0 for minimum SSS, -5.9
+for hours below 30 and -10.0 for hours below 26. In the annual sensitivity the
+corresponding values are -44.9, -51.5 and -55.6. These fit statistics confirm a
+smooth association but cannot override held-out transfer.
+
+```{r inla-comparison}
+inla_comparison |>
+  mutate(
+    Outcome = recode(analysis_context, !!!context_labels),
+    Metric = recode(candidate,
+      baseline = 'Exposure-only baseline', !!!metric_labels
+    ),
+    `Combined WAIC` = number(combined_waic, accuracy = 0.1),
+    `Delta WAIC` = number(delta_waic_from_baseline, accuracy = 0.1)
+  ) |>
+  select(Outcome, Metric, `Combined WAIC`, `Delta WAIC`) |>
+  arrange(Outcome, `Combined WAIC`) |>
+  kable(caption = 'Full-data explanatory INLA fit')
+```
+
+```{r combined-curves, fig.alt='BRT and INLA partial dependence curves for minimum SSS and duration below 30 and 26 PSU, separated by outcome and survey depth.'}
+knitr::include_graphics(file.path(
+  root, 'output', 'surface_salinity_mortality',
+  'expanded_salinity_brt_inla_partial_dependence.png'
+))
+```
+
+Both frameworks now show the expected direction: mortality rises with longer
+low-salinity duration and toward lower minimum SSS. The previous high-SSS
+upturn disappears after removing mixed land features and adding multiple
+events. Curves for MMP 2 m generally sit above MMP 5 m, but programme/depth
+intercepts and surface exposure do not prove depth attenuation.
+
+## Where does mortality increase?
+
+Posterior contrasts compare each duration value with zero exposure and each SSS
+value with the highest observed SSS. The table reports the first grid value
+whose lower 95% posterior contrast exceeds zero. These are model-dependent
+screening crossings, not physiological thresholds.
+
+```{r threshold-table}
+thresholds |>
+  filter(stratum %in% c('MMP 2 m', 'MMP 5 m')) |>
+  mutate(
+    Outcome = recode(analysis_context, !!!context_labels),
+    Metric = recode(metric, !!!metric_labels),
+    `Programme/depth` = stratum,
+    Crossing = if_else(
+      is.na(threshold_original_value), 'None detected',
+      number(threshold_original_value, accuracy = 0.1)
+    ),
+    `Estimated uplift` = if_else(
+      is.na(difference_at_threshold), '—',
+      percent(difference_at_threshold, accuracy = 0.1)
+    ),
+    `Supporting reefs` = empirical_reefs_beyond_threshold
+  ) |>
+  select(
+    Outcome, Metric, `Programme/depth`, Crossing,
+    `Estimated uplift`, `Supporting reefs`
+  ) |>
+  kable(caption = 'Posterior screening crossings and empirical support')
+```
+
+The annual sensitivity yields much better support: about 180 hours below 30
+PSU (14 reefs), 38 hours below 26 PSU (9 reefs), or minimum SSS below 28.1 PSU
+(18 reefs). In the bleaching-restricted data, the analogous crossings are
+about 212 hours below 30 or SSS below 24.9 PSU, each supported by only three
+reefs. The <26 crossing is the maximum observed 189 hours at Snapper Reef and
+is supported by that reef alone. It must not be encoded as a threshold.
+
+Stingaree remains the essential counterexample: in 2024 it had 849 hours below
+30 and 23 hours below 26, but only 4.2% and 5.7% MMP loss at 2 m and 5 m. Humpy
+Reef in 2017 had 203 hours below 30 and 38 below 26 with 0% and 7.7% loss. These
+observations argue for a graded duration response with uncertainty, not a hard
+30 or 26 PSU cutoff.
+
+## Critical next steps
+
+1. **Test one duration metric at a time in the selected cause-aware INLA
+   architecture.** Hours below 30 should be the primary formal candidate
+   because three bleaching reefs support its elevated range and its event-held-
+   out gain is slightly larger. Hours below 26 should be the mechanism-focused
+   replacement sensitivity, not an additional collinear term.
+2. **Do not promote from direct-BRT gains.** The improvement is only 0.002–0.003
+   RMSE and comes from 10–18 exposed outcomes. Promotion requires the same
+   fixed leave-one-event-out comparison in the registered operational model,
+   including severe-event RMSE and false-extreme rate.
+3. **Recover the exact accumulation windows and code.** Start/end dates,
+   timestep handling, missing-hour treatment and whether durations are annual
+   or wet-season totals are prerequisites for interpreting absolute hours.
+4. **Retain the 2011 annual analysis as external mechanism evidence.** It
+   demonstrates that the layer can recover a major freshwater year and a
+   plausible shallow-depth pattern, but its annual cover-loss response is not
+   interchangeable with bleaching mortality.
+5. **Do not fit a hard threshold or a depth interaction yet.** The bleaching
+   threshold tail contains one to three reefs and several cyclone/bleaching
+   co-labels. More independent flood reefs are required before estimating a
+   stable surface-exposure-by-depth interaction.
+6. **Keep the 4 km cells as an audit and fallback product.** Reef aggregates
+   are adequate after the valid-area filter. Cell extraction is warranted for
+   new monitoring sites, reef IDs without a polygon match, or sensitivity to
+   within-reef exposure heterogeneity.
+
+## Promotion boundary
+
+This investigation does not change `config/model_registry.yml`. A duration
+metric can be promoted only if it improves the selected cause-aware INLA model
+under fixed leave-one-event-out validation, retains or improves severe-event
+RMSE and false-extreme rate, has documented temporal provenance, and does not
+create excessive mortality at counterexamples such as Stingaree or Humpy Reef.

@@ -3,9 +3,12 @@
 ## Decision summary
 
 Implementation update (15 September 2026): the expanded IMOS/SSTAARS
-extraction, NOAA empirical intensity-duration-frequency screen and hourly-logger
-cooling validation are complete.
-IMOS-equivalent DHW did not deliver a stable cross-programme validation gain.
+extraction, percentile-gated heat-dose screen, NOAA empirical
+intensity-duration-frequency screen and hourly-logger cooling validation are
+complete. IMOS-equivalent DHW did not deliver a stable cross-programme gain.
+The Li Shing Hiung et al. percentile dose was distinct and apparently
+influential, but replacement worsened every pooled comparison and incremental
+gains did not survive cross-programme, spatial and complete-case checks.
 Standard Hobday duration/intensity gave modest but validation-dependent gains;
 the NOAA frequency block improved some within-event spatial tests but worsened
 event transfer, while the satellite day/night contrast failed both mortality
@@ -89,6 +92,47 @@ An IMOS-native `dhw0_56d_max` (maximum 56-day positive anomaly sum divided by
 seven, with no +1 cutoff) is therefore a useful **replacement sensitivity**.
 It should not enter the same unconstrained candidate set as several nearly
 identical accumulation windows.
+
+### Percentile-gated heat dose adapts the threshold to local variability
+
+Li Shing Hiung, Holbrook and Kajtar replace the fixed MMM + 1 degree C DHW gate
+with a locally varying percentile threshold.[^20] Their threshold is
+$C(t) + \alpha[Q_{90}(t)-C(t)]$, where $C(t)$ is the daily climatological mean.
+At the standard $\alpha=1$, SST must exceed the daily 90th percentile. Each
+qualifying day then contributes its full anomaly above $C(t)$, rather than only
+the excess above the percentile threshold. The Hobday five-day minimum is
+removed, and 10--12-week warm-season windows generally perform best.
+
+This is not the standard MHW block: isolated extreme days contribute, and the
+output is an integrated dose rather than event duration or category. It is also
+not thermal IDF: it contains no historical frequency or return period. Its main
+advantage over NOAA DHW is that the threshold reflects local temperature
+variance instead of applying the same +1 degree C offset everywhere.
+
+The study reports better binary bleaching or severe-bleaching discrimination
+in three global datasets, but uses 0.25-degree OISST and random 80/20 splits.
+It does not test post-bleaching mortality magnitude or leave-one-event-out
+transfer. The authors also show less distinction from conventional DHW for
+extreme bleaching and long impact windows. These differences make the method
+worthy of a bounded GBR test, not presumptively superior for this model.
+
+The implemented analogue uses only IMOS night SST and its matched SSTAARS
+1992--2016 climatology and percentiles. `imos_pbd12_c_weeks` is the prespecified
+primary field; 10- and 11-week variants are sensitivity outputs and were not
+selected using mortality. PBD12 is finite for 162 of 304 reef-events and
+correlates 0.84 with local-first NOAA DHW. It has apparent BRT influence, but:
+
+- replacement worsens all six pooled programme/design RMSE comparisons;
+- adding PBD12 improves full-row event-held-out RMSE by 0.0017 for LTMP and
+  0.0042 for MMP, but worsens manta by 0.0062 and all reef-blocked results;
+- on observed PBD complete cases, the LTMP event-held-out gain reverses to a
+  0.0057 loss; manta event transfer improves 0.0030 but is spatially neutral,
+  while MMP event-held-out fitting is underpowered and reef-blocked error
+  worsens 0.0023.
+
+The candidate therefore does not progress to formal INLA assessment. Higher
+coverage might reduce uncertainty, but the observed complete-case direction
+does not support treating missingness as the sole reason for failure.
 
 ### Marine-heatwave duration and intensity are standard, separable metrics
 
@@ -274,6 +318,22 @@ monthly means derived from that same climatology. Define coral HotSpot
 the preceding year through 30 April of the event year; do not anchor windows to
 survey date.
 
+### Percentile-gated dose sensitivity (completed)
+
+| Field | Definition | Status |
+|---|---|---|
+| `imos_pbd10_c_weeks` | 10-week sum of full positive daily-climatology anomaly on night-SST days above SSTAARS p90, divided by seven | Sensitivity output |
+| `imos_pbd11_c_weeks` | Same definition over 11 weeks | Sensitivity output |
+| `imos_pbd12_c_weeks` | Same definition over the prespecified 12-week local warm-season window | Screened primary; not promoted |
+| `imos_pbd12_exceedance_days` | Observed qualifying days in the 12-week window | Audit only |
+
+Windows are centred on the local SSTAARS climatological peak between November
+and April. There is no five-day duration rule. Remaining missingness is
+coverage-normalised only when at least 70% of the window is finite; observed
+unscaled dose and raw/fill-adjusted coverage are retained. The three window
+outputs are highly collinear (rank correlations 0.98--0.99) and must not enter
+the model together.
+
 ### Priority block A: continuity and acute intensity
 
 | Field | Definition | Hypothesis |
@@ -366,11 +426,12 @@ fold-safe mapping model proves they can be predicted GBR-wide.
 
 ## Model-testing design
 
-### Completed expanded screen (14 September 2026)
+### Completed expanded screen (15 September 2026)
 
 The implemented extractor now includes the matched nighttime DHW, coral-
-threshold continuity and acute metrics, formal Hobday events, and the paired
-daytime-to-following-night sensitivity. Hobday events require at least five
+threshold continuity and acute metrics, percentile-gated 10--12-week doses,
+formal Hobday events, and the paired daytime-to-following-night sensitivity.
+Hobday events require at least five
 days above the periodically interpolated SSTAARS 90th percentile; qualifying
 events separated by at most two days are joined. Categories use the official
 SSTAARS median/90th-percentile formula. The paired cooling fields use only
@@ -394,8 +455,10 @@ The corresponding correlations with 30-day logger DTR were only 0.14 and 0.10.
 This supports the original warning that polar-orbiting day/night composites do
 not directly measure nocturnal reef cooling.
 
-The next defensible thermal step is an official higher-coverage GeoPolar/
-AusTemp extraction and a formal, small MHW-only assessment. Broader subdaily
+The percentile candidate fails the promotion gate and should not enter the
+formal model. The next defensible thermal step, if thermal development resumes,
+is an official higher-coverage GeoPolar/AusTemp extraction and a formal, small
+MHW-only assessment. Broader subdaily
 logger acquisition is required before revisiting nighttime cooling as a
 reef-wide predictor.
 
@@ -437,6 +500,7 @@ Run these prespecified blocks rather than one unstructured feature dump:
 | `thermal_imos_source_control` | Matched IMOS DHW1-84 + current nonthermal terms |
 | `thermal_duration_peak` | Current DHW + longest MMM+1 spell + 3-day peak |
 | `thermal_mhw_structure` | Current DHW + standard MHW duration/intensity; replace SST skewness/kurtosis |
+| `thermal_pbd12` | Replace current DHW with PBD12, or add PBD12 to current DHW; completed and not promoted |
 | `thermal_night_relief` | Current DHW + unrelieved hot nights; paired cooling only as a sensitivity |
 | `thermal_imos_compact` | Best one field from each stable mechanism block |
 
@@ -534,6 +598,7 @@ added as a separate pipeline profile without changing the selected model.
 [^17]: Green, A. C., Guerreiro, S. B., and Fowler, H. J. (2026). [*Global Intensity-Duration-Frequency curves based on observed sub-daily rainfall (GSDR-IDF)*](https://doi.org/10.1038/s41597-026-06858-4). *Scientific Data*, 13, 455.
 [^18]: Gregory, J. M., et al. (2022). [*An increase in marine heatwaves without significant changes in surface ocean temperature variability*](https://doi.org/10.1038/s41467-022-34934-x). *Nature Communications*, 13, 7396.
 [^19]: Mazdiyasni, O., Sadegh, M., Chiang, F., and AghaKouchak, A. (2019). [*Heat wave Intensity Duration Frequency Curve: A Multivariate Approach for Hazard and Attribution Analysis*](https://doi.org/10.1038/s41598-019-50643-w). *Scientific Reports*, 9, 14117.
+[^20]: Li Shing Hiung, D., Holbrook, N. J., and Kajtar, J. B. (2026). [*Improved Characterization of Coral Bleaching Patterns From a Percentile-Based Threshold Model*](https://doi.org/10.1029/2025GL119516). *Geophysical Research Letters*, 53, e2025GL119516.
 
 SSTAARS climatology reference: Wijffels, S. E., et al. (2018).
 [*A fine spatial-scale sea surface temperature atlas of the Australian regional

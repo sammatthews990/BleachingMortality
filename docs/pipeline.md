@@ -72,7 +72,8 @@ python src/data/validate_environmental_data.py
 
 ERA5 weather uses `requirements/era5.txt`. Environmental scripts cache downloads beneath `data/cache/` and write processed tables and provenance beneath `data/processed/`.
 
-The IMOS thermal investigation is also outside the production profile. It
+The IMOS thermal investigation, including the SSTAARS percentile-gated heat
+dose, is also outside the production profile. It
 reconstructs an NOAA-equivalent DHW from bias-corrected 0.02-degree nighttime
 SST and a SSTAARS-derived MMM before screening coral-threshold duration/peak,
 standard Hobday MHW, and paired day/night terms. It also validates the cooling
@@ -90,6 +91,42 @@ annual reef-event outputs. Use `--force` only when intentionally rebuilding
 those generated parts. The screen is an investigation and cannot alter the
 selected model without the formal promotion workflow.
 
+## Surface-salinity mortality screen
+
+The salinity investigation is outside the production profile. It audits paired
+reef-only and GBR4 layers for every summer from 2010-11 through 2023-24,
+validates that reef aggregates reproduce the 4 km grid, and calculates a
+static valid-cell area fraction. The canonical reef-season table contains
+minimum surface salinity and area-mean hours below 30 and 26 PSU. Summer layers
+map to the calendar year in which the season ends.
+
+```powershell
+python src/pipeline/run_pipeline.py --profile surface-salinity-screen --check-inputs
+python src/pipeline/run_pipeline.py --profile surface-salinity-screen
+quarto render analysis/investigations/surface_salinity_mortality_assessment.qmd
+```
+
+The expanded layers overlap all five bleaching events in the current outcome
+(2016, 2017, 2020, 2022 and 2024). The primary diagnostic averages to one
+equal-weight ReefID-event-programme-depth outcome and compares minimum SSS,
+hours below 30 PSU and hours below 26 PSU after survey structure, local-first
+DHW, selected COTS hazard and cyclone-wave exposure. Leave-one-event-out is
+primary and reef-blocked validation is secondary. Retrospective disturbance
+labels remain explanatory-only.
+
+A separate annual-transition sensitivity spans 2011-24 so the major 2010-11
+freshwater season can be assessed. It uses annual relative cover loss rather
+than the production bleaching-mortality outcome and cannot select the current
+model. Matched full-data Bernoulli-beta INLA fits smooth the BRT relationships
+and generate posterior marginal contrasts; WAIC/DIC and model-derived
+crossings are supplementary, not promotion criteria.
+
+The reef-only delivery supersedes the two mixed-feature 2022-24 files at the
+root of `data/SalinityData`, which contain islands, rocks and cays sharing reef
+identifiers. The 4 km layers are retained for QA, valid-area coverage and
+future sites lacking a reef polygon match. Duration start/end dates are not
+encoded in the supplied summaries and must be recovered before a duration term
+can be promoted. The screen does not alter the selected model.
 ## Within-event aerial update
 
 The optional stage requires explicit 2025 ERA5 and PATMOS-x snapshots. Remote

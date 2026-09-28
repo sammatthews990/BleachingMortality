@@ -259,6 +259,13 @@ yet they do not observe the short, local salinity tail. The current ceiling is
 therefore dominated by transfer, exposure measurement and outcome
 heterogeneity rather than a shortage of candidate terms.
 
+The 2026 percentile-threshold paper was a sufficiently distinct exception to
+test explicitly. Its SSTAARS p90-gated 12-week dose had apparent BRT
+importance, but replacement worsened every pooled comparison. Small full-row
+LTMP/MMP event-held-out gains from adding it to NOAA did not survive manta,
+reef-blocked or complete-case checks. It therefore does not alter this audit's
+priority ordering.
+
 ## Events: 2024 dominates, but the direction changes through time
 
 ```{r event-table}

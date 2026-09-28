@@ -434,12 +434,7 @@ complete_case_sets <- list(
             'noaa_dhw', 'imos_dhw', 'noaa_plus_mhw', 'imos_plus_mhw'
         )
     ),
-    pbd = list(
-        metrics = pbd_metric,
-        candidates = c(
-            'noaa_dhw', 'imos_dhw', 'imos_pbd12', 'noaa_plus_pbd12'
-        )
-    ),
+
     cooling = list(
         metrics = cooling_metrics,
         candidates = c('noaa_dhw', 'noaa_plus_cooling')
@@ -455,6 +450,12 @@ complete_case_sets <- list(
     idf_frequency = list(
         metrics = idf_frequency_metrics,
         candidates = c('noaa_dhw', 'noaa_plus_idf_frequency')
+    ),
+    pbd = list(
+        metrics = pbd_metric,
+        candidates = c(
+            'noaa_dhw', 'imos_dhw', 'imos_pbd12', 'noaa_plus_pbd12'
+        )
     )
 )
 for (comparison_set in names(complete_case_sets)) {
